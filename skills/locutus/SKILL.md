@@ -25,6 +25,9 @@ Locutus is a daemonless, high-performance inter-assistant communication protocol
    - Optional E2EE: Setting `LOCUTUS_ENCRYPT=1` encrypts task bodies via OpenSSL AES-256-CBC PBKDF2 across Redis.
 5. **Continuous Ear Invariant & Listening Strategy Selection**:
    - Once registered (`locutus open`), the assistant MUST maintain an active listener at all times until explicitly closed via `locutus close`.
+   - **Ear mechanism depends on the runtime**:
+     - **Wake-capable runtimes** (Claude Code, Antigravity): run `locutus listen` as a background task the runtime can surface on output.
+     - **opencode**: there is no native wake-on-output. Use the bundled opencode ear plugin (`opencode-ear.js`, see §3 Step 2b). The plugin streams `locutus listen` inside opencode and injects each message as a new turn — the only way to wake the assistant. Never run `locutus listen` through the opencode Task tool (it blocks the parent session synchronously) and never `nohup locutus listen > /dev/null` (messages are consumed and discarded).
    - **Zero Token Churn**: Locutus blocks silently in native code and internally renews its Redis heartbeat. It outputs 0 bytes and never wakes up the assistant until an authentic message arrives.
    - **No Shell Wrapping Loops**: NEVER wrap `locutus listen` in `while true`, `for`, or background bash scripts. The native binary handles indefinite waiting and heartbeats internally.
    - **Choose Your Strategy Based On Tool Capabilities**:
@@ -42,7 +45,11 @@ Locutus is a daemonless, high-performance inter-assistant communication protocol
    - `locutus listen` requires an identifiable agent name (explicit argument, `LOCUTUS_AGENT_NAME`, or workspace `.locutus.agent`).
    - Active listeners that attach via `locutus listen <name>` are automatically registered into the live directory.
    - `locutus who` automatically prunes dead/expired agents upon query, returning only truly active agents.
-7. **Distributed Concurrency & File/Resource Locking (`locutus lock` / `locutus unlock`)**:
+7. **Shared Bus — Never Kill Another Agent's Listener**:
+   - The Redis bus is shared across agents and sessions on the machine. Other agents' `locutus listen` processes are their working ears, not strays.
+   - Never `pkill locutus` or otherwise reap a listener you did not spawn. The ear plugin owns only its own child process and must never signal unrelated `locutus` processes.
+   - If you must clean up, identify the exact process (`ps -p <pid> -o command`) and confirm it is yours before killing.
+8. **Distributed Concurrency & File/Resource Locking (`locutus lock` / `locutus unlock`)**:
    - When multiple assistants operate in parallel across terminals, workspaces, or machines, acquire a distributed lease (`locutus lock <lock_name> [ttl_sec]`) before modifying shared files, schema definitions, database state, git branches, or deployment targets.
    - Prevents race conditions, overwrite collisions, and merge conflicts. Always release the lock (`locutus unlock <lock_name>`) upon completing the critical section.
 
@@ -152,6 +159,40 @@ In linear runtimes, assistants frequently drop background listeners during compl
    - When the next message arrives, the process exits cleanly with pure JSON on `stdout`.
    - Because LLMs naturally send a reply when concluding a task, piggybacking ensures the listener is never dropped.
    - **Anti-Stacking Guarantee**: If an active listener is already running (e.g. from an earlier call or an Ear subagent), `--listen` automatically delivers the message and exits `0` immediately without spawning a duplicate listener.
+
+### Step 2b: opencode — Arm the Ear via the Plugin
+
+opencode has no native "wake on background output" hook, so **the assistant must NOT run `locutus listen` itself**. The bundle includes the ear plugin `opencode-ear.js`, which keeps the ear open inside opencode and wakes you on delivery.
+
+**Install (once per machine):** add the plugin's absolute path to the `"plugin"` array in `~/.config/opencode/opencode.json`:
+
+```json
+"plugin": [
+  "<skill-dir>/opencode-ear.js"
+]
+```
+
+opencode loads plugins from that array — a `.js` dropped into `~/.config/opencode/plugins/` is not auto-loaded in this setup. Restart opencode after editing the config. Then give the bus your agent name:
+
+```bash
+export LOCUTUS_AGENT_NAME="<your-agent-name>"
+```
+
+The ear is **dormant unless an identity resolves**: it uses `LOCUTUS_AGENT_NAME`, else `<project>/.locutus.agent` (written by `locutus open`). It inherits the opencode process environment, so set `LOCUTUS_REDIS_URL` / `LOCUTUS_PROJECT` there too if the default Redis is wrong. Set `LOCUTUS_EAR_DISABLED=1` to disable. Confirm it armed by the log line `[locutus-ear] armed for <name>` and the `locutus listen <name>` child process.
+
+**When a message arrives**, the plugin injects it into your session as a user turn. Your context receives one line of this shape, prefixed `[locutus:<name>] `:
+
+```json
+{"id":"msg_...","from":"...","to":"...","type":"task","reply_to":null,"tags":[...],"subject":"...","body":"...","timestamp":"...","sig":"...","encrypted":false}
+```
+
+The plugin is already listening; you do **not** re-arm anything. Just parse the JSON (`from`, `type`, `subject`, `body`, `id`, `reply_to`), do the work, and reply:
+
+```bash
+locutus send --to "<from>" --type reply --subject "Re: <subject>" --body "<result>" --reply-to "<id>"
+```
+
+Conclude the turn normally. The plugin keeps the ear open the entire time.
 
 ### Step 3: Advanced Coordination Protocols
 
