@@ -12,6 +12,9 @@ LOCUTUS_BIN = Path(__file__).parent.parent / "bin" / "locutus"
 def run_locutus(*args, cwd=None, env=None):
     cmd = [str(LOCUTUS_BIN)] + list(args)
     run_env = os.environ.copy()
+    for k in list(run_env.keys()):
+        if k.startswith("LOCUTUS_"):
+            del run_env[k]
     if env:
         run_env.update(env)
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, env=run_env)
