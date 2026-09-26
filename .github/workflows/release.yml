@@ -35,6 +35,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Nim dependencies
+        run: |
+          nimble install -y --depsOnly
+
       - name: Install cross-compilation toolchains & QEMU
         run: |
           sudo apt-get update -q
@@ -51,14 +55,14 @@ jobs:
           sudo cp -d -r /tmp/arm64-ssl/extracted/lib/aarch64-linux-gnu/* /usr/aarch64-linux-gnu/lib/ 2>/dev/null || true
           sudo ln -sf libcrypto.so.3 /usr/aarch64-linux-gnu/lib/libcrypto.so 2>/dev/null || true
 
-
       - name: Compile Linux x86_64 binary
         run: |
           mkdir -p dist/linux-amd64
           nim c -d:release --opt:speed -o:dist/linux-amd64/locutus src/locutus.nim
-          strip dist/linux-amd64/locutus
+          cp dist/linux-amd64/locutus dist/linux-amd64/locu
+          strip dist/linux-amd64/locutus dist/linux-amd64/locu
           cp -r skills dist/linux-amd64/
-          tar -czf dist/locutus-linux-amd64.tar.gz -C dist/linux-amd64 locutus skills
+          tar -czf dist/locutus-linux-amd64.tar.gz -C dist/linux-amd64 locutus locu skills
 
       - name: Compile Linux aarch64 binary
         run: |
@@ -66,9 +70,10 @@ jobs:
           nim c -d:release --opt:speed --cpu:arm64 --os:linux \
             --gcc.exe:aarch64-linux-gnu-gcc --gcc.linkerexe:aarch64-linux-gnu-gcc \
             -o:dist/linux-arm64/locutus src/locutus.nim
-          aarch64-linux-gnu-strip dist/linux-arm64/locutus
+          cp dist/linux-arm64/locutus dist/linux-arm64/locu
+          aarch64-linux-gnu-strip dist/linux-arm64/locutus dist/linux-arm64/locu
           cp -r skills dist/linux-arm64/
-          tar -czf dist/locutus-linux-arm64.tar.gz -C dist/linux-arm64 locutus skills
+          tar -czf dist/locutus-linux-arm64.tar.gz -C dist/linux-arm64 locutus locu skills
 
       - name: Build Debian packages (.deb)
         env:
@@ -77,6 +82,8 @@ jobs:
           # Build amd64 .deb
           mkdir -p deb-amd64/DEBIAN deb-amd64/usr/bin deb-amd64/usr/share/doc/locutus deb-amd64/usr/share/locutus/skills
           cp dist/linux-amd64/locutus deb-amd64/usr/bin/
+          ln -sf locutus deb-amd64/usr/bin/locu
+          ln -sf locutus deb-amd64/usr/bin/locuti
           cp LICENSE deb-amd64/usr/share/doc/locutus/copyright
           cp README.md deb-amd64/usr/share/doc/locutus/
           cp -r skills/locutus deb-amd64/usr/share/locutus/skills/
@@ -113,6 +120,8 @@ jobs:
           # Build arm64 .deb
           mkdir -p deb-arm64/DEBIAN deb-arm64/usr/bin deb-arm64/usr/share/doc/locutus deb-arm64/usr/share/locutus/skills
           cp dist/linux-arm64/locutus deb-arm64/usr/bin/
+          ln -sf locutus deb-arm64/usr/bin/locu
+          ln -sf locutus deb-arm64/usr/bin/locuti
           cp LICENSE deb-arm64/usr/share/doc/locutus/copyright
           cp README.md deb-arm64/usr/share/doc/locutus/
           cp -r skills/locutus deb-arm64/usr/share/locutus/skills/
@@ -211,14 +220,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Nim dependencies
+        run: |
+          nimble install -y --depsOnly
+
       - name: Compile macOS Apple Silicon (arm64) binary
         run: |
           mkdir -p dist/darwin-arm64
           nim c -d:release --opt:speed --cpu:arm64 -o:dist/darwin-arm64/locutus src/locutus.nim
-          strip dist/darwin-arm64/locutus
+          cp dist/darwin-arm64/locutus dist/darwin-arm64/locu
+          strip dist/darwin-arm64/locutus dist/darwin-arm64/locu
           codesign -s - -f dist/darwin-arm64/locutus
+          codesign -s - -f dist/darwin-arm64/locu
           cp -r skills dist/darwin-arm64/
-          tar -czf dist/locutus-darwin-arm64.tar.gz -C dist/darwin-arm64 locutus skills
+          tar -czf dist/locutus-darwin-arm64.tar.gz -C dist/darwin-arm64 locutus locu skills
 
       - name: Compile macOS Intel (x86_64) binary
         run: |
@@ -227,10 +242,12 @@ jobs:
             --passC:"-target x86_64-apple-macos11" \
             --passL:"-target x86_64-apple-macos11" \
             -o:dist/darwin-amd64/locutus src/locutus.nim
-          strip dist/darwin-amd64/locutus
+          cp dist/darwin-amd64/locutus dist/darwin-amd64/locu
+          strip dist/darwin-amd64/locutus dist/darwin-amd64/locu
           codesign -s - -f dist/darwin-amd64/locutus
+          codesign -s - -f dist/darwin-amd64/locu
           cp -r skills dist/darwin-amd64/
-          tar -czf dist/locutus-darwin-amd64.tar.gz -C dist/darwin-amd64 locutus skills
+          tar -czf dist/locutus-darwin-amd64.tar.gz -C dist/darwin-amd64 locutus locu skills
 
       - name: Verify macOS packages in clean environment
         run: |
@@ -238,7 +255,8 @@ jobs:
           mkdir -p /tmp/clean-darwin-arm64
           tar -xzf dist/locutus-darwin-arm64.tar.gz -C /tmp/clean-darwin-arm64
           /tmp/clean-darwin-arm64/locutus --help | grep -F "Nim Native"
-          KEY1=$(/tmp/clean-darwin-arm64/locutus get-secret)
+          /tmp/clean-darwin-arm64/locu --help | grep -F "Nim Native"
+          KEY1=$(/tmp/clean-darwin-arm64/locu get-secret)
           test -n "$KEY1"
           test -f /tmp/clean-darwin-arm64/skills/locutus/SKILL.md
 
@@ -246,10 +264,12 @@ jobs:
           mkdir -p /tmp/clean-darwin-amd64
           tar -xzf dist/locutus-darwin-amd64.tar.gz -C /tmp/clean-darwin-amd64
           file /tmp/clean-darwin-amd64/locutus | grep -q "x86_64"
+          file /tmp/clean-darwin-amd64/locu | grep -q "x86_64"
           test -f /tmp/clean-darwin-amd64/skills/locutus/SKILL.md
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
             arch -x86_64 /tmp/clean-darwin-amd64/locutus --help | grep -F "Nim Native"
-            KEY2=$(arch -x86_64 /tmp/clean-darwin-amd64/locutus get-secret)
+            arch -x86_64 /tmp/clean-darwin-amd64/locu --help | grep -F "Nim Native"
+            KEY2=$(arch -x86_64 /tmp/clean-darwin-amd64/locu get-secret)
             test -n "$KEY2"
           else
             echo "Rosetta 2 not available on runner; verified Mach-O x86_64 via file utility"
@@ -280,11 +300,17 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Nim dependencies
+        shell: powershell
+        run: |
+          nimble install -y --depsOnly
+
       - name: Compile native Windows binary
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows-amd64
           nim c -d:release --opt:speed -o:dist\windows-amd64\locutus.exe src\locutus.nim
+          Copy-Item -Force dist\windows-amd64\locutus.exe dist\windows-amd64\locu.exe
           Copy-Item -Recurse -Force skills dist\windows-amd64\skills
           Compress-Archive -Path dist\windows-amd64\* -DestinationPath dist\locutus-windows-amd64.zip -Force
 
@@ -298,10 +324,14 @@ jobs:
           if (-not ($helpOutput -match "Nim Native")) {
             throw "locutus.exe --help failed verification"
           }
-          $secretOutput = & "C:\clean-locutus-test\locutus.exe" get-secret
+          $locuHelpOutput = & "C:\clean-locutus-test\locu.exe" --help
+          if (-not ($locuHelpOutput -match "Nim Native")) {
+            throw "locu.exe --help failed verification"
+          }
+          $secretOutput = & "C:\clean-locutus-test\locu.exe" get-secret
           Write-Host "Secret: $secretOutput"
           if ([string]::IsNullOrWhiteSpace($secretOutput)) {
-            throw "locutus.exe get-secret failed verification"
+            throw "locu.exe get-secret failed verification"
           }
           if (-not (Test-Path "C:\clean-locutus-test\skills\locutus\SKILL.md")) {
             throw "locutus-windows-amd64.zip missing skills\locutus\SKILL.md"
@@ -441,6 +471,11 @@ jobs:
           cache: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Nim dependencies
+        if: steps.npm-check.outputs.already_published == 'false'
+        run: |
+          nimble install -y --depsOnly
 
       - name: Compile Native Binary for NPM Package
         if: steps.npm-check.outputs.already_published == 'false'

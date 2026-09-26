@@ -74,9 +74,8 @@ jobs:
 
         run: |
           if [ -z "$LLM_API_KEY" ]; then
-            echo "::error ::LLM_API_KEY secret is not present in this runner environment."
-            echo "For fork PRs, approval on the 'llm-ci' environment is required to access repository secrets."
-            exit 1
+            echo "::notice ::LLM_API_KEY secret is not present in this runner environment. Skipping LLM integration tests."
+            exit 0
           fi
           export LLM_MODEL="${LLM_MODEL:-deepseek/deepseek-chat}"
           python -m pytest -v -m llm -s
