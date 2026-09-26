@@ -66,17 +66,14 @@ Locutus pairs natively with [**Braid**](https://github.com/axiomantic/braid):
 
 ## 30-Second Quickstart
 
-### 1. Install (Engine + AI Agent Skills)
+### 1. Install (Universal NPM Package)
 
 ```bash
-# macOS & Linux: Installs native binary and equips detected coding assistants
-curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.sh | bash
+# Install globally via npm (provides locu, locuti, and locutus):
+npm install -g @axiomantic/locu
 
-# Or on macOS via Homebrew:
-# brew install axiomantic/tap/locutus
-
-# Windows (PowerShell):
-# irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps1 | iex
+# Or run directly without installation via npx:
+npx @axiomantic/locu --help
 ```
 
 ### 2. Try it in Your Terminals
@@ -501,47 +498,19 @@ skilz install https://github.com/axiomantic/locutus
 skilz install https://github.com/axiomantic/locutus --project
 ```
 
-### Option 3: Install the Native Engine (Binary / Package Managers)
+### Option 3: Install via NPM (Universal Multi-Platform)
 
-If you manage command-line tools with your system package manager:
+The recommended distribution mechanism across macOS, Linux, and Windows is the official npm wrapper package:
 
-#### Homebrew (macOS & Linux)
 ```bash
-brew install axiomantic/tap/locutus
+# Install globally (automatically provisions harness rules and native binaries):
+npm install -g @axiomantic/locu
 
-# Equip your coding assistants:
-npx skills add axiomantic/locutus -g
-# Or using skilz:
-skilz install https://github.com/axiomantic/locutus
-# Or offline from local Homebrew files:
-npx skills add $(brew --prefix)/share/locutus/skills/locutus -g
+# Or run ad-hoc via npx without installing:
+npx @axiomantic/locu open worker-1 "backend"
 ```
 
-#### Debian / Ubuntu APT Repository
-```bash
-# 1. Add official APT repository
-echo "deb [trusted=yes] https://axiomantic.github.io/locutus/apt/ ./" | sudo tee /etc/apt/sources.list.d/locutus.list
-
-# 2. Update and install
-sudo apt-get update
-sudo apt-get install -y locutus
-
-# 3. Equip your coding assistants:
-npx skills add /usr/share/locutus/skills/locutus -g
-# Or using skilz:
-skilz install -f /usr/share/locutus/skills/locutus
-```
-
-#### Windows Scoop
-```powershell
-scoop install https://raw.githubusercontent.com/axiomantic/locutus/main/packaging/scoop/locutus.json
-
-# Scoop automatically runs post-install hooks to equip your skills.
-# You can also manually equip or reconfigure at any time:
-npx skills add "$dir\skills\locutus" -g
-# Or using skilz:
-skilz install -f "$dir\skills\locutus"
-```
+This installs `locu`, `locuti`, and `locutus` onto your PATH and automatically provisions instructions into `~/.claude/rules`, `~/.config/opencode/instructions`, and `~/.gemini/antigravity/rules`.
 
 #### Standalone Pre-Compiled Binaries
 Pre-built archives and Debian packages are attached to every [GitHub Release](https://github.com/axiomantic/locutus/releases):
@@ -558,34 +527,12 @@ Pre-built archives and Debian packages are attached to every [GitHub Release](ht
 
 ## Uninstallation
 
-You can remove the skill, the binary, or both:
-
-### 1. Remove the AI Agent Skill (Using Skill Tools)
-
 ```bash
-# Using skills.sh (npx):
+# Uninstall the global NPM package:
+npm uninstall -g @axiomantic/locu
+
+# Remove agent skills (if installed separately via skills.sh):
 npx skills remove locutus -g
-
-# Using skilz:
-skilz remove locutus
-```
-
-### 2. Remove the Binary / System Package
-
-```bash
-brew uninstall locutus          # Homebrew
-sudo apt remove locutus         # Debian / Ubuntu (or sudo dpkg -r locutus)
-scoop uninstall locutus         # Windows Scoop
-```
-
-### 3. Or Clean Unified Uninstaller (Removes Both Binary & Skills)
-
-```bash
-# macOS & Linux:
-curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.sh | bash -s -- --uninstall
-
-# Windows (PowerShell):
-irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps1 | iex -ArgumentList "-Uninstall"
 ```
 
 *Note: Configuration files in `~/.config/locutus` are preserved. To completely purge configurations and secret keys, run `rm -rf ~/.config/locutus`.*

@@ -1,0 +1,41 @@
+{
+  "name": "@axiomantic/locu",
+  "version": "0.1.2",
+  "description": "Inter-assistant communication bus, monotonic fencing locks, and work queues over Redis",
+  "main": "bin/run.js",
+  "bin": {
+    "locu": "./bin/run.js",
+    "locuti": "./bin/run.js",
+    "locutus": "./bin/run.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axiomantic/locutus.git"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "redis",
+    "multi-agent",
+    "orchestration",
+    "claude",
+    "opencode",
+    "antigravity"
+  ],
+  "author": "axiomantic",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/axiomantic/locutus/issues"
+  },
+  "homepage": "https://github.com/axiomantic/locutus#readme"
+}

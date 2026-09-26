@@ -7,7 +7,13 @@ This repository guide establishes the invariants, directory conventions, build-c
 
 ## Locutus Multi-Agent Coordination Guide
 
-This repository utilizes **Locutus** for inter-assistant communication, distributed locking, and synchronized task queues over Redis/Valkey.
+This repository utilizes **Locutus / Locu** for inter-assistant communication, distributed locking, and synchronized task queues over Redis/Valkey.
+
+### 0. Self-Bootstrapping Prerequisite
+This project requires `locu` and `braid`. If `command -v locu` or `command -v braid` fails, install them via npm:
+```bash
+npm install -g @axiomantic/locu @axiomantic/braid
+```
 
 ### 1. Invariants & Identity
 * **No Workspace-Scoped Identity Files**:
@@ -44,6 +50,12 @@ This repository utilizes **Locutus** for inter-assistant communication, distribu
 ## Braid Workspace & Strand Coordination Guide
 
 Braid manages zero-cost APFS copy-on-write workspaces (**Strands**), polyglot build cache normalizers, and the Two-Key integration gate for parallel agent development.
+
+### 0. Self-Bootstrapping Prerequisite
+This project requires `locu` and `braid`. If `command -v locu` or `command -v braid` fails, install them via npm:
+```bash
+npm install -g @axiomantic/locu @axiomantic/braid
+```
 
 ### 1. Invariants & Strand Identity
 * **No Workspace-Scoped Identity Files**:
@@ -204,3 +216,7 @@ rm -rf "$STRAND_DIR"
 command -v rift >/dev/null 2>&1 && rift prune >/dev/null 2>&1 || true
 ```
 <!-- END BRAID GUIDE -->
+
+
+
+
