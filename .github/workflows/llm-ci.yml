@@ -39,19 +39,14 @@ jobs:
           sudo apt-get install -y redis-tools
           redis-cli ping
 
-      - name: Setup asdf
-        uses: asdf-vm/actions/setup@v3
+      - name: Set up Nim via mise
+        uses: jdx/mise-action@v4
         with:
-          asdf_branch: v0.14.1
-
-      - name: Install Nim via asdf-nim
-        run: |
-          . "$HOME/.asdf/asdf.sh"
-          asdf plugin add nim https://github.com/asdf-community/asdf-nim.git
-          asdf install nim 2.2.0
-          asdf global nim 2.2.0
-          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
-          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+          tool_versions: |
+            nim 2.2.12
+          cache: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify Nim compiler
         run: |
