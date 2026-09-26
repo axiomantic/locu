@@ -1087,14 +1087,14 @@ proc sendDesktopNotification*(msgNode: JsonNode) =
       let escapedTitle = title.replace("\"", "\\\"")
       let escapedBody = displayBody.replace("\"", "\\\"")
       let script = "display notification \"" & escapedBody & "\" with title \"" & escapedTitle & "\""
-      discard execCmd("osascript -e " & quoteShell(script))
+      discard execCmdEx("osascript -e " & quoteShell(script))
     elif defined(windows):
       let escapedTitle = title.replace("'", "''")
       let escapedBody = displayBody.replace("'", "''")
-      let psCmd = "$ws = New-Object -ComObject Wscript.Shell; $ws.Popup('" & escapedBody & "', 3, '" & escapedTitle & "', 64)"
-      discard execCmd("powershell -NoProfile -Command " & quoteShell(psCmd))
+      let psCmd = "$ws = New-Object -ComObject Wscript.Shell; [void]$ws.Popup('" & escapedBody & "', 3, '" & escapedTitle & "', 64)"
+      discard execCmdEx("powershell -NoProfile -Command " & quoteShell(psCmd))
     else:
-      discard execCmd("notify-send " & quoteShell(title) & " " & quoteShell(displayBody))
+      discard execCmdEx("notify-send " & quoteShell(title) & " " & quoteShell(displayBody))
   except Exception:
     discard
 

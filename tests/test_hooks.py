@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = REPO_ROOT / "skills" / "locutus" / "hooks"
-BIN_LOCUTUS = REPO_ROOT / "bin" / "locutus"
+BIN_LOCUTUS = REPO_ROOT / "bin" / ("locutus.exe" if sys.platform == "win32" or (REPO_ROOT / "bin" / "locutus.exe").exists() else "locutus")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 TEST_PREFIX = "test_locutus_hooks:"
 

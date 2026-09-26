@@ -32,6 +32,7 @@ class TestLocutusNimBinary(unittest.TestCase):
         self.test_home = tempfile.mkdtemp(prefix="locutus_test_home_")
         self.env = os.environ.copy()
         self.env["HOME"] = self.test_home
+        self.env["USERPROFILE"] = self.test_home
         self.env["LOCUTUS_REDIS_URL"] = REDIS_URL
         self.env["LOCUTUS_REDIS_PREFIX"] = TEST_PREFIX
         self.env["LOCUTUS_PROJECT"] = "test_project"
