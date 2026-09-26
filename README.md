@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/axiomantic/locutus/actions/workflows/ci.yml/badge.svg)](https://github.com/axiomantic/locutus/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-108%20Passing-success.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-116%20Passing-success.svg)](tests/)
 [![Redis](https://img.shields.io/badge/Redis-6.2%2B-red.svg)](https://redis.io)
 [![Valkey](https://img.shields.io/badge/Valkey-7.2%2B-purple.svg)](https://valkey.io)
 [![Nim](https://img.shields.io/badge/Nim-2.0%2B-yellow.svg)](https://nim-lang.org)
@@ -35,8 +35,10 @@
   - [Option 3: Install Native Engine (Binary / Package Managers)](#option-3-install-the-native-engine-binary--package-managers)
 - [Uninstallation](#uninstallation)
 - [CLI Reference](#cli-reference)
+- [Autonomous Agent Lifecycle: Hooks, Extensions & Recipes](#autonomous-agent-lifecycle-hooks-extensions--recipes)
 - [Configuration Architecture & Profiles](#configuration-architecture--profiles)
 - [Security & Prompt Firewall](#security--prompt-injection-firewall)
+- [Cross-Host Multi-Machine Coordination](#cross-host-multi-machine-coordination)
 - [Redis Cluster Support](#redis-cluster-support-hash-tags)
 - [Assistant Integration](#assistant-integration-skill)
 - [Performance & Benchmarks](#performance--benchmarks)
@@ -47,9 +49,18 @@
 
 ## What is Locutus?
 
-**Locutus** is an inter-agent communication bus that lets AI coding assistants (such as Claude Code, Cursor, Windsurf, Antigravity, and Ollama) exchange tasks and messages across terminals, editors, and machines.
+**Locutus** (CLI alias: `locu`) is an inter-agent communication bus that lets AI coding assistants (such as Claude Code, OpenCode, Cursor, Windsurf, Antigravity, and Ollama) exchange tasks and messages across terminals, editors, and machines.
 
-Instead of running a complex background server, Locutus routes and queues messages directly through **Redis**.
+Instead of running a complex background server, Locutus routes and queues messages directly through **Redis** or **Valkey**.
+
+### Pairing with Braid for Workspace Isolation
+While Locutus coordinates agent messaging, task claiming, and distributed locking, agents frequently need isolated workspaces to compile and test code without stepping on `main`.
+
+Locutus pairs natively with [**Braid**](https://github.com/axiomantic/braid):
+1. **Claim Task**: `locu claim queue:myproj:tasks --lease 1800` (yields monotonic `fencing_token`).
+2. **Spin Zero-Cost Strand**: `braid new <task_id> --worktree` (sub-second APFS CoW workspace).
+3. **Verify Two-Key Gate**: `braid gate --json` (Key 1 in-memory conflict check + Key 2 live compiler/test suite).
+4. **Weave & Acknowledge**: `braid weave && locu ack queue:myproj:tasks <task_id>`.
 
 ---
 
@@ -442,13 +453,13 @@ flowchart TD
 
 Locutus consists of two components:
 1. **The Native Engine (CLI Binary)**: High-speed, compiled binary (`locutus`) that communicates directly with Redis.
-2. **The AI Agent Skill**: Instructions (`SKILL.md`) that teach your AI assistants (Claude Code, Antigravity, OpenCode, Codex, Cursor) how to use Locutus.
+2. **The AI Agent Skill & Extensions**: Instructions (`SKILL.md`), plugins, extensions, and rule files that equip your AI assistants (**Claude Code, OpenCode, Pi Coding Agent, Cursor, GitHub Copilot, OpenAI Codex, Antigravity, Hermes**) to coordinate over Locutus.
 
 You can install them together in one step, or install each component separately:
 
 ### Option 1: Unified One-Line Installer (Recommended)
 
-Installs the native binary **and** automatically configures skills across all detected AI assistants:
+Installs the native binary **and** automatically detects and configures all installed AI coding harnesses:
 
 ```bash
 # macOS & Linux:
@@ -457,6 +468,16 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/ins
 # Windows (PowerShell):
 irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps1 | iex
 ```
+
+#### What the Unified Installer Deploys:
+- **Native Binary**: Compiles or downloads `locutus` to `/usr/local/bin` (or `~/.local/bin`).
+- **Claude Code**: Deploys `SKILL.md` and `wire_spec.md` to `~/.claude/skills/locutus/`.
+- **OpenCode**: Installs native plugin `opencode-ear.js` to `~/.config/opencode/plugins/locutus.js`.
+- **Pi Coding Agent (`pi.dev`)**: Installs native TypeScript extension to `~/.pi/agent/extensions/locutus.ts` and skill to `~/.pi/agent/skills/locutus/`.
+- **Cursor**: Deploys MDC rule to `.cursor/rules/locutus.mdc` (project) or `~/.cursor/rules/locutus.mdc` (global).
+- **GitHub Copilot**: Deploys repository instruction rules to `.github/copilot-instructions.md`.
+- **Antigravity / Gemini**: Deploys skill to `~/.gemini/config/skills/locutus/` and `~/.gemini/antigravity/skills/locutus/`.
+- **OpenAI Codex & Hermes**: Deploys skill to `~/.codex/skills/locutus/` and `~/.hermes/skills/locutus/`.
 
 ### Option 2: Install the AI Agent Skill (Using Skill Tools)
 
@@ -575,13 +596,15 @@ irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
-| `locutus open [name] [tags] [--listen]` | Registers identity, sets project tags, drains offline backlog, and optionally arms background listener. | `locutus open coder "qa,python" --listen` |
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `locutus open [name] [tags] [--listen] [--session-id <key>]` | Registers identity, binds session ID, sets project tags, drains offline backlog, and optionally arms background listener. | `locutus open coder "qa,python" --listen` |
 | `locutus listen [name] [timeout]` | Blocks on inbox, refreshes heartbeat, drops tampered messages. | `locutus listen` |
-| `locutus send --to <target> ...` | Sends direct (O2O) message with HMAC signature. | `locutus send --to worker-1 --subject "Fix Bug" --body "src/api.py"` |
-| `locutus reply --to <sender> ...` | Direct reply tagged with `type=reply` and optional `--listen` re-arm. | `locutus reply --to lead --subject "Re: Bug" --body "Fixed" --listen` |
-| `locutus broadcast [--tags <tags>] ...` | Multicasts to all agents matching tags within project. | `locutus broadcast --tags "qa" --subject "New Release" --body "Verify"` |
-| `locutus request --to <target> ...` | Synchronous RPC: dispatches task and blocks until reply received. | `locutus request --to solver --subject "Calc" --body "2+2"` |
-| `locutus scatter --targets <tgts> ...` | Fan out task to agents/tags and gather responses until quorum. | `locutus scatter --targets @qa --subject "Tests" --body "run" --quorum 2` |
+| `locutus send --to <target> ... [--immediate\|--soon]` | Sends direct (O2O) message with HMAC signature and delivery urgency. | `locutus send --to worker-1 --subject "Fix Bug" --body "src/api.py" --soon` |
+| `locutus reply --to <sender> ... [--immediate\|--soon]` | Direct reply tagged with `type=reply`, urgency, and optional `--listen` re-arm. | `locutus reply --to lead --subject "Re: Bug" --body "Fixed" --listen` |
+| `locutus broadcast [--tags <tags>] ... [--immediate\|--soon]` | Multicasts to all agents matching tags within project with urgency. | `locutus broadcast --tags "qa" --subject "New Release" --body "Verify"` |
+| `locutus request --to <target> ... [--immediate\|--soon]` | Synchronous RPC: dispatches task and blocks until reply received. | `locutus request --to solver --subject "Calc" --body "2+2"` |
+| `locutus scatter --targets <tgts> ... [--immediate\|--soon]` | Fan out task to agents/tags and gather responses until quorum. | `locutus scatter --targets @qa --subject "Tests" --body "run" --quorum 2` |
 | `locutus enqueue <queue> ...` | Pushes task to competing-consumers worker queue. | `locutus enqueue jobs --subject "Compile" --body "gcc -O2 main.c"` |
 | `locutus work <queue> [timeout]` | Pops task from competing-consumers worker queue (supports `--run-id`). | `locutus work jobs 30 --run-id run_01` |
 | `locutus claim <queue> [timeout]` | Non-destructively leases task from queue with DLQ escalation. | `locutus claim jobs 30 --lease 60 --run-id run_01` |
@@ -601,10 +624,299 @@ irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps
 | `locutus sub <channel> [timeout]` | Listens for ephemeral pub/sub broadcasts without queue buildup. | `locutus sub alerts 10` |
 | `locutus who [-a\|--all] [--json] [filter]` | Formatted table or JSON of active cluster agents, states, and tags (auto-prunes dead agents). | `locutus who`, `locutus who -a`, or `locutus who --json` |
 | `locutus tag <add\|remove\|set> <tags>` | Dynamically adjusts tags without dropping queued messages. | `locutus tag add "lead"` |
-| `locutus drain [count]` | Atomically drains up to N offline messages (FIFO). | `locutus drain 10` |
-| `locutus close` | Graceful deregistration, clears tags and heartbeat. | `locutus close` |
+| `locutus session <set\|get\|remove\|list> [args...]` | Manages global `<runtime>:<sessionId>` to agent mappings. | `locutus session set opencode:ses_123 worker-1` |
+| `locutus check-inbox [name]` | High-speed inbox check (exits 0 with count if messages exist, exits 1 if empty). | `locutus check-inbox worker-1` |
+| `locutus drain [count] [name] [--format json\|hook\|raw] [--hook]` | Atomically pops, authenticates, and decrypts offline messages (FIFO). Supports prompt formatting for LLM hooks. | `locutus drain 10 worker-1 --hook` |
+| `locutus close [name] [--session-id <key>]` | Graceful deregistration, clears tags, heartbeat, and session mapping. | `locutus close` |
 | `locutus get-secret` | Prints or initializes 256-bit cluster secret. | `locutus get-secret` |
 | `locutus config <show\|get\|path\|init>` | Introspects resolved settings, provenance, and paths. | `locutus config show` or `locutus config get redis_url` |
+
+---
+
+## Autonomous Agent Lifecycle: Hooks, Extensions & Recipes
+
+Coordinating autonomous coding assistants requires handling two distinct operational states:
+
+1. **When Busy (In-Turn)**: Do NOT abort active tool calls destructively. Queue incoming messages and process them on the assistant's next response turn (**`--soon`**).
+2. **When Idle (Between Turns)**: An assistant waiting on `stdin` has a paused lifecycle. Active extensions, reactive background tasks, or continuation hooks must wake the sleeping process when a message arrives.
+
+> [!NOTE] **Modernization: Elimination of Tmux & Standalone Ears**
+> Previous iterations relied on a standalone Node/Python ear daemon that injected simulated keystrokes via `tmux send-keys`. This proved brittle, error-prone, and unnatural for modern desktop IDEs (Cursor, VS Code, Antigravity, OpenCode). Locutus has completely eliminated `tmux` dependencies in favor of:
+> - **In-process extensions** for OpenCode (`opencode-ear.js`) and Pi (`pi-ear.ts`) that directly hook the host's event loop and prompt APIs.
+> - **Continuation Stop hooks** for Claude Code (`claude_stop_hook.py`), OpenAI Codex (`codex_stop_hook.py`), and Antigravity (`agy_stop_hook.py`) that intercept turn completion and feed pending inbox tasks into immediate continuation turns.
+> - **Native Desktop Notifications** (`locutus listen [agent] --notify`) compiled directly into the Nim engine for Cursor, Copilot, and background terminals.
+
+### The Lifecycle Matrix
+
+| Assistant Runtime | In-Turn Deferred Delivery (`soon`) | Idle Interruption Mechanism |
+| :--- | :--- | :--- |
+| **OpenCode** | `client.session.promptAsync` appends turn without aborting active fibers | In-process plugin `opencode-ear.js` streams listener and wakes session |
+| **Pi Coding Agent (`pi.dev`)** | In-process TypeScript fiber delivers via `deliverPiPrompt` | Background fiber wakes session; `--immediate` invokes `pi.abort()` preemption |
+| **Claude Code** | `Stop` hook inspects inbox, returns `decision: "block"` with `additionalContext` | In-turn `--listen` re-arm or native `locutus listen --notify` |
+| **OpenAI Codex** | `Stop` hook returns `decision: "block"` with `reason` as next prompt | One-shot subagent listener or `locutus listen --notify` |
+| **Antigravity (AGY)** | `Stop` hook returns `decision: "continue"` with context | Background task `locutus listen` triggers native **Reactive Wakeup** |
+| **Cursor** | In-turn bounded wait (`locutus listen <agent> 120`) via `terminal` tool | Native `locutus listen --notify` triggers OS desktop notification |
+| **GitHub Copilot** | CLI / terminal execution with structured JSON prompt blocks | Native `locutus listen --notify` triggers OS desktop notification |
+
+---
+
+### Canonical Command Recipes: What to Run & When (Zero Guesswork)
+
+To eliminate any ambiguity or cognitive load when coordinating across sessions:
+
+> [!IMPORTANT] **The Core Invariant: Never Leave an Agent in a "Deaf" State**
+> Locutus is an asynchronous distributed message bus over Redis. An agent can ONLY receive messages if it has an active listener running or has a continuation hook installed. If an agent completes a task and concludes its turn without an active listener, it becomes "deaf"—subsequent messages from peer agents will sit in Redis unread until human intervention occurs. Every command sequence below is designed to ensure continuous, uninterrupted inbox coverage.
+
+```mermaid
+flowchart TD
+    Start([Session Bootstrap]) --> Recipe1["Recipe 1: Default Startup<br/><code>locutus open &lt;my-name&gt; '&lt;tags&gt;' --listen</code>"]
+    Recipe1 --> InTurn["Execute Task / Tool Calls<br/>(Normal Turn Processing)"]
+    InTurn --> Check{"Do you need to reply or wait for next task?"}
+    Check -->|Reply with Result & Await Next Task| Recipe2["Recipe 2: Atomic Reply & Re-Arm<br/><code>locutus reply --to &lt;sender&gt; --reply-to '&lt;id&gt;' ... --listen</code>"]
+    Check -->|No Reply Needed, Just Wait| Recipe2b["Recipe 2b: Bounded Wait<br/><code>locutus listen &lt;my-name&gt; 120</code>"]
+    Check -->|Work Completely Finished| RecipeClose["Recipe 5: Clean Disconnect<br/><code>locutus close &lt;my-name&gt;</code>"]
+    Check -->|Using Autonomous Continuation Hooks| Recipe4["Recipe 4: Stop Hook Continuation<br/>Turn ends naturally; hook detects incoming message & continues"]
+    Check -->|Subagent Completed One-Shot Listen| Recipe3["Recipe 3: Relaunch Subagent Ear<br/>Spawn fresh subagent with <code>locutus listen &lt;my-name&gt;</code>"]
+    Recipe2 --> InTurn
+    Recipe2b --> InTurn
+    Recipe3 --> InTurn
+    Recipe4 --> InTurn
+    RecipeClose --> Done([Session Closed Cleanly])
+```
+
+#### 1. Recipe 1: Default Startup ("Open and Listen")
+- **Claude Code, OpenAI Codex, Cursor, Copilot (Default Invocation)**:
+  ```bash
+  locutus open <my-name> "<tags>" --listen
+  ```
+  - **Why `--listen` is default**: Passing `--listen` (`-l`) registers identity in Redis, outputs the registration banner, drains any offline backlog, and *immediately transitions in-process into listening mode*. This prevents a "dead-air" gap between registration and first task reception.
+  - *(Only omit `--listen` if you have immediate, active work to perform before listening: `locutus open <my-name> "<tags>"`).*
+- **OpenCode & Pi (`pi.dev`)**: Run `locutus open <my-name> "<tags>"`. Do NOT pass `--listen`. The bundled in-process plugin (`opencode-ear.js` / `pi-ear.ts`) runs an unblocked background fiber that handles continuous listening automatically.
+- **Antigravity (AGY)**:
+  - Register: `run_command(CommandLine="locutus open <my-name> \"<tags>\"", WaitMsBeforeAsync=5000)`
+  - Arm background ear: `run_command(CommandLine="locutus listen <my-name>", WaitMsBeforeAsync=500)` (Native reactive wakeup fires when a message arrives).
+
+#### 2. Recipe 2: Post-Task Transition ("After Task Finishes: Do I Re-Open?")
+- **DO I NEED TO RUN `locutus open` AGAIN?**
+  **NO! Never re-run `locutus open` after completing a task.** Your registration, tags, and heartbeat remain active in Redis for the session duration. Re-running `open` unnecessarily resets registration state. Only re-run `locutus open` if the session crashed, reconnected after a long network disconnect, or heartbeat expired.
+- **HOW DO I SEND MY RESULT AND WAIT FOR THE NEXT TASK?**
+  Always use **Atomic Reply & Re-Arm**:
+  ```bash
+  locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
+  ```
+  - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`locutus request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
+  - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. This prevents the race condition where a peer sends a follow-up task before your next command can execute. When the next message arrives, it outputs the JSON payload and exits `0` directly into your next turn.
+- **WHAT IF NO REPLY IS NEEDED (JUST WAITING FOR WORK)?**
+  Run:
+  ```bash
+  locutus listen <my-name> 120
+  ```
+  - **Why `120` seconds**: A bounded timeout prevents hanging indefinitely on dead connections while consuming **0 CPU and 0 tokens** while blocked.
+
+#### 3. Recipe 3: Subagent Ear Completion & Relaunch
+When running in an assistant that uses a one-shot subagent to listen (e.g. OpenAI Codex Pattern 2):
+1. The subagent runs `locutus listen <my-name>`, blocks until ONE message arrives, outputs the JSON, and terminates cleanly.
+2. The parent assistant receives the message JSON.
+3. The parent assistant executes the requested work and sends the reply via `locutus reply --reply-to "<id>" ...`.
+4. **IMMEDIATE RELAUNCH**: Before or while concluding the turn, the parent assistant MUST spawn a fresh one-shot subagent running `locutus listen <my-name>` to catch the next message.
+
+#### 4. Recipe 4: Autonomous Turn Relaunching via Stop Hooks (Zero Cognitive Overhead)
+If your harness supports lifecycle hooks (`claude_stop_hook.py`, `codex_stop_hook.py`, `agy_stop_hook.py`):
+- You NEVER need to write `while true` loops, detach processes with `&`, or remember to re-listen.
+- Whenever your turn finishes, the harness invokes the hook.
+- The hook checks `locutus check-inbox`. If a message is waiting, it returns `{"decision": "block", ...}`, preventing the session from going idle and immediately starting a continuation turn with the new message payload!
+
+#### 5. Recipe 5: Clean Disconnect / Session End
+When your assigned work is completely finished and you will not take any further tasks:
+```bash
+locutus close <my-name>
+```
+- **Why `locutus close` is expected**: Removes your agent's heartbeat from Redis, unlinks the listener PID lock, and clears session mappings. This ensures peer agents do not see you as active online (`locutus who`) and prevents tasks from being queued to an abandoned session.
+
+---
+
+### Engine Lifecycle Post-Ambles & The Quiet Flag
+
+When `locutus listen` delivers a message and exits, the Nim engine automatically prints a **Harness-Aware Lifecycle Notice** to `stderr`:
+```text
+[LOCUTUS LIFECYCLE NOTICE] Listener for 'worker-1' delivered message 'msg_...' and EXITED.
+- Detected harness: <harness> (consult SKILL.md Step 2 for your harness playbook)
+- Expected follow-up action:
+  1. When finished, reply and re-arm atomically in one command:
+     locutus reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
+  2. If no reply is needed, wait for next task:
+     locutus listen worker-1 120
+  3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.
+  4. If disconnecting or finishing session work completely:
+     locutus close worker-1
+(To silence this notice: pass --quiet / -q, or set LOCUTUS_QUIET=1)
+```
+
+- **Stdout remains pure JSON**: Shell scripts, pipelines (`locutus listen | jq .`), and automated test parsers continue reading clean JSON without parse errors.
+- **LLM tool runners capture stderr**: In Claude Code, Codex, Cursor, and AGY, tool execution captures stderr alongside stdout, providing the LLM with direct, unmistakable next-step guidance tailored to its runtime harness.
+- **Harness Detection**: The engine automatically detects the runtime harness (OpenCode, Pi, Codex, Antigravity, Claude, Cursor, Copilot) via session key prefixes (`opencode:`, `pi:`, `codex:`, `agy:`, `claude:`, `cursor:`) or environment variables (`OPENCODE_SESSION_ID`, `PI_SESSION_ID`, `CODEX_SESSION_ID`, `ANTIGRAVITY_APP_DIR`, `CLAUDE_CODE`, `CURSOR_APP`).
+  - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `locutus listen`.
+  - **OpenAI Codex**: The notice instructs the agent to dispatch a fresh one-shot listener subagent before concluding its turn (SKILL.md Step 2b).
+  - **Antigravity**: The notice instructs the agent to re-arm its reactive background listener via `run_command` or append `--listen` (SKILL.md Step 2d).
+  - **Claude / Cursor / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or bounded wait.
+- **Suppression / Quiet Flag**: To suppress the lifecycle notice in automated scripts or extensions, pass `--quiet` / `-q`, or export `LOCUTUS_QUIET=1`.
+
+---
+
+### 1. Claude Code Hook Configuration (`.claude/settings.json`)
+
+Configure Claude Code to automatically check the Locutus inbox whenever a response finishes:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/skills/locutus/hooks/claude_stop_hook.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py end"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 2. OpenAI Codex Hook Configuration (`~/.codex/hooks.json`)
+
+Configure Codex to feed incoming messages directly into continuation turns:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/skills/locutus/hooks/codex_stop_hook.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py end"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 3. OpenCode Plugin Configuration (`opencode.json`)
+
+Add `opencode-ear.js` to your `opencode.json` plugin array:
+
+```json
+{
+  "plugin": [
+    "~/.config/opencode/opencode-ear.js"
+  ]
+}
+```
+*Automatically maps `opencode:<sessionId>` in `~/.config/locutus/sessions.json`, injects `LOCUTUS_SESSION_ID` via `shell.env`, and delivers messages via `promptAsync` (or `abort` for `--immediate`).*
+
+### 4. Desktop Notifications for Idle Sessions (`locutus listen --notify`)
+
+When running an assistant in Cursor, VS Code, or an idle terminal tab in the background, you can enable native operating system notifications:
+
+```bash
+locutus listen --notify
+# Or for a specific agent:
+locutus listen backend-worker --notify
+```
+When a peer message arrives, Locutus displays a native OS notification banner (macOS Notification Center, Windows Action Center toast, or Linux `notify-send`) alerting you to the incoming task.
+
+### 5. Pi Coding Agent Extension (`~/.pi/agent/extensions/locutus.ts`)
+
+For [Pi Coding Agent (`pi.dev`)](https://pi.dev), Locutus provides a native TypeScript extension (`pi-ear.ts`):
+
+```bash
+# Automated via install.sh or manual setup:
+mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills/locutus
+cp skills/locutus/pi-ear.ts ~/.pi/agent/extensions/locutus.ts
+cp skills/locutus/SKILL.md ~/.pi/agent/skills/locutus/SKILL.md
+```
+
+- **Native Tool Registration**: Registers `locutus` directly into Pi's tool registry (`pi.registerTool`) with full subcommand schemas (`open`, `send`, `reply`, `listen`, `status`, `who`).
+- **Session Mapping**: Automatically maps `pi:<sessionId>` to `LOCUTUS_AGENT_NAME` in `~/.config/locutus/sessions.json`.
+- **Background Listener Fiber**: Asynchronously streams `locutus listen <agent> 0` in an unblocked fiber.
+- **Urgent Preemption**: For `--immediate` messages, triggers `pi.abort()` to halt active computation before injecting the prompt into the session turn.
+
+### 6. Cursor Rules (`.cursor/rules/locutus.mdc`)
+
+Equip Cursor agents with project or user-level rules:
+
+```bash
+# Project-level rule:
+mkdir -p .cursor/rules
+cp skills/locutus/rules/cursor-rules.mdc .cursor/rules/locutus.mdc
+
+# Or global user rule:
+mkdir -p ~/.cursor/rules
+cp skills/locutus/rules/cursor-rules.mdc ~/.cursor/rules/locutus.mdc
+```
+
+- **Execution Model**: Directs Cursor agents to execute Locutus subcommands using Cursor's built-in `terminal` tool.
+- **In-Turn Waiting**: Bounded listening (`locutus listen <my-name> 120`) while waiting for expected peer responses.
+- **Idle Notifications**: Run `locutus listen <name> --notify` in a background terminal for native desktop notifications.
+
+### 7. GitHub Copilot Instructions (`.github/copilot-instructions.md`)
+
+Instruct GitHub Copilot CLI and Copilot Chat agent mode:
+
+```bash
+mkdir -p .github
+cp skills/locutus/rules/copilot-instructions.md .github/copilot-instructions.md
+```
+
+- **Execution Model**: Coordinates via `gh copilot` CLI and terminal task execution.
+- **Protocol Adherence**: Formats requests with explicit types (`task`, `reply`, `event`) and honors `--immediate` preemption flags.
 
 ---
 
@@ -701,6 +1013,98 @@ flowchart LR
 2. **Untrusted Payloads Dropped**: Forged or unauthenticated messages are rejected immediately. They never enter the assistant's context window.
 3. **Local Secret**: The secret key (`~/.config/locutus/secret`, `0600` permissions) stays on your machine. It never enters prompts, Git commits, or Redis keys.
 4. **Optional End-to-End Encryption (E2EE)**: Set `LOCUTUS_ENCRYPT=1` to encrypt message bodies with AES-256-CBC PBKDF2, ensuring plain text is never stored in Redis.
+
+---
+
+## Cross-Host Multi-Machine Coordination
+
+Locutus is built from the ground up for seamless distributed coordination across multiple physical workstations, cloud instances, and isolated development containers. Multiple assistants running on different machines coordinate over a single Redis or Valkey instance with full cryptographic authentication and host-level provenance tracking.
+
+```mermaid
+flowchart LR
+    subgraph HostA["Machine A: macOS Workstation (dev-mac)"]
+        A_Lead["Lead Assistant<br/><i>(Claude Code)</i>"]
+        A_CLI["locutus CLI / Ear"]
+        A_Lead <--> A_CLI
+    end
+
+    subgraph HostB["Machine B: Linux GPU Server (gpu-box)"]
+        B_Worker["Worker Assistant<br/><i>(OpenCode)</i>"]
+        B_Ear["OpenCode Ear Plugin"]
+        B_Worker <--> B_Ear
+    end
+
+    subgraph Bus["Shared Redis / Valkey Infrastructure"]
+        RedisServer[("Central Redis / Valkey<br/><i>Local LAN, Upstash, or AWS</i>")]
+    end
+
+    A_CLI <-->|Direct Connection or<br/>SSH Tunnel :6379| RedisServer
+    B_Ear <-->|Direct Connection or<br/>SSH Tunnel :6379| RedisServer
+
+    classDef host fill:#f0f4c3,stroke:#9e9d24,stroke-width:1.5px;
+    classDef redis fill:#ffebee,stroke:#c62828,stroke-width:1.5px;
+    class HostA,HostB host;
+    class Bus,RedisServer redis;
+```
+
+### 1. Connection Topologies: Direct Shared Network vs. SSH Port Forwarding
+
+Depending on your network architecture and security policies, choose between direct network access or encrypted SSH tunnels:
+
+#### Option A: Direct Shared Redis / Valkey Network
+When your machines reside on the same local network, VPN, Tailscale mesh, or connect to a cloud service (e.g., Upstash, AWS ElastiCache, DigitalOcean):
+```bash
+# Set connection string on all participating hosts:
+export LOCUTUS_REDIS_URL="redis://192.168.1.50:6379"
+# Or with TLS:
+export LOCUTUS_REDIS_URL="rediss://default:secret@cluster.internal:6379"
+
+# Share the HMAC secret file across machines (0600 permissions):
+scp ~/.config/locutus/secret user@remote-box:~/.config/locutus/secret
+```
+
+#### Option B: Encrypted SSH Port-Forwarding Tunnel
+If the remote Redis instance is not exposed to the public network, establish a secure SSH tunnel from the worker host:
+```bash
+# On the remote worker machine, forward local port 6379 to the central Redis host:
+ssh -N -L 6379:localhost:6379 user@primary-workstation.internal &
+
+# Locutus automatically connects to localhost:6379 over the encrypted tunnel:
+locutus who
+```
+
+### 2. Host Origin Provenance Header (`[host: <hostname>]`)
+
+In multi-machine topologies, coding assistants often exchange file paths, terminal commands, and workspace references. If an assistant on `dev-mac` asks an assistant on `gpu-box` to *"inspect `/Users/alice/repo/config.json`"*, the recipient would fail if it assumed the path was local.
+
+To eliminate this ambiguity:
+- Locutus automatically stamps the origin machine's hostname on every message envelope:
+  ```json
+  {
+    "id": "msg_1710789000_lead_4242",
+    "from": "lead-dev",
+    "to": "gpu-trainer",
+    "host": "dev-mac.local",
+    "type": "task",
+    "subject": "Run Benchmark",
+    "body": "Run python scripts/train.py --batch 64",
+    "urgency": "soon"
+  }
+  ```
+- Passive drain hooks and active ears render the origin host directly in the context header:
+  ```text
+  [LOCUTUS BUS] 1 new message received on inbox for 'gpu-trainer':
+  - From @lead-dev [host: dev-mac.local] (subject: "Run Benchmark") [type: task, urgency: soon]:
+    Run python scripts/train.py --batch 64
+  ```
+- This immediately informs the receiving assistant that filepaths originating from `@lead-dev` reside on `dev-mac.local`, prompting the agent to either operate remotely via git/rsync or request code payloads over the message body.
+
+### 3. Multi-Host Lock Safety & Watchdog Sweeping
+
+Distributed environments must handle network partitions and machine restarts without corrupting agent state:
+- **Foreign Host Lock Isolation**: Listener heartbeats and worker leases store both the PID and origin hostname. When an assistant runs `locutus open` or `locutus sweep`, it checks whether a lock belongs to the *current host*:
+  - **Local Host**: If the lock was created by the local machine and the PID is dead, it is immediately self-healed and recycled.
+  - **Foreign Host**: If the lock was created by a remote host (`host != currentHost`), Locutus **never** assumes the PID is dead locally. It preserves the remote lock until the remote heartbeat TTL naturally expires, completely preventing split-brain conditions across machines.
 
 ---
 

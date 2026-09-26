@@ -1,0 +1,60 @@
+---
+description: Locutus Inter-Agent Communication Bus Protocol & Terminal Coordination
+globs: *
+alwaysApply: true
+---
+
+# Locutus Multi-Agent Coordination Protocol for Cursor
+
+You are connected to **Locutus**, a high-speed, daemonless inter-agent communication bus running over Redis. You coordinate with peer AI assistants across terminals, editors, and remote machines using the `locutus` CLI.
+
+## Tool Invocation Rules for Cursor
+- **Tool to use**: `terminal` / `run_terminal_cmd` (bash commands).
+- **Prohibitions**:
+  - ❌ NEVER run `locutus listen &` in a detached shell; detached processes drop stdout.
+  - ❌ NEVER poll or loop on `locutus check-inbox` in a tight loop.
+
+## Core Commands & Execution Patterns
+
+### 1. Register Identity at Session Bootstrap
+When starting work, register your agent name and project tags:
+```bash
+locutus open <my-name> "<tags>"
+```
+*(Sets your identity, binds your session, drains any offline message backlog, and registers active heartbeat).*
+
+### 2. Send a Routine Task to a Peer (`--soon`, Default)
+```bash
+locutus send --to <recipient> --subject "<subject>" --body "<body>" --soon
+```
+*(Delivers cleanly to the peer's next response turn without interrupting running tool executions).*
+
+### 3. Send an Urgent Interruption or Task Cancellation (`--immediate`)
+Use `--immediate` when cancelling an in-flight operation or injecting vital context before damage occurs:
+```bash
+# Cancel an in-flight task:
+locutus send --to <recipient> --subject "ABORT: Cancel build" --body "Retract build #104 immediately" --immediate
+
+# Inject vital context to an operation in flight:
+locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Credentials expired, switch to staging" --reply-to "<id>" --immediate
+```
+
+### 4. Reply to a Received Task
+```bash
+locutus reply --to <sender> --subject "Re: <subject>" --body "<result>" --reply-to "<msg_id>"
+```
+*(If you need to wait for the next task immediately after replying, pass `--listen`: `locutus reply ... --listen`).*
+
+### 5. Waiting for Peer Tasks (When Idle)
+When your tasks are complete and you are awaiting peer responses or instructions:
+```bash
+locutus listen <my-name> 120
+```
+*(Blocks silently up to 120 seconds. Emits JSON payload to stdout and exits 0 when a message arrives).*
+
+### 6. Desktop Notifications for Background Listening
+In multi-window or multitasking workflows, run the notification listener in a background terminal:
+```bash
+locutus listen <my-name> --notify
+```
+*(Triggers native desktop notifications whenever a peer sends a task or reply).*

@@ -3,14 +3,12 @@
 # Embeds Lua scripts at compile time and utilizes EVALSHA caching with automatic EVAL fallback.
 
 import std/[
-  os, strutils, json, openssl, sha1,
+  os, osproc, strutils, json, openssl, sha1,
   times, random, options, base64, tables, sets, nativesockets
 ]
 when defined(posix):
   import posix
-elif defined(windows):
-  import std/osproc
-import config, redis, std/[net, asyncdispatch]
+import config, redis, guide, std/[net, asyncdispatch]
 
 proc isPidAlive*(pid: int): bool =
   if pid <= 0: return false
@@ -187,6 +185,16 @@ proc verifyHmac*(secret, data, expectedSig: string): bool =
   if computed.len != expectedSig.len:
     return false
   return CRYPTO_memcmp(computed.cstring, expectedSig.cstring, computed.len.csize_t) == 0
+
+proc getOriginHostname*(): string =
+  var h = ""
+  try:
+    h = getHostname()
+  except:
+    discard
+  if h.len == 0:
+    h = getEnv("HOSTNAME", "")
+  return h
 
 proc getPassArg*(cfg: LocutusConfig = LocutusConfig()): string =
   if cfg.secret.len > 0:
@@ -452,20 +460,124 @@ proc runLuaScript*(redisUrl, scriptText, scriptSha: string, evalArgs: openArray[
     stderr.writeLine("Redis error: " & e.msg)
     quit(1)
 
-# Agent Identity Persistence
+# Global Session-to-Agent Mapping
+proc sessionsFilePath*(): string =
+  getHomeDir() / ".config" / "locutus" / "sessions.json"
+
+proc loadLocalSessionMap*(): JsonNode =
+  let p = sessionsFilePath()
+  if fileExists(p):
+    try:
+      let content = readFile(p)
+      let parsed = parseJson(content)
+      if parsed.kind == JObject:
+        return parsed
+    except CatchableError:
+      discard
+  return newJObject()
+
+proc saveLocalSessionMapping*(sessionKey, agentName: string) =
+  let p = sessionsFilePath()
+  try:
+    createDir(p.splitPath.head)
+    var m = loadLocalSessionMap()
+    var entry = newJObject()
+    entry["agent"] = %agentName
+    entry["updated_at"] = %now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    m[sessionKey] = entry
+    writeFile(p, pretty(m) & "\n")
+    secureFilePermissions(p)
+  except OSError:
+    discard
+
+proc removeLocalSessionMapping*(sessionKey: string) =
+  let p = sessionsFilePath()
+  if fileExists(p):
+    try:
+      var m = loadLocalSessionMap()
+      if m.hasKey(sessionKey):
+        m.delete(sessionKey)
+        writeFile(p, pretty(m) & "\n")
+        secureFilePermissions(p)
+    except OSError:
+      discard
+
+proc getLocalSessionAgent*(sessionKey: string): string =
+  let m = loadLocalSessionMap()
+  if m.hasKey(sessionKey):
+    let node = m[sessionKey]
+    if node.kind == JObject and node.hasKey("agent"):
+      return node["agent"].getStr()
+    elif node.kind == JString:
+      return node.getStr()
+  return ""
+
+# Redis Session Mapping
+proc getRedisSessionMapping*(cfg: LocutusConfig, sessionKey: string): string =
+  var client: Redis
+  try:
+    client = openRedisClient(cfg.redisUrl)
+  except CatchableError:
+    return ""
+  defer:
+    try: client.close() except CatchableError: discard
+  try:
+    let val = client.hGet(cfg.prefix & "sessions", sessionKey)
+    if val != redisNil and val.len > 0:
+      try:
+        let parsed = parseJson(val)
+        if parsed.kind == JObject and parsed.hasKey("agent"):
+          return parsed["agent"].getStr()
+        elif parsed.kind == JString:
+          return parsed.getStr()
+      except CatchableError:
+        return val
+  except CatchableError:
+    discard
+  return ""
+
+proc setRedisSessionMapping*(cfg: LocutusConfig, sessionKey, agentName: string) =
+  var client: Redis
+  try:
+    client = openRedisClient(cfg.redisUrl)
+  except CatchableError:
+    return
+  defer:
+    try: client.close() except CatchableError: discard
+  try:
+    var entry = newJObject()
+    entry["agent"] = %agentName
+    entry["session_id"] = %sessionKey
+    entry["updated_at"] = %now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    discard client.hSet(cfg.prefix & "sessions", sessionKey, $entry)
+    discard client.hSet(cfg.prefix & "agent_sessions", agentName, sessionKey)
+  except CatchableError:
+    discard
+
+proc removeRedisSessionMapping*(cfg: LocutusConfig, sessionKey: string, agentName: string = "") =
+  var client: Redis
+  try:
+    client = openRedisClient(cfg.redisUrl)
+  except CatchableError:
+    return
+  defer:
+    try: client.close() except CatchableError: discard
+  try:
+    discard client.hDel(cfg.prefix & "sessions", @[sessionKey])
+    if agentName.len > 0:
+      discard client.hDel(cfg.prefix & "agent_sessions", @[agentName])
+  except CatchableError:
+    discard
+
+# Agent Identity Persistence (User-level fallback for plain shell invocations)
+# Note: Workspace-scoped .locutus.agent is intentionally forbidden to prevent
+# tying directories 1:1 to Locutus sessions. Identity is strictly scoped to the process
+# environment (LOCUTUS_AGENT_NAME), the harness session ID, or user fallback.
 proc currentAgentPath*(): string =
   getHomeDir() / ".config" / "locutus" / "current_agent"
 
 proc saveCurrentAgent*(name: string) =
-  # 1. Save workspace-scoped .locutus.agent in current working directory
-  try:
-    let localFile = getCurrentDir() / ".locutus.agent"
-    writeFile(localFile, name.strip() & "\n")
-    secureFilePermissions(localFile)
-  except OSError:
-    discard
-
-  # 2. Save user-scoped fallback file
+  # User-scoped fallback file only
   try:
     let p = currentAgentPath()
     createDir(p.splitPath.head)
@@ -475,17 +587,7 @@ proc saveCurrentAgent*(name: string) =
     discard
 
 proc loadCurrentAgent*(): string =
-  # 1. Check workspace-scoped .locutus.agent first
-  try:
-    let localFile = getCurrentDir() / ".locutus.agent"
-    if fileExists(localFile):
-      let val = readFile(localFile).strip()
-      if val.len > 0:
-        return val
-  except OSError:
-    discard
-
-  # 2. Check user-scoped fallback file
+  # User-scoped fallback file only
   try:
     let p = currentAgentPath()
     if fileExists(p):
@@ -496,19 +598,14 @@ proc loadCurrentAgent*(): string =
 
 proc clearCurrentAgent*() =
   try:
-    let localFile = getCurrentDir() / ".locutus.agent"
-    if fileExists(localFile):
-      removeFile(localFile)
-  except OSError:
-    discard
-  try:
     let p = currentAgentPath()
     if fileExists(p):
       removeFile(p)
   except OSError:
     discard
 
-proc getActiveAgentName*(cfg: LocutusConfig, explicitName: string = "", fallbackDefault: bool = false): string =
+
+proc getActiveAgentName*(cfg: LocutusConfig, explicitName: string = "", fallbackDefault: bool = false, sessionId: string = ""): string =
   if explicitName.len > 0:
     return explicitName
   if cfg.provenance.hasKey("agent_name") and cfg.provenance["agent_name"].source in {srcCli, srcEnv, srcCustomFile, srcWorkspaceFile, srcUserFile, srcSystemFile}:
@@ -516,9 +613,25 @@ proc getActiveAgentName*(cfg: LocutusConfig, explicitName: string = "", fallback
   let envName = getEnv("LOCUTUS_AGENT_NAME", getEnv("A2A_NAME", getEnv("MY_NAME", "")))
   if envName.len > 0:
     return envName
+
+  # Session ID resolution
+  let sid = if sessionId.len > 0: sessionId elif cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  if sid.len > 0:
+    let localAgent = getLocalSessionAgent(sid)
+    if localAgent.len > 0:
+      return localAgent
+    try:
+      let redisAgent = getRedisSessionMapping(cfg, sid)
+      if redisAgent.len > 0:
+        return redisAgent
+    except CatchableError:
+      discard
+
+  # File-based fallback for shell invocations without session IDs
   let saved = loadCurrentAgent()
   if saved.len > 0:
     return saved
+
   if fallbackDefault:
     if cfg.agentName.len > 0:
       return cfg.agentName
@@ -559,13 +672,172 @@ proc doRegister*(cfg: LocutusConfig, name, tags: string, ttl: int = -1): string 
   let effectiveTtl = if ttl > 0: ttl elif cfg.heartbeatTtl > 0: cfg.heartbeatTtl else: 150
   return runLuaScript(cfg.redisUrl, registerLua, registerSha, [cfg.prefix, name, tags, $effectiveTtl])
 
-proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50): string =
-  return runLuaScript(cfg.redisUrl, drainLua, drainSha, [cfg.prefix, name, $count])
+proc doCheckInbox*(cfg: LocutusConfig, name: string): int =
+  var client = connectRedis(cfg.redisUrl)
+  defer:
+    try: client.close() except CatchableError: discard
+  let inboxKey = cfg.prefix & "inbox:" & name
+  try:
+    return client.lLen(inboxKey)
+  except CatchableError:
+    return 0
+
+proc detectHarness*(cfg: LocutusConfig): string =
+  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  if sid.startsWith("opencode:"): return "opencode"
+  if sid.startsWith("pi:"): return "pi"
+  if sid.startsWith("claude:"): return "claude"
+  if sid.startsWith("codex:"): return "codex"
+  if sid.startsWith("agy:"): return "antigravity"
+  if sid.startsWith("cursor:"): return "cursor"
+  if sid.startsWith("copilot:"): return "copilot"
+
+  if getEnv("OPENCODE_SESSION_ID", "").len > 0: return "opencode"
+  if getEnv("PI_SESSION_ID", "").len > 0: return "pi"
+  if getEnv("CODEX_SESSION_ID", "").len > 0: return "codex"
+  if getEnv("CLAUDE_CODE", "").len > 0 or getEnv("CLAUDE_PROJECT_ROOT", "").len > 0: return "claude"
+  if getEnv("ANTIGRAVITY_APP_DIR", "").len > 0: return "antigravity"
+  if getEnv("CURSOR_APP", "").len > 0 or getEnv("CURSOR_PROJECT_DIR", "").len > 0: return "cursor"
+  if getEnv("GITHUB_COPILOT", "").len > 0: return "copilot"
+
+  return "unknown"
+
+proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string = "json"): string =
+  var client = connectRedis(cfg.redisUrl)
+  defer:
+    try: client.close() except CatchableError: discard
+  var argSeq: seq[string] = @[cfg.prefix, name, $count]
+  var resp: RedisValue
+  try:
+    resp = client.evalSha(drainSha, @[], argSeq)
+  except RedisError as e:
+    if "NOSCRIPT" in e.msg:
+      try:
+        resp = client.eval(drainLua, @[], argSeq)
+      except CatchableError as e2:
+        stderr.writeLine("Redis error: " & e2.msg)
+        quit(1)
+    else:
+      stderr.writeLine("Redis error: " & e.msg)
+      quit(1)
+  except CatchableError as e:
+    stderr.writeLine("Redis error: " & e.msg)
+    quit(1)
+
+  var rawList: seq[string] = @[]
+  if resp.kind == vkList:
+    for item in resp.listVal:
+      if item.kind in [vkString, vkStatus]:
+        rawList.add(item.strVal)
+
+  if format == "raw":
+    var rawArr = newJArray()
+    for s in rawList:
+      try:
+        rawArr.add(parseJson(s))
+      except CatchableError:
+        rawArr.add(%s)
+    return $rawArr
+
+  let secret = getSecret(cfg)
+  var validMessages: seq[JsonNode] = @[]
+
+  for payloadStr in rawList:
+    var parsed: JsonNode
+    try:
+      parsed = parseJson(payloadStr.strip())
+    except JsonParsingError:
+      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON payload from inbox")
+      continue
+
+    let id = parsed.getOrDefault("id").getStr("")
+    let fromAgent = parsed.getOrDefault("from").getStr("")
+    let toAgent = parsed.getOrDefault("to").getStr("")
+    let msgType = parsed.getOrDefault("type").getStr("")
+    let subject = parsed.getOrDefault("subject").getStr("")
+    let body = parsed.getOrDefault("body").getStr("")
+    let ts = parsed.getOrDefault("timestamp").getStr("")
+    let sig = parsed.getOrDefault("sig").getStr("")
+    let isEncrypted = parsed.getOrDefault("encrypted").getBool(false)
+
+    # Validate HMAC
+    let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & body & "|" & ts
+    if not verifyHmac(secret, canonical, sig):
+      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
+      continue
+
+    # Authenticated! Decrypt if required
+    if isEncrypted:
+      try:
+        let decryptedBody = decryptAes(body, secret, cfg)
+        parsed["body"] = %decryptedBody
+        parsed["encrypted"] = %false
+      except ValueError as e:
+        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
+        continue
+
+    validMessages.add(parsed)
+
+  if format == "hook":
+    if validMessages.len == 0:
+      return ""
+    var lines: seq[string] = @[]
+    let plural = if validMessages.len == 1: "1 new message" else: $validMessages.len & " new messages"
+    lines.add("[LOCUTUS BUS] " & plural & " received on inbox for '" & name & "':")
+    for m in validMessages:
+      let fromA = m.getOrDefault("from").getStr("unknown")
+      let subj = m.getOrDefault("subject").getStr("")
+      let body = m.getOrDefault("body").getStr("")
+      let urgency = m.getOrDefault("urgency").getStr("soon")
+      let msgType = m.getOrDefault("type").getStr("task")
+      let host = m.getOrDefault("host").getStr("")
+      var header = "- From @" & fromA
+      if host.len > 0: header.add(" [host: " & host & "]")
+      if subj.len > 0: header.add(" (subject: \"" & subj & "\")")
+      header.add(" [type: " & msgType & ", urgency: " & urgency & "]:")
+      lines.add(header)
+      lines.add("  " & body.replace("\n", "\n  "))
+    if validMessages.len > 0:
+      let harness = detectHarness(cfg)
+      lines.add("")
+      lines.add("[LOCUTUS NEXT-STEP ACTION]:")
+      lines.add("- After completing the task, reply using:")
+      lines.add("  locutus reply --to <sender> --subject \"Re: <subj>\" --body \"<result>\" --reply-to \"<id>\"")
+      if harness in ["opencode", "pi"]:
+        lines.add("- Note: Extension fiber automatically receives new tasks; DO NOT run a blocking 'locutus listen'.")
+      else:
+        lines.add("- If you must immediately await the next task, append --listen:")
+        lines.add("  locutus reply ... --listen")
+        if harness == "codex":
+          lines.add("- Codex subagents (SKILL.md Step 2b): Re-spawn one-shot listener subagent before concluding turn.")
+        elif harness == "antigravity":
+          lines.add("- Antigravity (SKILL.md Step 2d): Re-arm reactive listener via run_command or append --listen.")
+      lines.add("- If disconnecting or shutting down, unregister cleanly:")
+      lines.add("  locutus close " & name)
+      lines.add("- See SKILL.md Step 2 for complete harness-specific integration playbooks.")
+    return lines.join("\n")
+
+  # If caller explicitly asked for 1 message, return single JSON object
+  if count == 1:
+    if validMessages.len == 1:
+      return $validMessages[0]
+    else:
+      return ""
+
+  # Default for count > 1: return JSON array
+  var arr = newJArray()
+  for m in validMessages:
+    arr.add(m)
+  return $arr
 
 proc doUnregister*(cfg: LocutusConfig, name: string): string =
   let saved = loadCurrentAgent()
   if saved == name or name.len == 0:
     clearCurrentAgent()
+  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  if sid.len > 0:
+    removeLocalSessionMapping(sid)
+    removeRedisSessionMapping(cfg, sid, name)
   try:
     var client = openRedisClient(cfg.redisUrl)
     defer: (try: client.close() except CatchableError: discard)
@@ -642,7 +914,7 @@ proc doDirectory*(cfg: LocutusConfig, filterTag: string = "", asJson: bool = fal
     return formatDirectoryJson(raw)
   return formatDirectory(raw)
 
-proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1)
+proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false)
 
 proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = false, listenTimeoutSec: int = -1) =
   cleanupOldTmpFiles()
@@ -675,12 +947,19 @@ proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = f
     cfg.project
 
   saveCurrentAgent(name)
+  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  if sid.len > 0:
+    saveLocalSessionMapping(sid, name)
+    setRedisSessionMapping(cfg, sid, name)
+
   discard doRegister(cfg, name, tags, cfg.heartbeatTtl)
   let backlog = doDrain(cfg, name, 50)
 
   echo "===================================================="
   echo "[LOCUTUS BUS] Registered Successfully"
   echo "- Agent Name : ", name
+  if sid.len > 0:
+    echo "- Session ID : ", sid
   echo "- Project    : ", cfg.project
   echo "- Tags       : ", tags
   echo "- Redis URL  : ", cfg.redisUrl, " (prefix: ", cfg.prefix, ")"
@@ -703,12 +982,14 @@ proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = f
 
 proc doSend*(cfg: LocutusConfig, toAgent, msgType, fromAgent, subject, body: string,
             tags: seq[string] = @[], replyTo: string = "", msgId: string = "", isBroadcast: bool = false,
-            customTs: string = "", echoResult: bool = true, rearmListen: bool = false, listenTimeoutSec: int = -1): string =
+            customTs: string = "", echoResult: bool = true, rearmListen: bool = false, listenTimeoutSec: int = -1,
+            urgency: string = "soon"): string =
   randomize()
   let secret = getSecret(cfg)
   let id = if msgId.len > 0: msgId else: "msg_" & $getTime().toUnix() & "_" & fromAgent & "_" & $rand(1000..9999)
   let ts = if customTs.len > 0: customTs else: now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let finalBody = if cfg.encrypt: encryptAes(body, secret, cfg) else: body
+  let normUrgency = if urgency.toLowerAscii in ["immediate", "now", "urgent"]: "immediate" else: "soon"
 
   # Canonical concatenation for HMAC: id|from|to|type|subject|body|timestamp
   let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & finalBody & "|" & ts
@@ -719,6 +1000,10 @@ proc doSend*(cfg: LocutusConfig, toAgent, msgType, fromAgent, subject, body: str
   node["from"] = %fromAgent
   node["to"] = %toAgent
   node["type"] = %msgType
+  node["urgency"] = %normUrgency
+  let originHost = getOriginHostname()
+  if originHost.len > 0:
+    node["host"] = %originHost
   if replyTo.len > 0:
     node["reply_to"] = %replyTo
   else:
@@ -787,7 +1072,33 @@ proc doSend*(cfg: LocutusConfig, toAgent, msgType, fromAgent, subject, body: str
   return res
 
 
-proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1) =
+proc sendDesktopNotification*(msgNode: JsonNode) =
+  try:
+    let fromAgent = msgNode.getOrDefault("from").getStr("unknown")
+    let subject = msgNode.getOrDefault("subject").getStr("")
+    let body = msgNode.getOrDefault("body").getStr("")
+    let urgency = msgNode.getOrDefault("urgency").getStr("soon")
+    let prefix = if urgency == "immediate": "[URGENT] " else: ""
+    let title = "Locutus: " & prefix & "@" & fromAgent
+    let fullText = if subject.len > 0: subject & ": " & body else: body
+    let displayBody = if fullText.len > 140: fullText[0..136] & "..." else: fullText
+
+    when defined(macosx) or defined(darwin):
+      let escapedTitle = title.replace("\"", "\\\"")
+      let escapedBody = displayBody.replace("\"", "\\\"")
+      let script = "display notification \"" & escapedBody & "\" with title \"" & escapedTitle & "\""
+      discard execCmd("osascript -e " & quoteShell(script))
+    elif defined(windows):
+      let escapedTitle = title.replace("'", "''")
+      let escapedBody = displayBody.replace("'", "''")
+      let psCmd = "$ws = New-Object -ComObject Wscript.Shell; $ws.Popup('" & escapedBody & "', 3, '" & escapedTitle & "', 64)"
+      discard execCmd("powershell -NoProfile -Command " & quoteShell(psCmd))
+    else:
+      discard execCmd("notify-send " & quoteShell(title) & " " & quoteShell(displayBody))
+  except Exception:
+    discard
+
+proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false) =
   let secret = getSecret(cfg)
   let inboxKey = cfg.prefix & "inbox:" & name
   let isForever = (timeoutSec <= 0 and (timeoutSec == 0 or cfg.listenTimeout <= 0))
@@ -929,7 +1240,46 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1) =
             remaining = max(0, effectiveTimeout - elapsed)
           continue
 
+      if notify:
+        sendDesktopNotification(parsed)
       echo $parsed
+      if not quiet and getEnv("LOCUTUS_QUIET", "0") notin ["1", "true", "yes"]:
+        let harness = detectHarness(cfg)
+        let replySubj = if subject.toLowerAscii.startsWith("re:"): subject else: "Re: " & subject
+        stderr.writeLine("\n[LOCUTUS LIFECYCLE NOTICE] Listener for '" & name & "' delivered message '" & id & "' and EXITED.")
+        stderr.writeLine("- Detected harness: " & harness & " (consult SKILL.md Step 2 for your harness playbook)")
+        stderr.writeLine("- Expected follow-up action:")
+        case harness
+        of "opencode", "pi":
+          stderr.writeLine("  1. In-process extension fiber is active. DO NOT run a blocking 'locutus listen'.")
+          stderr.writeLine("  2. Reply when task completes:")
+          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("  3. If disconnecting or finishing session work completely:")
+          stderr.writeLine("     locutus close " & name)
+        of "codex":
+          stderr.writeLine("  1. Reply to sender when finished:")
+          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("  2. Codex subagents (SKILL.md Step 2b): Dispatch a fresh one-shot listener subagent before concluding your turn:")
+          stderr.writeLine("     locutus listen " & name & " 120")
+          stderr.writeLine("  3. If disconnecting or finishing session work completely:")
+          stderr.writeLine("     locutus close " & name)
+        of "antigravity":
+          stderr.writeLine("  1. Reply to sender when finished:")
+          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("  2. Antigravity reactive pattern (SKILL.md Step 2d): Launch background listener task via run_command:")
+          stderr.writeLine("     locutus listen " & name & " 300")
+          stderr.writeLine("     Or atomically append --listen: locutus reply ... --listen")
+          stderr.writeLine("  3. If disconnecting or finishing session work completely:")
+          stderr.writeLine("     locutus close " & name)
+        else: # claude, cursor, copilot, unknown
+          stderr.writeLine("  1. When finished, reply and re-arm atomically in one command:")
+          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\" --listen")
+          stderr.writeLine("  2. If no reply is needed, wait for next task:")
+          stderr.writeLine("     locutus listen " & name & " 120")
+          stderr.writeLine("  3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.")
+          stderr.writeLine("  4. If disconnecting or finishing session work completely:")
+          stderr.writeLine("     locutus close " & name)
+        stderr.writeLine("(To silence this notice, pass --quiet / -q, or set LOCUTUS_QUIET=1)")
       return
   finally:
     unregisterCleanup(listenerKey)
@@ -986,6 +1336,9 @@ proc doEnqueue*(cfg: LocutusConfig, queueName, msgType, fromAgent, subject, body
   node["from"] = %fromAgent
   node["to"] = %("queue:" & queueName)
   node["type"] = %msgType
+  let originHost = getOriginHostname()
+  if originHost.len > 0:
+    node["host"] = %originHost
   if replyTo.len > 0:
     node["reply_to"] = %replyTo
   else:
@@ -1956,14 +2309,14 @@ proc doSweep*(cfg: LocutusConfig, dryRun: bool = false, rawOutput: bool = false)
     }
     echo $outObj
 
-proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, timeoutSec: int = 30, rawOutput: bool = false) =
+proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, timeoutSec: int = 30, rawOutput: bool = false, urgency: string = "soon") =
   randomize()
   let secret = getSecret(cfg)
   let reqId = "req_" & $getTime().toUnix() & "_" & fromAgent & "_" & $rand(1000..9999)
   let replyQueue = "reply:" & reqId
   let replyInboxKey = cfg.prefix & "inbox:" & replyQueue
 
-  discard doSend(cfg, toAgent, "task", fromAgent, subject, body, tags = @[], replyTo = replyQueue, msgId = reqId, isBroadcast = false, echoResult = false)
+  discard doSend(cfg, toAgent, "task", fromAgent, subject, body, tags = @[], replyTo = replyQueue, msgId = reqId, isBroadcast = false, echoResult = false, urgency = urgency)
 
   var client = connectRedis(cfg.redisUrl)
   defer:
@@ -2035,12 +2388,13 @@ proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, t
   quit(1)
 
 proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
-               quorum: int = -1, timeoutSec: int = 30, rawOutput: bool = false) =
+               quorum: int = -1, timeoutSec: int = 30, rawOutput: bool = false, urgency: string = "soon") =
   randomize()
   let secret = getSecret(cfg)
   let scatterId = "sc_" & $getTime().toUnix() & "_" & fromAgent & "_" & $rand(1000..9999)
   let replyQueue = "scatter:" & scatterId
   let replyInboxKey = cfg.prefix & "inbox:" & replyQueue
+  let normUrgency = if urgency.toLowerAscii in ["immediate", "now", "urgent"]: "immediate" else: "soon"
 
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let finalBody = if cfg.encrypt: encryptAes(body, secret, cfg) else: body
@@ -2052,7 +2406,11 @@ proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
   node["from"] = %fromAgent
   node["to"] = %targets
   node["type"] = %"task"
+  node["urgency"] = %normUrgency
   node["reply_to"] = %replyQueue
+  let originHost = getOriginHostname()
+  if originHost.len > 0:
+    node["host"] = %originHost
   node["tags"] = newJArray()
   node["subject"] = %subject
   node["body"] = %finalBody
@@ -2266,6 +2624,10 @@ proc main() =
       cli.agentName = a[13..^1]
     elif a == "--agent-name" and i + 1 < rawArgs.len and not rawArgs[i+1].startsWith("-"):
       cli.agentName = rawArgs[i+1]; inc i
+    elif a.startsWith("--session-id="):
+      cli.sessionId = a[13..^1]
+    elif (a == "--session-id" or a == "-s") and i + 1 < rawArgs.len and not rawArgs[i+1].startsWith("-"):
+      cli.sessionId = rawArgs[i+1]; inc i
     elif a.startsWith("--secret="):
       cli.secret = a[9..^1]
     elif a == "--secret" and i + 1 < rawArgs.len and not rawArgs[i+1].startsWith("-"):
@@ -2303,7 +2665,7 @@ proc main() =
     echo "Usage:"
     echo "  locutus version"
     echo "  locutus open [name] [tags] [--listen/-l]"
-    echo "  locutus listen [name] [timeout_sec] [--force/-f]"
+    echo "  locutus listen [name] [timeout_sec] [--force/-f] [--notify/-n] [--quiet/-q]"
     echo "  locutus send --to <agent> [--type task|query|reply|status] --subject <subj> --body <body> [--listen/-l]"
     echo "  locutus reply --to <agent> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l]"
     echo "  locutus broadcast [--tags <tags>] --subject <subj> --body <body>"
@@ -2327,10 +2689,12 @@ proc main() =
     echo "  locutus who [filter_tag]"
     echo "  locutus sweep [--dry-run] [--raw]"
     echo "  locutus tag <add|remove|set> <tags> [name]"
-    echo "  locutus drain [count] [name]"
+    echo "  locutus check-inbox [name]"
+    echo "  locutus drain [count] [name] [--format json|hook|raw] [--hook]"
     echo "  locutus close [name]"
     echo "  locutus get-secret"
     echo "  locutus config <show|get|path|init>"
+    echo "  locutus guide <install|uninstall|check> [path]"
     echo ""
     echo "Global Options:"
     echo "  --version, -v         Print version and exit"
@@ -2349,7 +2713,12 @@ proc main() =
     let action = if args.len > 1: args[1].toLowerAscii else: "show"
     case action
     of "show":
-      let isJson = ("--json" in rawArgs) or ("-j" in rawArgs)
+      var isJson = ("--json" in rawArgs) or ("-j" in rawArgs)
+      for i, a in rawArgs:
+        if a == "--format" and i + 1 < rawArgs.len and rawArgs[i+1].toLowerAscii == "json":
+          isJson = true
+        elif a.toLowerAscii.startsWith("--format=json"):
+          isJson = true
       if isJson:
         echo formatConfigJson(cfg)
       else:
@@ -2442,11 +2811,17 @@ proc main() =
     var explicitName = ""
     var timeout = cfg.listenTimeout
     var forceListen = false
+    var notify = false
+    var quiet = false
     var i = 1
     while i < args.len:
       let a = args[i]
       if a in ["--force", "-f"]:
         forceListen = true
+      elif a in ["--notify", "-n"]:
+        notify = true
+      elif a in ["--quiet", "-q", "--no-postamble"]:
+        quiet = true
       elif not a.startsWith("-"):
         try:
           timeout = parseInt(a)
@@ -2465,14 +2840,14 @@ proc main() =
         stderr.writeLine("Error: Listener already active for agent '" & name & "' (PID " & $existingPid & " on " & existingHost & "). Refusing to start duplicate listener.")
         quit(1)
 
-    doListen(cfg, name, timeout)
+    doListen(cfg, name, timeout, notify, quiet)
 
   of "send", "broadcast", "reply":
     let isBroadcast = (subcmd == "broadcast")
     let isReply = (subcmd == "reply")
     var toAgent = ""
     var msgType = if isReply: "reply" else: "task"
-    var fromAgent = getActiveAgentName(cfg, "")
+    var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
     var subject = ""
     var body = ""
     var tags: seq[string] = @[]
@@ -2481,6 +2856,7 @@ proc main() =
     var customTs = ""
     var rearmListen = false
     var listenTimeout = -1
+    var urgency = "soon"
 
     var i = 1
     while i < args.len:
@@ -2495,6 +2871,12 @@ proc main() =
       elif a == "--subject" and i + 1 < args.len: subject = args[i+1]; inc i
       elif a.startsWith("--body="): body = resolveVal(a[7..^1])
       elif a == "--body" and i + 1 < args.len: body = resolveVal(args[i+1]); inc i
+      elif a in ["--immediate", "-i"]: urgency = "immediate"
+      elif a == "--soon": urgency = "soon"
+      elif a.startsWith("--urgency="): urgency = a[10..^1]
+      elif a == "--urgency" and i + 1 < args.len: urgency = args[i+1]; inc i
+      elif a.startsWith("--delivery="): urgency = a[11..^1]
+      elif a == "--delivery" and i + 1 < args.len: urgency = args[i+1]; inc i
       elif a.startsWith("--tags="):
         for t in a[7..^1].split(','):
           if t.strip().len > 0: tags.add(t.strip())
@@ -2541,20 +2923,20 @@ proc main() =
       if not isBroadcast and toAgent.len == 0:
         stderr.writeLine("Error: Missing required argument '--to <recipient>'.")
         if isReply:
-          stderr.writeLine("Usage: locutus reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l]")
+          stderr.writeLine("Usage: locutus reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l] [--immediate|--soon]")
         else:
-          stderr.writeLine("Usage: locutus send --to <recipient> --subject <subj> --body <body> [--listen/-l]")
+          stderr.writeLine("Usage: locutus send --to <recipient> --subject <subj> --body <body> [--listen/-l] [--immediate|--soon]")
       else:
         stderr.writeLine("Error: Missing required arguments. --subject and --body are required.")
         if isReply:
-          stderr.writeLine("Usage: locutus reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l]")
+          stderr.writeLine("Usage: locutus reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l] [--immediate|--soon]")
         elif not isBroadcast:
-          stderr.writeLine("Usage: locutus send --to <recipient> --subject <subj> --body <body> [--listen/-l]")
+          stderr.writeLine("Usage: locutus send --to <recipient> --subject <subj> --body <body> [--listen/-l] [--immediate|--soon]")
         else:
-          stderr.writeLine("Usage: locutus broadcast [--tags <tags>] --subject <subj> --body <body>")
+          stderr.writeLine("Usage: locutus broadcast [--tags <tags>] --subject <subj> --body <body> [--immediate|--soon]")
       quit(1)
 
-    discard doSend(cfg, toAgent, msgType, fromAgent, subject, body, tags, replyTo, msgId, isBroadcast, customTs, echoResult = true, rearmListen = rearmListen, listenTimeoutSec = listenTimeout)
+    discard doSend(cfg, toAgent, msgType, fromAgent, subject, body, tags, replyTo, msgId, isBroadcast, customTs, echoResult = true, rearmListen = rearmListen, listenTimeoutSec = listenTimeout, urgency = urgency)
 
   of "who":
     var filterTag = cfg.project
@@ -2594,41 +2976,167 @@ proc main() =
       quit(1)
     echo doTag(cfg, name, action, tags)
 
-  of "drain":
-    var count = 50
-    if args.len > 1:
-      try:
-        count = parseInt(args[1])
-      except ValueError:
-        stderr.writeLine("Error: Invalid count '" & args[1] & "' for drain command. Expected an integer.")
-        stderr.writeLine("Usage: locutus drain [count] [name]")
-        quit(1)
-    let explicitName = if args.len > 2: args[2] else: ""
+  of "check-inbox":
+    let explicitName = if args.len > 1: args[1] else: ""
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
     if name.len == 0:
       stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
       quit(1)
-    echo doDrain(cfg, name, count)
+    let count = doCheckInbox(cfg, name)
+    echo count
+    if count > 0:
+      quit(0)
+    else:
+      quit(1)
+
+  of "drain":
+    var count = 50
+    var explicitName = ""
+    var format = "json"
+    var positionalIdx = 0
+    var i = 1
+    while i < args.len:
+      let a = args[i]
+      if a.startsWith("--format="):
+        format = a[9..^1].toLowerAscii
+      elif a in ["--hook", "-H"]:
+        format = "hook"
+      elif a in ["--json", "-j"]:
+        format = "json"
+      elif a == "--raw":
+        format = "raw"
+      elif not a.startsWith("-"):
+        inc positionalIdx
+        if positionalIdx == 1:
+          try:
+            count = parseInt(a)
+          except ValueError:
+            stderr.writeLine("Error: Invalid count '" & a & "' for drain command. Expected an integer.")
+            stderr.writeLine("Usage: locutus drain [count] [name]")
+            quit(1)
+        elif positionalIdx == 2:
+          explicitName = a
+      inc i
+
+    let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
+    if name.len == 0:
+      stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+      quit(1)
+    let output = doDrain(cfg, name, count, format)
+    if format == "hook" and output.len == 0:
+      discard
+    else:
+      echo output
 
   of "close", "unregister":
     let explicitName = if args.len > 1: args[1] else: ""
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
+    let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+    if sid.len > 0:
+      removeLocalSessionMapping(sid)
+      removeRedisSessionMapping(cfg, sid, name)
     if name.len > 0:
       echo doUnregister(cfg, name)
     else:
-      clearCurrentAgent()
       echo "OK"
+
+  of "session":
+    if args.len < 2:
+      stderr.writeLine("Usage: locutus session <set|get|remove|list> [args...]")
+      stderr.writeLine("  locutus session set <prefix:session_id> <agent_name>")
+      stderr.writeLine("  locutus session get <prefix:session_id>")
+      stderr.writeLine("  locutus session remove <prefix:session_id>")
+      stderr.writeLine("  locutus session list [--json]")
+      quit(1)
+
+    let action = args[1].toLowerAscii
+    case action
+    of "set":
+      if args.len < 4:
+        stderr.writeLine("Error: 'locutus session set' requires <session_key> and <agent_name>")
+        stderr.writeLine("Example: locutus session set opencode:ses_123 worker-agent")
+        quit(1)
+      let key = args[2]
+      let agent = args[3]
+      saveLocalSessionMapping(key, agent)
+      setRedisSessionMapping(cfg, key, agent)
+      echo "OK [session] " & key & " -> " & agent
+
+    of "get":
+      if args.len < 3:
+        stderr.writeLine("Error: 'locutus session get' requires <session_key>")
+        quit(1)
+      let key = args[2]
+      var agent = getLocalSessionAgent(key)
+      if agent.len == 0:
+        agent = getRedisSessionMapping(cfg, key)
+      if agent.len == 0:
+        stderr.writeLine("Error: Session key not found: " & key)
+        quit(1)
+      echo agent
+
+    of "remove", "rm", "del", "clear":
+      if args.len < 3:
+        stderr.writeLine("Error: 'locutus session remove' requires <session_key>")
+        quit(1)
+      let key = args[2]
+      let agent = getLocalSessionAgent(key)
+      removeLocalSessionMapping(key)
+      removeRedisSessionMapping(cfg, key, agent)
+      echo "OK [session] removed " & key
+
+    of "list", "ls":
+      let asJson = ("--json" in args) or ("-j" in args)
+      var sessions = loadLocalSessionMap()
+
+      # Merge with Redis sessions if Redis is reachable
+      try:
+        var client = openRedisClient(cfg.redisUrl)
+        defer: (try: client.close() except CatchableError: discard)
+        let redisSessions = client.hGetAll(cfg.prefix & "sessions")
+        var idx = 0
+        while idx < redisSessions.len:
+          let k = redisSessions[idx]
+          let v = if idx + 1 < redisSessions.len: redisSessions[idx+1] else: ""
+          if not sessions.hasKey(k) and v.len > 0:
+            try:
+              sessions[k] = parseJson(v)
+            except CatchableError:
+              var obj = newJObject()
+              obj["agent"] = %v
+              sessions[k] = obj
+          idx += 2
+      except CatchableError:
+        discard
+
+      if asJson:
+        echo $sessions
+      else:
+        if sessions.len == 0:
+          echo "No active sessions registered."
+        else:
+          echo "SESSION ID".alignLeft(32) & " " & "AGENT NAME".alignLeft(24) & " " & "UPDATED AT"
+          echo "-".repeat(32) & " " & "-".repeat(24) & " " & "-".repeat(20)
+          for k, v in sessions.pairs:
+            let agent = if v.kind == JObject and v.hasKey("agent"): v["agent"].getStr() elif v.kind == JString: v.getStr() else: ""
+            let ts = if v.kind == JObject and v.hasKey("updated_at"): v["updated_at"].getStr() else: "-"
+            echo k.alignLeft(32) & " " & agent.alignLeft(24) & " " & ts
+
+    else:
+      stderr.writeLine("Error: Unknown session action '" & action & "'. Valid actions: set, get, remove, list.")
+      quit(1)
 
   of "get-secret":
     echo getSecret(cfg)
 
   of "request":
     var toAgent = ""
-    var fromAgent = getActiveAgentName(cfg, "")
+    var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
     var subject = ""
     var body = ""
     var timeout = if cfg.listenTimeout > 0: cfg.listenTimeout else: 30
     var rawOutput = false
+    var urgency = "soon"
 
     var i = 1
     while i < args.len:
@@ -2641,6 +3149,12 @@ proc main() =
       elif a == "--subject" and i + 1 < args.len: subject = args[i+1]; inc i
       elif a.startsWith("--body="): body = resolveVal(a[7..^1])
       elif a == "--body" and i + 1 < args.len: body = resolveVal(args[i+1]); inc i
+      elif a in ["--immediate", "-i"]: urgency = "immediate"
+      elif a == "--soon": urgency = "soon"
+      elif a.startsWith("--urgency="): urgency = a[10..^1]
+      elif a == "--urgency" and i + 1 < args.len: urgency = args[i+1]; inc i
+      elif a.startsWith("--delivery="): urgency = a[11..^1]
+      elif a == "--delivery" and i + 1 < args.len: urgency = args[i+1]; inc i
       elif a.startsWith("--timeout="):
         timeout = parseRequiredInt(a[10..^1], "--timeout")
       elif a == "--timeout" and i + 1 < args.len:
@@ -2656,10 +3170,10 @@ proc main() =
 
     if toAgent.len == 0 or subject.len == 0 or body.len == 0:
       stderr.writeLine("Error: Missing required arguments. --to, --subject, and --body are required.")
-      stderr.writeLine("Usage: locutus request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw]")
+      stderr.writeLine("Usage: locutus request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw] [--immediate|--soon]")
       quit(1)
 
-    doRequest(cfg, toAgent, fromAgent, subject, body, timeout, rawOutput)
+    doRequest(cfg, toAgent, fromAgent, subject, body, timeout, rawOutput, urgency = urgency)
 
   of "scatter":
     var targets = ""
@@ -2668,7 +3182,8 @@ proc main() =
     var quorum = -1
     var timeout = if cfg.listenTimeout > 0: cfg.listenTimeout else: 30
     var rawOutput = false
-    var fromAgent = getActiveAgentName(cfg, "")
+    var urgency = "soon"
+    var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
 
     var i = 1
     while i < args.len:
@@ -2681,6 +3196,12 @@ proc main() =
       elif a == "--subject" and i + 1 < args.len: subject = args[i+1]; inc i
       elif a.startsWith("--body="): body = resolveVal(a[7..^1])
       elif a == "--body" and i + 1 < args.len: body = resolveVal(args[i+1]); inc i
+      elif a in ["--immediate", "-i"]: urgency = "immediate"
+      elif a == "--soon": urgency = "soon"
+      elif a.startsWith("--urgency="): urgency = a[10..^1]
+      elif a == "--urgency" and i + 1 < args.len: urgency = args[i+1]; inc i
+      elif a.startsWith("--delivery="): urgency = a[11..^1]
+      elif a == "--delivery" and i + 1 < args.len: urgency = args[i+1]; inc i
       elif a.startsWith("--quorum="):
         quorum = parseRequiredInt(a[9..^1], "--quorum")
       elif a == "--quorum" and i + 1 < args.len:
@@ -2702,10 +3223,10 @@ proc main() =
 
     if targets.len == 0 or subject.len == 0 or body.len == 0:
       stderr.writeLine("Error: Missing required arguments for scatter.")
-      stderr.writeLine("Usage: locutus scatter --targets <@tag|agent1,agent2|*> --subject <subj> --body <body> [--quorum N] [--timeout sec] [--raw]")
+      stderr.writeLine("Usage: locutus scatter --targets <@tag|agent1,agent2|*> --subject <subj> --body <body> [--quorum N] [--timeout sec] [--raw] [--immediate|--soon]")
       quit(1)
 
-    doScatter(cfg, targets, fromAgent, subject, body, quorum, timeout, rawOutput)
+    doScatter(cfg, targets, fromAgent, subject, body, quorum, timeout, rawOutput, urgency = urgency)
 
   of "enqueue":
     if args.len < 2:
@@ -2714,7 +3235,7 @@ proc main() =
       quit(1)
     let queueName = args[1]
     var msgType = "task"
-    var fromAgent = getActiveAgentName(cfg, "")
+    var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
     var subject = ""
     var body = ""
     var tags: seq[string] = @[]
@@ -3427,6 +3948,45 @@ proc main() =
     if args.len > 2:
       timeout = parseRequiredInt(args[2], "sub timeout")
     doSub(cfg, channel, timeout)
+
+  of "guide":
+    if args.len < 2:
+      stderr.writeLine("Error: Missing guide action.")
+      stderr.writeLine("Usage: locutus guide <install|uninstall|check> [path]")
+      quit(1)
+    let action = args[1].toLowerAscii
+    let target = if args.len > 2: args[2] else: "AGENTS.md"
+    case action
+    of "install", "i", "add":
+      let (ok, msg) = installGuide(target)
+      if ok:
+        echo msg
+      else:
+        stderr.writeLine(msg)
+        quit(1)
+    of "uninstall", "u", "remove", "rm":
+      let (ok, msg) = uninstallGuide(target)
+      if ok:
+        echo msg
+      else:
+        stderr.writeLine(msg)
+        quit(1)
+    of "check", "status":
+      let st = checkGuide(target)
+      case st
+      of gsInstalled:
+        echo "[INSTALLED] Locutus Guide is installed in: " & target
+      of gsNotFound:
+        echo "[NOT FOUND] Locutus Guide not found in: " & target
+      of gsMalformed:
+        stderr.writeLine("[MALFORMED] Unbalanced markers found in: " & target)
+        quit(1)
+      of gsFileMissing:
+        echo "[MISSING] Target file does not exist: " & target
+    else:
+      stderr.writeLine("Error: Unknown guide action: '" & action & "'")
+      stderr.writeLine("Usage: locutus guide <install|uninstall|check> [path]")
+      quit(1)
 
   else:
     stderr.writeLine("Unknown subcommand: " & subcmd)

@@ -4,11 +4,29 @@ We welcome contributions to Locutus! Whether you are optimizing Lua scripts, imp
 
 ## Development Setup
 
-### Prerequisites
-- **Nim**: 2.0+ (`brew install nim` on macOS, `sudo apt install nim` on Linux, or `curl https://nim-lang.org/choosenim/init.sh -sSf | sh`)
-- **Redis Server**: 6.2+ (`brew install redis` on macOS, `sudo apt install redis-server` on Linux, or Docker)
-- **OpenSSL**: 1.1+ / 3.0+
-- **Python**: 3.10+ (for integration tests and Pydantic validation)
+### Tool Versions & Runtime Management
+
+Locutus tracks tool versions via `.tool-versions` (respected by [`mise`](https://mise.jdx.dev) and `asdf`).
+
+We recommend using **mise** to guarantee exact compiler and interpreter alignment:
+
+```bash
+# 1. Install mise (if not already installed)
+curl https://mise.run | sh
+
+# 2. Install pinned tool versions (Nim 2.2.12 and Python 3.12)
+mise install
+
+# Verify your active versions
+nim --version      # Nim Compiler Version 2.2.12
+python3 --version   # Python 3.12.x
+```
+
+Alternatively, if you manage tools manually:
+- **Nim**: Pinned to **2.2.12** (`choosenim 2.2.12`, or `brew install nim` on macOS, `sudo apt install nim` on Linux).
+- **Python**: **3.10+** (Python 3.12 recommended for integration tests and Pydantic validation).
+- **Redis Server**: **6.2+** or **Valkey 7.2+** (`brew install redis` on macOS, `sudo apt install redis-server` on Linux, or Docker).
+- **OpenSSL**: **1.1+** / **3.0+** headers and dynamic libraries.
 
 ### Quick Build & Test
 
@@ -20,16 +38,24 @@ cd locutus
 # 2. Build native Nim binary (1 second)
 nim c -d:release -o:bin/locutus src/locutus.nim
 
-# 3. Install Python dependencies for test runner
+# 3. Set up Python virtual environment & dependencies
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r <(echo "pydantic>=2.0")
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install --upgrade pip
+
+# Option A: Editable install via pyproject.toml (recommended)
+pip install -e .
+
+# Option B: Install via requirements.txt
+pip install -r requirements.txt
 
 # 4. Start local Redis server
 brew services start redis  # or: docker run -d -p 6379:6379 redis:alpine
 
 # 5. Run full test suite
-python3 -m unittest discover tests
+pytest
+# Or using shared CI script:
+./scripts/ci/test.sh
 ```
 
 ## Architectural Guidelines
@@ -56,4 +82,272 @@ Locutus uses a dual-CI architecture with shared execution scripts:
 2. Ensure all unit and integration tests pass: `./scripts/ci/test.sh` (or `pytest`).
 3. If modifying `scripts/*.lua`, recompile `bin/locutus` (`./scripts/ci/build.sh`).
 4. Submit a Pull Request describing your changes, motivation, and test evidence.
+
+---
+
+## Coding Harness Architecture & Behavioral Models
+
+Locutus coordinates autonomous coding assistants across heterogeneous terminal, editor, and container environments. Because different coding harnesses (OpenCode, Claude Code, OpenAI Codex, Antigravity, Pi, Cursor, GitHub Copilot) expose vastly different extension points, lifecycle hooks, and process models, Locutus adapts to each platform's native architecture.
+
+### Supported Harnesses & Runtime Behaviors
+
+#### 1. OpenCode
+- **Integration Mechanism**: Native JavaScript/TypeScript plugin runtime (`skills/locutus/opencode-ear.js`) loaded from `~/.config/opencode/plugins/locutus.js`.
+- **Lifecycle & Session Hooks**:
+  - `shell.env`: Injects `LOCUTUS_SESSION_ID=opencode:<sessionId>` and `LOCUTUS_AGENT_NAME=<agent>` into the shell environment before every bash tool execution. This guarantees that CLI subcommands executed inside OpenCode inherit identity without manual configuration.
+  - `event`: Subscribes to `session.created` to provision an agent identity and arm an active listener; subscribes to `session.deleted` to clean up session mappings and unregister the agent.
+- **Session Mapping**: Automatically persists `opencode:<sessionId>` mappings in `~/.config/locutus/sessions.json` and synchronizes with Redis hash `${PREFIX}sessions`.
+- **Idle Wakeup & In-Flight Interruption**:
+  - Runs an asynchronous generator over `locutus listen <agent> 0` in an unblocked fiber.
+  - **Idle State**: Injects incoming tasks directly into the agent's turn loop using `client.session.promptAsync({ path: { id: sessionId }, body: { parts: [{ type: "text", text }] } })`.
+  - **Busy State & Immediate Urgency**: For messages tagged `--immediate`, the ear checks `client.session.status()`, triggers `client.session.abort({ path: { id: sessionId } })` to cancel long-running builds or commands, waits for the session to settle into `idle`, and immediately injects the urgent prompt.
+
+#### 2. Claude Code
+- **Integration Mechanism**: Skill definition (`SKILL.md`) in `~/.claude/skills/locutus` + passive tool execution hook (`~/.claude/hooks/post-tool-execution`) + continuation `Stop` hook (`claude_stop_hook.py`).
+- **Passive Hook Mode**: After any tool call (e.g., `Bash`, `FileEdit`), `post-tool-execution` executes `locutus drain 50 <agent> --hook` to drain any queued backlog and return a formatted continuation prompt block into context.
+- **Continuation Stop Hook**: When a turn completes, the `Stop` hook checks for pending messages and blocks exit to feed incoming tasks directly into the next turn.
+
+#### 3. OpenAI Codex
+- **Integration Mechanism**: Shell-level pre/post execution hooks and one-shot subagent listeners.
+- **Runtime Behavior**: Uses `locutus open <agent>` at session bootstrap to register identity and drain offline backlogs. For background listening, Codex spawns a one-shot subagent running `locutus listen <agent>` or uses `codex_stop_hook.py`.
+
+#### 4. Google Deepmind Antigravity (AGY)
+- **Integration Mechanism**: Full skill installation in `~/.gemini/config/skills/locutus` and native agentic loop integration.
+- **Reactive Wakeups & Background Tasks**:
+  - AGY features native reactive wakeups: commands launched via `run_command` run as asynchronous background tasks.
+  - When an AGY subagent or task runner executes `locutus listen <agent> 30` as a background task, the AGY runtime automatically awakens the assistant when the task exits or sends output—eliminating busy polling loops.
+  - In-flight urgency is handled via subagent task cancellation (`manage_task kill`) and re-dispatch.
+
+#### 5. Pi Coding Agent (`pi.dev`)
+- **Integration Mechanism**: Native TypeScript extension API (`~/.pi/agent/extensions/*.ts`) loaded via `jiti` without compilation, plus native skill in `~/.pi/agent/skills/locutus`.
+- **Extension Architecture**:
+  - Pi exposes runtime events (`pi.on("tool_call")`, `pi.on("session_start")`) and tool registration (`pi.registerTool`).
+  - An in-process extension streams `locutus listen` and dispatches prompts into the active turn via `deliverPiPrompt` (`pi.sendMessage` / `pi.session.prompt`).
+  - In-flight preemption for `--immediate` triggers `pi.abort()`.
+
+#### 6. Cursor & GitHub Copilot
+- **Integration Mechanism**: Terminal integration via embedded shell terminals, task runners, and skill configurations (`.cursor/rules/locutus.mdc`, `.github/copilot-instructions.md`).
+- **Runtime Behavior**: Terminal sessions running inside Cursor or VS Code utilize the standard CLI and native `locutus listen --notify` desktop notifications to alert developers when an agent receives urgent coordination messages.
+
+---
+
+## The MCP Interruption Paradox: Why MCP Cannot Interrupt or Wake Idle Agents
+
+Contributors often ask: *"Can we expose Locutus as an MCP (Model Context Protocol) server to handle interruptions and wakeups?"*
+
+The short answer is **no: MCP is architecturally incapable of waking idle agents or interrupting in-flight turns.** Understanding why is essential for extending Locutus:
+
+### 1. MCP is a Client-Pull Protocol, Not an Autonomous Server-Push Execution Model
+MCP (Model Context Protocol) is designed on JSON-RPC 2.0 where the **LLM client is the sole initiator of action**:
+1. The client LLM generates a tool call request (`tools/call`).
+2. The MCP server executes the tool and returns a result payload.
+3. The LLM processes the result and continues its turn.
+
+When an AI assistant is **idle** (waiting for user input at the terminal or in the editor):
+- The LLM inference engine is paused.
+- No prompt is active, no tokens are being sampled, and no tool calls can be made.
+- An MCP server cannot force the client to begin a new inference cycle.
+
+### 2. Protocol Notifications Do Not Trigger Inference Turns
+The MCP specification defines server-to-client notifications (such as `notifications/resources/updated` or `notifications/roots/list_changed`). However:
+- In all mainstream MCP clients (Claude Desktop, Cursor, Copilot, LibreChat), notifications are treated strictly as **passive UI cache invalidations** (e.g. refreshing a file tree or updating a resource dropdown).
+- Clients **never** spawn a spontaneous turn or trigger LLM token generation in response to an MCP notification.
+- To wake an idle agent, something must stimulate the host application's input stream—which is why Locutus uses native harness extensions (OpenCode `promptAsync`, Pi `sendMessage`), lifecycle continuation hooks (`Stop` hooks), or native OS desktop notifications (`osascript` / `notify-send`).
+
+### 3. MCP Cannot Preempt In-Flight Execution
+If an agent is busy running a long compile job or executing a sequence of tool calls:
+- An MCP server has no protocol mechanism to abort the client's current turn.
+- Only harness abort APIs (`client.session.abort()` in OpenCode, `pi.abort()` in Pi) or process signals can interrupt an active turn to deliver high-priority context (`--immediate`).
+
+### 4. Why Wrapping the Locutus CLI in MCP is Redundant
+For terminal-capable coding assistants (Claude Code, OpenCode, Codex, Pi, AGY):
+- The assistant already has access to execute terminal commands (`Bash`, `run_command`, `exec`).
+- Wrapping `locutus` in an MCP tool simply creates an extra layer of JSON-RPC serialization, slower cold starts, and potential memory leaks—while providing **zero** autonomous wakeup or interruption capabilities.
+- The native `locutus` binary plus harness-specific ear plugins delivers zero-latency execution, unforgeable HMAC authentication, and true idle-stimulation.
+
+---
+
+## Developer Guide: Adding Support for a New Coding Harness
+
+When adding support for a new coding harness, follow this 12-question evaluation and implementation checklist:
+
+### 1. What hooks are required for the coding harness integration?
+A complete integration requires up to three architectural tiers:
+- **Identity / Environment Injection Hook**: Injects `LOCUTUS_AGENT_NAME` and `LOCUTUS_SESSION_ID` into the harness's bash/tool execution environment (e.g., OpenCode's `shell.env`).
+- **Passive Post-Tool Drain Hook**: Drains queued inbox messages after tool executions when the agent is already in an active turn (e.g., Claude Code's `post-tool-execution` running `locutus drain 50 <agent> --hook`).
+- **Active Idle Wakeup / Extension**: Listens on Redis in the background and stimulates the harness when a message arrives while the agent is idle. Use **native in-process extensions** (e.g., OpenCode plugin `promptAsync`, Pi extension `deliverPiPrompt`), **continuation Stop hooks** (Claude, Codex, AGY), or **native desktop notifications** (`locutus listen --notify` for Cursor/Copilot). *Never simulate keystrokes or inject characters into terminal multiplexers (e.g., `tmux send-keys`).*
+
+### 2. How should the harness handle backgrounding behavior?
+- The harness must **never** run a blocking wait on stdout during a foreground turn unless explicitly intended as an in-turn wait (`locutus listen <agent> 120`).
+- Background listening must operate via a native in-process fiber/thread, an asynchronous reactive task (e.g., AGY `run_command`), or a one-shot subagent.
+- Background processes must register clean shutdown handlers (`SIGINT`, `SIGTERM`, process exit) to remove listener locks (`DEL ${PREFIX}listener:<name>`) and prevent zombie PID records.
+- **Never allow the LLM to invent background scripts**: The harness instructions must provide strict, single-line commands. Forbid `while true; do locutus listen; done` loops and `&` detachments, which silently discard output.
+
+### 3. Can it interrupt while working?
+Determine if the harness supports programmatic turn interruption:
+- **Programmatic Abort (Tier 1)**: If the harness provides a session cancellation API (like OpenCode's `client.session.abort()` or Pi's `pi.abort()`), trigger abort on messages with urgency `--immediate`, wait for the session state to transition from `busy` to `idle`, and inject the new prompt.
+- **Hook Continuation (Tier 2)**: For CLI harnesses (Claude Code, Codex), lifecycle `Stop` hooks intercept turn completion and feed urgent messages directly into continuation turns.
+- **Queued Delivery (Fallback)**: For messages with urgency `--soon`, never interrupt. Allow the in-flight turn or command to finish, and deliver the message on the subsequent turn.
+
+### 4. What blocking issues should we anticipate?
+- **TTY / stdin Clashing**: Never allow `locutus listen` to attach to foreground stdin. Run with redirected stdin (`< /dev/null`) or in detached pipes.
+- **Listener Lock Deadlocks**: If a harness crashes without running cleanup, its PID lock remains in Redis. Ensure your harness registers with `locutus open`, which automatically clears stale locks if the recorded PID is dead on the local host.
+- **Prompt Injection Risks**: Never format unauthenticated or raw external data directly into an LLM prompt. Always invoke `locutus drain --hook` or verify HMAC signatures before presenting data to the agent.
+- **Session Mapping Collisions**: Ensure session IDs are prefixed with the harness name (e.g., `opencode:<id>`, `pi:<id>`, `codex:<id>`) to prevent key collisions in shared Redis session registries.
+
+### 5. How do we verify compatibility with existing systems?
+- Run the Pydantic schema validation suite (`pytest tests/test_nim_binary.py`) to verify that all message envelopes conform to the Locutus wire specification.
+- Verify that HMAC-SHA256 signatures match the canonical concatenation string: `id|from|to|type|subject|body|timestamp`.
+- Ensure multi-node and container deployments respect origin hostname stamping (`[host: <hostname>]`) and preserve foreign host listener locks during watchdog sweeps (`locutus sweep`).
+
+### 6. What changes are needed to support this new coding harness?
+1. **Skill Playbook & Prompt Contract (Zero Guesswork)**:
+   Add a tailored playbook entry in `skills/locutus/SKILL.md` (and the harness's rule file) with strict, single-line recipes so the LLM does not have to guess or improvise:
+   - **Recipe 1: Startup**: Exact command to register identity and wait (`locutus open <my-name> "<tags>" --listen`).
+   - **Recipe 2: Post-Task Transition**: Answer whether to re-open (*NO — registration persists in Redis*) and provide the exact reply & re-arm command (`locutus reply --to <sender> --reply-to "<id>" ... --listen` or `locutus listen <my-name> 120`).
+   - **Recipe 3: Subagent Relaunch**: If the harness uses subagents, instruct the parent agent to terminate the subagent on ONE message and immediately dispatch a fresh one-shot listener after completing the task.
+   - **Recipe 4: Autonomous Continuation**: If hooks are supported, specify the `Stop` hook configuration that automatically continues turns without agent intervention.
+   - **Recipe 5: Clean Disconnect**: Provide the explicit shutdown command (`locutus close <my-name>`) to clear heartbeats and listener locks when work is finished.
+   - **Engine Lifecycle Guidance**: Note that `locutus listen` outputs a lifecycle reminder to `stderr` with expected next-step commands upon message delivery. To silence it in automation scripts or continuous extensions, pass `--quiet` / `-q` or export `LOCUTUS_QUIET=1`.
+2. **In-Process Extension or Rules File**:
+   - For plugin-capable harnesses: Create `skills/locutus/<harness>-ear.js` or `.ts` implementing session registration, unblocked listener fiber, and prompt injection.
+   - For rule-driven harnesses: Create `.cursor/rules/<harness>.mdc` or instructions files providing the 5 canonical recipes.
+3. **Session Mapping**: Integrate with `locutus session set <harness>:<id> <agent>` so CLI commands within the harness automatically resolve agent identity.
+4. **Installer Support**: Update `scripts/install.sh` and platform package manager configs to detect the harness directory and install the skill, extension, and rules.
+
+### 7. Are there specific tests or validation steps required?
+
+Every new coding harness integration must be validated across 5 distinct test tiers. Contributors must add corresponding automated test suites before submitting a PR:
+
+#### Tier 1: Session Mapping & Lifecycle Unit Tests
+- **File Location**: `tests/test_<harness>_ear.test.js` (for JS/TS runtimes) or `tests/test_<harness>_session.py` (for Python runtimes).
+- **Required Assertions**:
+  1. **Session-to-Agent Mapping**: Verify that `locutus session set <harness>:<id> <agent>` stores the mapping locally in `~/.config/locutus/sessions.json` and in Redis `${PREFIX}sessions`.
+  2. **Automatic Sanitization & Naming**: Verify that unmapped sessions generate a valid slug (e.g. `sanitizeAgentName` producing `<harness>-<session_id_suffix>`) and persist it.
+  3. **Environment Injection**: Verify that the harness's environment hook (e.g. `shell.env`) correctly injects `LOCUTUS_SESSION_ID=<harness>:<id>` and `LOCUTUS_AGENT_NAME=<agent>` into the child process environment before tools run.
+  4. **Session Teardown & Purge**: Verify that when a session is closed or deleted (e.g. `session.deleted` event), the session mapping is unlinked from both local storage and Redis.
+- **Reference Example**: Inspect [`tests/test_opencode_ear.test.js`](tests/test_opencode_ear.test.js) for mock client event testing.
+
+#### Tier 2: Passive Post-Execution Hook Tests
+- **File Location**: `tests/test_hooks.py`
+- **Required Assertions**:
+  1. **Empty Backlog Handling**: When the inbox is empty, verify that the post-execution hook returns an empty JSON object/string with exit code `0` (never injects spurious prompts).
+  2. **Formatted Continuation Blocks**: When messages are pending, verify that `locutus drain 50 <agent> --hook` outputs a structured Markdown block (`[LOCUTUS BUS] N new messages received on inbox for '<agent>':`).
+  3. **Metadata Formatting**: Verify that sender (`- From @<agent>`), subject line, urgency tag (`[type: task, urgency: <soon|immediate>]`), and origin host (`[host: <origin>]`) are formatted accurately.
+  4. **Cryptographic Validation in Hook**: Verify that messages with invalid HMAC signatures are dropped and omitted from the hook output.
+- **Reference Example**: Inspect `TestLocutusHooks` in [`tests/test_hooks.py`](tests/test_hooks.py).
+
+#### Tier 3: Active Ear & In-Flight Interruption Tests
+- **File Location**: `tests/test_<harness>_ear.test.js`
+- **Required Assertions**:
+  1. **Delivery Urgency Resolution**: Verify that `resolveMessageUrgency` parses `--immediate`, `--now`, and `--urgent` as `"immediate"`, and defaults everything else to `"soon"`.
+  2. **Idle Prompt Delivery**: When session status is `idle`, verify that the ear invokes the harness's turn trigger (`promptAsync` or `prompt`) with the complete message payload.
+  3. **In-Flight Preemption**: When session status is `busy` or `retry` AND urgency is `"immediate"`, verify that the ear triggers session abort (`client.session.abort()` or `pi.abort()`), polls until the session transitions to `idle`, and only then delivers the prompt.
+  4. **Negative Interruption Control**: When urgency is `"soon"` or `LOCUTUS_INTERRUPT=0`, verify that `abort()` is **never** called while busy, queuing delivery until the turn finishes.
+  5. **Process Termination**: Verify that stopping the listener properly kills spawned `locutus listen` child processes without leaking zombie PIDs.
+
+#### Tier 4: End-to-End Inter-Agent Coordination Tests
+- **File Location**: `tests/test_nim_binary.py`
+- **Required Assertions**:
+  1. **Cross-Harness Request/Reply**: Test sending a task from an existing harness (e.g. Claude Code or CLI) to the new harness (`locutus request --to <new-harness> ...`), processing it, and returning a correlated reply (`locutus reply --to <sender> --reply-to <id>`).
+  2. **Project Tag Multicast**: Tag the new harness agent with project tags (`locutus tag add qa,backend <agent>`) and verify that `locutus broadcast --tags qa` delivers to its inbox.
+  3. **Reliable Worker Queue (Leasing & DLQ)**: Verify that the new harness agent can lease a task (`locutus claim <queue> --lease 60`), extend its deadline (`locutus claim renew`), and acknowledge completion (`locutus ack`).
+
+#### Tier 5: Security & Prompt Firewall Negative Tests
+- **Required Assertions**:
+  1. **Forged Payload Rejection**: Inject unauthenticated or tampered JSON directly into the Redis inbox key. Verify that `locutus listen` drops the payload to stderr with `[LOCUTUS SECURITY]` and never delivers it to the harness context.
+  2. **Host Boundary Check**: Verify that messages containing foreign host paths (`[host: remote-box]`) do not trigger unhandled local filesystem exceptions.
+
+### 8. How should we document the integration process for future reference?
+- Add the harness to the supported list in `CONTRIBUTING.md` and `README.md`.
+- Document configuration environment variables (e.g., `LOCUTUS_<HARNESS>_DISABLED`, `LOCUTUS_INTERRUPT`).
+- Provide copy-paste installation instructions and troubleshooting tips for common failure modes (e.g. Redis connection configuration, desktop notification permissions).
+
+### 9. What are the main limitations when adding this coding harness?
+- **Closed GUI Environments**: Harnesses without an extension API, hook directory, or programmatic prompt injection mechanism must rely on OS desktop notifications (`notify-send` / `osascript`) or manual terminal polling.
+- **Lack of Session Abort**: Harnesses without an abort API cannot preempt in-flight tasks; `--immediate` messages will be queued behind the current turn.
+- **Ephemeral Sandbox Filesystems**: In containerized harnesses where filesystems reset between turns, ensure Redis connectivity and credentials (`LOCUTUS_SECRET`, `LOCUTUS_REDIS_URL`) are mounted or passed via environment variables.
+
+### 10. Can the harness be tested with the existing research tools?
+- Yes. Use `bun test tests/test_opencode_ear.test.js` and `pytest tests/test_hooks.py` as templates for writing automated tests using mock client APIs.
+- Use `locutus send --immediate` from a terminal to test live interruption against a running harness session.
+
+### 11. What steps should we follow to ensure smooth integration?
+Follow this 6-stage lifecycle:
+1. **Discovery**: Inspect the harness's extension points (hooks directory, plugin API, terminal architecture).
+2. **Ear Prototype**: Implement a minimal script that listens to `locutus listen` and injects text into the harness.
+3. **Skill Adaptation**: Add prompt guidance in `SKILL.md` explaining how the harness invokes Locutus.
+4. **Automated Testing**: Write unit tests verifying session mapping, hook execution, and urgency routing.
+5. **Installer Integration**: Add detection and placement logic to `scripts/install.sh`.
+6. **CI Verification**: Ensure all tests pass in `./scripts/ci/test.sh`.
+
+### 12. How will we track and report any issues during deployment?
+- **Stderr Security Warnings**: All dropped, unauthenticated, or malformed messages produce explicit warnings on stderr with `[LOCUTUS SECURITY]`.
+- **Audit Logs**: Inspect `~/.config/locutus/sessions.json` and Redis hash `${PREFIX}sessions` to verify active mappings.
+- **Watchdog Reports**: Run `locutus sweep` to detect dead agent heartbeats, orphaned PID locks, and foreign host listeners.
+
+---
+
+## Universal 3-Tier Installation Strategy
+
+Locutus utilizes a 3-tier installation architecture ensuring seamless setup whether users prefer native package managers, multi-agent skill managers, or custom platform plugins:
+
+```mermaid
+flowchart TD
+    subgraph Tier1["Tier 1: Platform-Specific Plugins & Extensions"]
+        T1_OpenCode["OpenCode In-Process Plugin<br/><code>~/.config/opencode/plugins/locutus.js</code>"]
+        T1_Pi["Pi Coding Agent Extension<br/><code>~/.pi/agent/extensions/locutus.ts</code>"]
+        T1_Claude["Claude Code Skill & Hooks<br/><code>~/.claude/skills/locutus/</code>"]
+    end
+
+    subgraph Tier2["Tier 2: Universal Multi-Agent Installer"]
+        T2_Script["Universal Install Script<br/><code>curl -fsSL .../install.sh | bash</code>"]
+        T2_Skills["skills.sh (Vercel Labs)<br/><code>npx -y skills add axiomantic/locutus -g</code>"]
+        T2_Skilz["skilz (Spillwave)<br/><code>skilz install axiomantic/locutus</code>"]
+    end
+
+    subgraph Tier3["Tier 3: OS Package Managers"]
+        T3_Brew["macOS / Linux Homebrew<br/><code>brew install axiomantic/tap/locutus</code>"]
+        T3_APT["Debian / Ubuntu APT<br/><code>apt-get install locutus</code>"]
+        T3_Scoop["Windows Scoop<br/><code>scoop install locutus.json</code>"]
+    end
+
+    ReleaseZip["GitHub Release Tarball / Zip<br/><code>bin/locutus</code>, <code>skills/</code>, <code>wire_spec.md</code>"]
+
+    ReleaseZip --> Tier2
+    Tier2 --> Tier1
+    Tier3 --> Tier1
+
+    classDef t1 fill:#e1f5fe,stroke:#0288d1,stroke-width:1.5px;
+    classDef t2 fill:#ede7f6,stroke:#512da8,stroke-width:1.5px;
+    classDef t3 fill:#e8f5e9,stroke:#2e7d32,stroke-width:1.5px;
+    class T1_OpenCode,T1_Pi,T1_Claude t1;
+    class T2_Script,T2_Skills,T2_Skilz t2;
+    class T3_Brew,T3_APT,T3_Scoop t3;
+```
+
+### Release Archive Layout
+Every official release package (`locutus-<os>-<arch>.tar.gz` and `.zip`) contains a self-contained installation structure:
+```text
+locutus-<os>-<arch>/
+├── bin/
+│   └── locutus              # High-speed native Nim engine (with --notify)
+├── skills/
+│   └── locutus/
+│       ├── SKILL.md         # Canonical skill prompt with playbooks
+│       ├── opencode-ear.js  # Native OpenCode in-process plugin
+│       ├── pi-ear.ts        # Native Pi in-process extension
+│       ├── hooks/           # Lifecycle continuation hooks (Claude, Codex)
+│       ├── rules/           # Coding agent system instructions (Cursor, Copilot)
+│       └── references/
+│           └── wire_spec.md # Formal HMAC wire protocol specification
+└── scripts/
+    └── install.sh           # Local installer script
+```
+
+When adding support for a new harness, always ensure:
+1. The harness plugin or extension is added under `skills/locutus/`.
+2. The installation path is added to `install_skills()` in `scripts/install.sh`.
+3. The uninstallation path is added to `--uninstall` in `scripts/install.sh`.
+
 

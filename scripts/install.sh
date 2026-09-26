@@ -65,8 +65,36 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]
     REMOVED=1
   fi
 
-  # D. Check standard binary paths
-  for p in "/usr/local/bin/locutus" "${HOME}/.local/bin/locutus" "${INSTALL_DIR:-}/locutus"; do
+  # E. Remove OpenCode Plugin
+  for op in "${HOME}/.config/opencode/plugins/locutus.js" "${HOME}/.config/opencode/plugins/locutus-ear.js"; do
+    if [ -f "$op" ]; then
+      echo "Removing OpenCode plugin: $op"
+      rm -f "$op"
+      REMOVED=1
+    fi
+  done
+
+  # F. Remove Pi Extension
+  for pe in "${HOME}/.pi/agent/extensions/locutus.ts" "${HOME}/.pi/agent/extensions/locutus-ear.ts"; do
+    if [ -f "$pe" ]; then
+      echo "Removing Pi extension: $pe"
+      rm -f "$pe"
+      REMOVED=1
+    fi
+  done
+
+  # G. Remove Cursor Rules
+  for cr in ".cursor/rules/locutus.mdc" "${HOME}/.cursor/rules/locutus.mdc"; do
+    if [ -f "$cr" ]; then
+      echo "Removing Cursor rule: $cr"
+      rm -f "$cr"
+      REMOVED=1
+    fi
+  done
+
+  # H. Check standard binary paths
+  for p in "/usr/local/bin/locutus" "${HOME}/.local/bin/locutus" "${INSTALL_DIR:-}/locutus" \
+           "/usr/local/bin/locutus-ear" "${HOME}/.local/bin/locutus-ear" "${INSTALL_DIR:-}/locutus-ear"; do
     if [ -f "$p" ]; then
       echo "Removing binary at: $p"
       if [ -w "$(dirname "$p")" ]; then
@@ -252,11 +280,19 @@ install_skills() {
     else
       SKILL_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/SKILL.md"
       SPEC_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/references/wire_spec.md"
+      OPENCODE_EAR_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/opencode-ear.js"
+      PI_EAR_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/pi-ear.ts"
+      CURSOR_RULE_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/rules/cursor-rules.mdc"
+      COPILOT_INST_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/rules/copilot-instructions.md"
       TMP_SKILL="$(mktemp -d)"
       CLEANUP_TMP=1
       if curl -fsSL -o "${TMP_SKILL}/SKILL.md" "${SKILL_URL}" 2>/dev/null; then
-        mkdir -p "${TMP_SKILL}/references"
+        mkdir -p "${TMP_SKILL}/references" "${TMP_SKILL}/rules"
         curl -fsSL -o "${TMP_SKILL}/references/wire_spec.md" "${SPEC_URL}" 2>/dev/null || true
+        curl -fsSL -o "${TMP_SKILL}/opencode-ear.js" "${OPENCODE_EAR_URL}" 2>/dev/null || true
+        curl -fsSL -o "${TMP_SKILL}/pi-ear.ts" "${PI_EAR_URL}" 2>/dev/null || true
+        curl -fsSL -o "${TMP_SKILL}/rules/cursor-rules.mdc" "${CURSOR_RULE_URL}" 2>/dev/null || true
+        curl -fsSL -o "${TMP_SKILL}/rules/copilot-instructions.md" "${COPILOT_INST_URL}" 2>/dev/null || true
         SRC_SKILL_DIR="${TMP_SKILL}"
       else
         SRC_SKILL_DIR=""
@@ -282,6 +318,53 @@ install_skills() {
           SKILL_INSTALLED=1
         fi
       done
+
+      # Install OpenCode in-process plugin
+      if [ -d "${HOME}/.config/opencode" ]; then
+        mkdir -p "${HOME}/.config/opencode/plugins"
+        if [ -f "${SRC_SKILL_DIR}/opencode-ear.js" ]; then
+          cp "${SRC_SKILL_DIR}/opencode-ear.js" "${HOME}/.config/opencode/plugins/locutus.js"
+          echo "  ✓ Installed OpenCode plugin to: ${HOME}/.config/opencode/plugins/locutus.js"
+          SKILL_INSTALLED=1
+        fi
+      fi
+
+      # Install Pi Coding Agent extension
+      if [ -d "${HOME}/.pi" ] || [ -d "${HOME}/.pi/agent" ]; then
+        mkdir -p "${HOME}/.pi/agent/extensions" "${HOME}/.pi/agent/skills/locutus"
+        if [ -f "${SRC_SKILL_DIR}/pi-ear.ts" ]; then
+          cp "${SRC_SKILL_DIR}/pi-ear.ts" "${HOME}/.pi/agent/extensions/locutus.ts"
+          echo "  ✓ Installed Pi Coding Agent extension to: ${HOME}/.pi/agent/extensions/locutus.ts"
+          SKILL_INSTALLED=1
+        fi
+      fi
+
+      # Install Cursor rule if .cursor or ~/.cursor exists
+      if [ -d ".cursor" ]; then
+        mkdir -p ".cursor/rules"
+        if [ -f "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ]; then
+          cp "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ".cursor/rules/locutus.mdc"
+          echo "  ✓ Installed Cursor rules to: .cursor/rules/locutus.mdc"
+          SKILL_INSTALLED=1
+        fi
+      elif [ -d "${HOME}/.cursor" ]; then
+        mkdir -p "${HOME}/.cursor/rules"
+        if [ -f "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ]; then
+          cp "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" "${HOME}/.cursor/rules/locutus.mdc"
+          echo "  ✓ Installed Cursor rules to: ${HOME}/.cursor/rules/locutus.mdc"
+          SKILL_INSTALLED=1
+        fi
+      fi
+
+      # Install GitHub Copilot instructions if .github directory exists
+      if [ -d ".github" ]; then
+        if [ -f "${SRC_SKILL_DIR}/rules/copilot-instructions.md" ] && [ ! -f ".github/copilot-instructions.md" ]; then
+          cp "${SRC_SKILL_DIR}/rules/copilot-instructions.md" ".github/copilot-instructions.md"
+          echo "  ✓ Installed GitHub Copilot instructions to: .github/copilot-instructions.md"
+          SKILL_INSTALLED=1
+        fi
+      fi
+
       if [ "${CLEANUP_TMP}" -eq 1 ]; then
         rm -rf "${TMP_SKILL}"
       fi

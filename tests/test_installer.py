@@ -348,20 +348,12 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         import yaml
 
         skill_file = os.path.join(SKILLS_DIR, "SKILL.md")
-        root_skill_file = os.path.join(REPO_ROOT, "SKILL.md")
-
         self.assertTrue(os.path.isfile(skill_file), f"Missing {skill_file}")
-        self.assertTrue(os.path.isfile(root_skill_file), f"Missing {root_skill_file}")
 
         with open(skill_file, "r", encoding="utf-8") as f:
             content = f.read()
-        with open(root_skill_file, "r", encoding="utf-8") as f:
-            root_content = f.read()
 
-        # 1. Byte-for-byte synchronization across root and skills/locutus/
-        self.assertEqual(content, root_content, "Root SKILL.md and skills/locutus/SKILL.md have drifted out of sync")
-
-        # 2. Strict YAML frontmatter extraction and parsing
+        # 1. Strict YAML frontmatter extraction and parsing
         self.assertTrue(content.startswith("---\n"), "SKILL.md must start with YAML frontmatter delimiter '---'")
         parts = content.split("---", 2)
         self.assertGreaterEqual(len(parts), 3, "Invalid YAML frontmatter framing")

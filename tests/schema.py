@@ -21,6 +21,8 @@ class LocutusMessage(BaseModel):
     body: str = Field(..., min_length=1, description="Task, query, or reply payload content")
     sig: Optional[str] = Field(default=None, description="HMAC-SHA256 signature for message authentication")
     encrypted: bool = Field(default=False, description="Flag indicating if body payload is encrypted")
+    urgency: Optional[Literal["immediate", "soon"]] = Field(default="soon", description="Message delivery urgency")
+    host: Optional[str] = Field(default=None, description="Origin hostname where message was produced")
     timestamp: str = Field(..., description="ISO-8601 timestamp string")
 
     @field_validator("tags", mode="before")

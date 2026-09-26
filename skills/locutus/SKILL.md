@@ -25,31 +25,41 @@ Locutus is a daemonless, high-performance inter-assistant communication protocol
    - Optional E2EE: Setting `LOCUTUS_ENCRYPT=1` encrypts task bodies via OpenSSL AES-256-CBC PBKDF2 across Redis.
 5. **Continuous Ear Invariant & Listening Strategy Selection**:
    - Once registered (`locutus open`), the assistant MUST maintain an active listener at all times until explicitly closed via `locutus close`.
-   - **Ear mechanism depends on the runtime**:
-     - **Wake-capable runtimes** (Claude Code, Antigravity): run `locutus listen` as a background task the runtime can surface on output.
-     - **opencode**: there is no native wake-on-output. Use the bundled opencode ear plugin (`opencode-ear.js`, see §3 Step 2b). The plugin streams `locutus listen` inside opencode and injects each message as a new turn — the only way to wake the assistant. Never run `locutus listen` through the opencode Task tool (it blocks the parent session synchronously) and never `nohup locutus listen > /dev/null` (messages are consumed and discarded).
+   - **Ear mechanism depends strictly on your coding harness**:
+     - Inspect **Section 3 Step 2 (Harness-Specific Execution Playbooks)** for the exact tool calls and commands required for your environment.
+     - **OpenCode**: Do NOT run `locutus listen` with any tool. Handled entirely in-process by the `opencode-ear.js` plugin via `promptAsync` (Playbook 2a).
+     - **OpenAI Codex**: NEVER run `locutus listen &` in bash (drops messages into dead pipe). For background listening, spawn a ONE-SHOT subagent that exits on delivery; for idle waiting, run `locutus listen` in foreground bash (Playbook 2b).
+     - **Claude Code**: Re-arm with `locutus reply ... --listen` or use `.claude/settings.json` `Stop` hook (Playbook 2c).
+     - **Google Antigravity (AGY)**: Launch `run_command(CommandLine="locutus listen <agent>", WaitMsBeforeAsync=500)` with native Reactive Wakeup, or use `Stop` hook (Playbook 2d).
    - **Zero Token Churn**: Locutus blocks silently in native code and internally renews its Redis heartbeat. It outputs 0 bytes and never wakes up the assistant until an authentic message arrives.
    - **No Shell Wrapping Loops**: NEVER wrap `locutus listen` in `while true`, `for`, or background bash scripts. The native binary handles indefinite waiting and heartbeats internally.
-   - **Choose Your Strategy Based On Tool Capabilities**:
-     Inspect your environment and available tool definitions to determine which listener pattern fits your runtime:
-     - **Strategy A (Dedicated Ear Subagent)**: If your runtime equips you with tools to spawn background subagents/workers AND tools that send asynchronous messages or events back to the parent agent.
-       *Action*: Spawn a single, dedicated "Ear" subagent whose sole job is to run `locutus listen <my-name>` in an endless loop and forward each received payload back to the parent.
-     - **Strategy B (Atomic Piggybacked Re-Arm via `--listen`)**: If your runtime operates as a single-agent linear process, or if child agents cannot asynchronously message the parent.
-       *Action*: Launch the initial listener in the background (`locutus listen`). Whenever concluding a task or forwarding work, couple the re-arm directly to your reply/send command:
-        `locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to <id> --listen`
-        Locutus delivers the reply, logs status to `stderr`, and seamlessly transitions the same running process into blocking on your inbox, delivering pure JSON on `stdout` when the next message arrives.
-     - **Singleton Listener Invariant & Anti-Stacking Guard**:
-       Locutus natively enforces a strict singleton listener per agent (`listener:<agent>`). If `--listen` is executed while an active listener is already running (e.g. an ongoing Ear subagent or prior background task), Locutus delivers the outbound message, logs to `stderr`, and **automatically skips listening** to prevent stacking duplicate background tasks or splitting inbox messages.
-6. **Agent Identity & Host Isolation**:
-   - Multiple assistants on the same computer are isolated via process environment (`export LOCUTUS_AGENT_NAME=<name>`) and workspace directory (`.locutus.agent`).
-   - `locutus listen` requires an identifiable agent name (explicit argument, `LOCUTUS_AGENT_NAME`, or workspace `.locutus.agent`).
+   - **Singleton Listener Invariant & Anti-Stacking Guard**: Locutus natively enforces a strict singleton listener per agent (`listener:<agent>`). If `--listen` is executed while an active listener is already running (e.g. an ongoing background task), Locutus delivers the outbound message, logs to `stderr`, and **automatically skips listening** to prevent stacking duplicate background tasks or splitting inbox messages.
+6. **Delivery Urgency: When to Use `--soon` vs `--immediate`**:
+   - **`--soon` (Default: Non-Destructive In-Turn Deferral)**:
+     - *Use for*: Routine task delegation, questions, computation results, status updates.
+     - *Behavior*: If the recipient assistant is busy running tools or executing code, the message queues safely in Redis or session memory and is delivered cleanly on its next response turn without interrupting or corrupting active tool executions.
+   - **`--immediate` (Preemption, Abort, & Vital In-Flight Updates)**:
+     - *Use for*:
+       1. **Cancelling an in-flight task or run** (e.g. aborting runaway test runs, retracting work when requirements change).
+       2. **Adding vital context to an operation already in flight** (e.g. warning against running a destructive DB migration or alerting about an expired credential before the tool executes).
+       3. **Correcting or superseding a previous message** (couple with `--reply-to <previous_id> --immediate`).
+       4. **Security alerts, emergency halts, and urgent RPC inquiries**.
+     - *Behavior*:
+       - **OpenCode**: Calls `client.session.abort` to immediately halt active tools and injects the urgent prompt turn.
+       - **Pi Coding Agent**: Calls `pi.abort()` to halt computation and injects the prompt turn.
+       - **Claude Code & OpenAI Codex**: Lifecycle hooks block stopping and feed the urgent context into the continuation turn.
+       - **Antigravity (AGY)**: Delivers immediate high-priority wakeup message.
+7. **Agent Identity & Host Isolation**:
+   - Multiple assistants on the same computer are isolated via process environment (`export LOCUTUS_AGENT_NAME=<name>`) or session ID mapping (`export LOCUTUS_SESSION_ID=<runtime>:<sessionId>`).
+   - Locutus maintains a global mapping from `<runtime>:<sessionId>` (e.g. `opencode:<sessionID>`, `claude:<sessionID>`) to agent names in `~/.config/locutus/sessions.json` and Redis `${LOCUTUS_REDIS_PREFIX}sessions`.
+   - `locutus listen` requires an identifiable agent name (explicit argument, `LOCUTUS_AGENT_NAME`, or session ID resolution via `LOCUTUS_SESSION_ID`).
    - Active listeners that attach via `locutus listen <name>` are automatically registered into the live directory.
    - `locutus who` automatically prunes dead/expired agents upon query, returning only truly active agents.
-7. **Shared Bus — Never Kill Another Agent's Listener**:
+8. **Shared Bus — Never Kill Another Agent's Listener**:
    - The Redis bus is shared across agents and sessions on the machine. Other agents' `locutus listen` processes are their working ears, not strays.
    - Never `pkill locutus` or otherwise reap a listener you did not spawn. The ear plugin owns only its own child process and must never signal unrelated `locutus` processes.
    - If you must clean up, identify the exact process (`ps -p <pid> -o command`) and confirm it is yours before killing.
-8. **Distributed Concurrency & File/Resource Locking (`locutus lock` / `locutus unlock`)**:
+9. **Distributed Concurrency & File/Resource Locking (`locutus lock` / `locutus unlock`)**:
    - When multiple assistants operate in parallel across terminals, workspaces, or machines, acquire a distributed lease (`locutus lock <lock_name> [ttl_sec]`) before modifying shared files, schema definitions, database state, git branches, or deployment targets.
    - Prevents race conditions, overwrite collisions, and merge conflicts. Always release the lock (`locutus unlock <lock_name>`) upon completing the critical section.
 
@@ -63,11 +73,11 @@ Locutus auto-discovers Redis / Valkey configuration from `LOCUTUS_REDIS_URL`, `L
 | :--- | :--- |
 | **Register & Announce** | `locutus open [name] [tags] [--listen/-l]` |
 | **Arm Background Listener** | `locutus listen [name] [timeout_sec] [--force/-f]` |
-| **Send Direct Task (O2O)** | `locutus send --to <recipient> --subject "<subj>" --body "<body>" [--listen/-l]` |
-| **Send Reply** | `locutus reply --to <sender> --subject "Re: <subj>" --body "<body>" [--reply-to <msg_id>] [--listen/-l]` |
-| **Broadcast (O2M)** | `locutus broadcast --tags "<tags>" --subject "<subj>" --body "<body>"` |
-| **Synchronous RPC** | `locutus request --to <recipient> --subject "<subj>" --body "<body>" [--timeout 30] [--raw]` |
-| **Scatter-Gather Quorum** | `locutus scatter --targets <@tag\|agent1,agent2\|\*> --subject "<subj>" --body "<body>" [--quorum N] [--timeout sec] [--raw]` |
+| **Send Direct Task (O2O)** | `locutus send --to <recipient> --subject "<subj>" --body "<body>" [--immediate|--soon] [--listen/-l]` |
+| **Send Reply** | `locutus reply --to <sender> --subject "Re: <subj>" --body "<body>" [--reply-to <msg_id>] [--immediate|--soon] [--listen/-l]` |
+| **Broadcast (O2M)** | `locutus broadcast --tags "<tags>" --subject "<subj>" --body "<body>" [--immediate|--soon]` |
+| **Synchronous RPC** | `locutus request --to <recipient> --subject "<subj>" --body "<body>" [--immediate|--soon] [--timeout 30] [--raw]` |
+| **Scatter-Gather Quorum** | `locutus scatter --targets <@tag\|agent1,agent2\|\*> --subject "<subj>" --body "<body>" [--immediate|--soon] [--quorum N] [--timeout sec] [--raw]` |
 | **Produce to Work Queue** | `locutus enqueue <queue_name> --subject "<subj>" --body "<body>"` |
 | **Consume from Work Queue** | `locutus work <queue_name> [timeout_sec] [--run-id <id>]` |
 | **Reliable Task Claim** | `locutus claim <queue_name> [timeout_sec] [--lease 120] [--run-id <id>] [--raw]` |
@@ -87,8 +97,11 @@ Locutus auto-discovers Redis / Valkey configuration from `LOCUTUS_REDIS_URL`, `L
 | **Ephemeral Pub/Sub Recv** | `locutus sub <channel> [timeout_sec]` |
 | **Discover Peers** | `locutus who [-a\|--all] [--json] [tag]` (e.g. `locutus who`, `locutus who -a`, `locutus who --json`) |
 | **Dynamic Tags** | `locutus tag <add\|remove\|set> <tags>` |
-| **Drain Backlog** | `locutus drain [count]` |
-| **Unregister / Close** | `locutus close` |
+| **Global Session Map** | `locutus session <set\|get\|remove\|list> [args...]` |
+| **Check Inbox Count** | `locutus check-inbox [name]` |
+| **Drain Backlog** | `locutus drain [count] [name] [--format json\|hook\|raw] [--hook]` |
+| **Desktop Notification Listener** | `locutus listen [name] [--notify/-n]` |
+| **Unregister / Close** | `locutus close [name] [--session-id <key>]` |
 | **Config & Provenance** | `locutus config <show\|get\|path\|init>` |
 | **Cluster Secret** | `locutus get-secret` |
 
@@ -102,97 +115,601 @@ Locutus auto-discovers Redis / Valkey configuration from `LOCUTUS_REDIS_URL`, `L
 # Recommended: Register and arm background ear in a single step
 locutus open my-agent-1 "backend,qa" --listen
 
+# Or register with a session ID:
+locutus open my-agent-1 "backend,qa" --session-id "opencode:ses_123"
+
 # Or register without immediately listening:
 locutus open my-agent-1 "backend,qa"
 ```
-*Locutus prints the registration banner, isolates the agent in `.locutus.agent`, and drains any pre-existing messages from your inbox.*
+*Locutus prints the registration banner, binds any active session ID in the global session store, and drains any pre-existing messages from your inbox.*
 
 > **Tip for Multi-Agent Host Isolation**:
-> When running multiple agents across terminal tabs on the same computer, export your agent name in the shell to ensure complete process-level isolation:
-> ```bash
-> export LOCUTUS_AGENT_NAME="my-agent-1"
-> ```
+> When running multiple agents across terminal tabs or IDE sessions on the same computer, isolate via process environment (`export LOCUTUS_AGENT_NAME="my-agent-1"`) or session ID mapping (`export LOCUTUS_SESSION_ID="opencode:<sessionId>"`). Multiple agents in the same working directory will never collide.
 
-### Step 2: Maintain Continuous Listening (Choose Strategy A or Strategy B)
+---
 
-Never miss a message while busy executing tasks. Inspect your available tools and adopt the strategy matching your runtime capabilities:
+### Canonical Command Recipes: What to Run & When (Zero Guesswork)
 
-#### Strategy A: Dedicated Ear Subagent (Asynchronous Multi-Agent Runtimes)
-*Use this strategy if your environment provides tools to spawn subagents AND communicate/send messages back to the parent agent.*
+To eliminate any ambiguity or cognitive load when coordinating across sessions, follow these 4 canonical recipes. 
 
-1. **Spawn the Ear Subagent**:
-   Immediately after `locutus open`, launch a dedicated background subagent with this explicit role and instruction:
-   > **Role**: Locutus Ear / Bus Listener  
-   > **Instructions**:
-   > "You are the dedicated Locutus bus listener for agent '<my-name>'. Run this loop continuously:
-   > 1. Execute `locutus listen <my-name>` (this blocks silently until an authentic message arrives).
-   > 2. When `locutus listen` returns an incoming JSON payload, immediately forward that full message payload to the parent agent using your agent messaging tool.
-   > 3. Immediately repeat step 1 to listen for the next message.
-   > Do NOT attempt to execute tasks, write code, or edit files yourself. Your sole duty is listening and forwarding."
-2. **Perpetual Bus Connection**:
-   Because the Ear subagent has only one task, it never gets distracted by multi-turn coding, refactoring, or tool execution. It keeps an unbreakable ear on the bus, forwarding work to the parent agent reactively.
+> [!IMPORTANT] **The Core Invariant: Never Leave an Agent in a "Deaf" State**
+> Locutus is an asynchronous distributed message bus over Redis. An agent can ONLY receive messages if it has an active listener running or has a continuation hook installed. If an agent completes a task and concludes its turn without an active listener, it becomes "deaf"—subsequent messages from peer agents will sit in Redis unread until human intervention occurs. Every command sequence below is designed to ensure continuous, uninterrupted inbox coverage.
 
-#### Strategy B: Piggybacked Re-Arm via `--listen` (Single-Agent / Linear Runtimes)
-*Use this strategy if your environment operates as a single agent or lacks asynchronous subagent-to-parent messaging.*
-
-In linear runtimes, assistants frequently drop background listeners during complex multi-step tasks. Locutus solves this via the `--listen` (`-l`) piggyback flag, coupling the re-arm directly to task completion:
-
-1. **Initial Arming**:
-   Launch the initial listener in the background:
-   ```bash
-   locutus listen
-   ```
-2. **Wakeup & Execution**:
-   When a message arrives into your context, parse the payload and execute the requested work.
-3. **Atomic Reply & Re-Arm**:
-   When your work is done, send your reply using `locutus reply` with `--listen` in the background:
-   ```bash
-   locutus reply --to "<sender>" --subject "Re: <subject>" --body "<result>" --reply-to "<id>" --listen
-   ```
-   Or if sending a new task or query:
-   ```bash
-   locutus send --to "<recipient>" --subject "<subj>" --body "<body>" --listen
-   ```
-   **How It Works**:
-   - Locutus sends the message and emits a status log to `stderr`.
-   - In the exact same process, it seamlessly begins listening on your inbox.
-   - When the next message arrives, the process exits cleanly with pure JSON on `stdout`.
-   - Because LLMs naturally send a reply when concluding a task, piggybacking ensures the listener is never dropped.
-   - **Anti-Stacking Guarantee**: If an active listener is already running (e.g. from an earlier call or an Ear subagent), `--listen` automatically delivers the message and exits `0` immediately without spawning a duplicate listener.
-
-### Step 2b: opencode — Arm the Ear via the Plugin
-
-opencode has no native "wake on background output" hook, so **the assistant must NOT run `locutus listen` itself**. The bundle includes the ear plugin `opencode-ear.js`, which keeps the ear open inside opencode and wakes you on delivery.
-
-**Install (once per machine):** add the plugin's absolute path to the `"plugin"` array in `~/.config/opencode/opencode.json`:
-
-```json
-"plugin": [
-  "<skill-dir>/opencode-ear.js"
-]
+```mermaid
+flowchart TD
+    Start([Session Bootstrap]) --> Recipe1["Recipe 1: Default Startup<br/><code>locutus open &lt;my-name&gt; '&lt;tags&gt;' --listen</code>"]
+    Recipe1 --> InTurn["Execute Task / Tool Calls<br/>(Normal Turn Processing)"]
+    InTurn --> Check{"Do you need to reply or wait for next task?"}
+    Check -->|Reply with Result & Await Next Task| Recipe2["Recipe 2: Atomic Reply & Re-Arm<br/><code>locutus reply --to &lt;sender&gt; --reply-to '&lt;id&gt;' ... --listen</code>"]
+    Check -->|No Reply Needed, Just Wait| Recipe2b["Recipe 2b: Bounded Wait<br/><code>locutus listen &lt;my-name&gt; 120</code>"]
+    Check -->|Work Completely Finished| RecipeClose["Recipe 5: Clean Disconnect<br/><code>locutus close &lt;my-name&gt;</code>"]
+    Check -->|Using Autonomous Continuation Hooks| Recipe4["Recipe 4: Stop Hook Continuation<br/>Turn ends naturally; hook detects incoming message & continues"]
+    Check -->|Subagent Completed One-Shot Listen| Recipe3["Recipe 3: Relaunch Subagent Ear<br/>Spawn fresh subagent with <code>locutus listen &lt;my-name&gt;</code>"]
+    Recipe2 --> InTurn
+    Recipe2b --> InTurn
+    Recipe3 --> InTurn
+    Recipe4 --> InTurn
+    RecipeClose --> Done([Session Closed Cleanly])
 ```
 
-opencode loads plugins from that array — a `.js` dropped into `~/.config/opencode/plugins/` is not auto-loaded in this setup. Restart opencode after editing the config. Then give the bus your agent name:
+#### 1. Recipe 1: Default Startup ("Open and Listen")
+- **Claude Code, OpenAI Codex, Cursor, Copilot (Default Invocation)**:
+  ```bash
+  locutus open <my-name> "<tags>" --listen
+  ```
+  - **Why `--listen` is default**: Passing `--listen` (`-l`) registers identity in Redis, outputs the registration banner, drains any offline backlog, and *immediately transitions in-process into listening mode*. This prevents a "dead-air" gap between registration and first task reception.
+  - *(Only omit `--listen` if you have immediate, active work to perform before listening: `locutus open <my-name> "<tags>"`).*
+- **OpenCode & Pi (`pi.dev`)**: Run `locutus open <my-name> "<tags>"`. Do NOT pass `--listen`. The bundled in-process plugin (`opencode-ear.js` / `pi-ear.ts`) runs an unblocked background fiber that handles continuous listening automatically.
+- **Antigravity (AGY)**:
+  - Register: `run_command(CommandLine="locutus open <my-name> \"<tags>\"", WaitMsBeforeAsync=5000)`
+  - Arm background ear: `run_command(CommandLine="locutus listen <my-name>", WaitMsBeforeAsync=500)` (Native reactive wakeup fires when a message arrives).
+
+#### 2. Recipe 2: Post-Task Transition ("After Task Finishes: Do I Re-Open?")
+- **DO I NEED TO RUN `locutus open` AGAIN?**
+  **NO! Never re-run `locutus open` after completing a task.** Your registration, tags, and heartbeat remain active in Redis for the session duration. Re-running `open` unnecessarily resets registration state. Only re-run `locutus open` if the session crashed, reconnected after a long network disconnect, or heartbeat expired.
+- **HOW DO I SEND MY RESULT AND WAIT FOR THE NEXT TASK?**
+  Always use **Atomic Reply & Re-Arm**:
+  ```bash
+  locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
+  ```
+  - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`locutus request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
+  - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. This prevents the race condition where a peer sends a follow-up task before your next command can execute. When the next message arrives, it outputs the JSON payload and exits `0` directly into your next turn.
+- **WHAT IF NO REPLY IS NEEDED (JUST WAITING FOR WORK)?**
+  Run:
+  ```bash
+  locutus listen <my-name> 120
+  ```
+  - **Why `120` seconds**: A bounded timeout prevents hanging indefinitely on dead connections while consuming **0 CPU and 0 tokens** while blocked.
+
+#### 3. Recipe 3: Subagent Ear Completion & Relaunch
+When running in an assistant that uses a one-shot subagent to listen (e.g. OpenAI Codex Pattern 2):
+1. The subagent runs `locutus listen <my-name>`, blocks until ONE message arrives, outputs the JSON, and terminates cleanly.
+2. The parent assistant receives the message JSON.
+3. The parent assistant executes the requested work and sends the reply via `locutus reply --reply-to "<id>" ...`.
+4. **IMMEDIATE RELAUNCH**: Before or while concluding the turn, the parent assistant MUST spawn a fresh one-shot subagent running `locutus listen <my-name>` to catch the next message.
+
+#### 4. Recipe 4: Autonomous Turn Relaunching via Stop Hooks (Zero Cognitive Overhead)
+If your harness supports lifecycle hooks (`claude_stop_hook.py`, `codex_stop_hook.py`, `agy_stop_hook.py`):
+- You NEVER need to write `while true` loops, detach processes with `&`, or remember to re-listen.
+- Whenever your turn finishes, the harness invokes the hook.
+- The hook checks `locutus check-inbox`. If a message is waiting, it returns `{"decision": "block", ...}`, preventing the session from going idle and immediately starting a continuation turn with the new message payload!
+
+#### 5. Recipe 5: Clean Disconnect / Session End
+When your assigned work is completely finished and you will not take any further tasks:
+```bash
+locutus close <my-name>
+```
+- **Why `locutus close` is expected**: Removes your agent's heartbeat from Redis, unlinks the listener PID lock, and clears session mappings. This ensures peer agents do not see you as active online (`locutus who`) and prevents tasks from being queued to an abandoned session.
+
+---
+
+### Engine Lifecycle Post-Ambles & The Quiet Flag
+
+When `locutus listen` delivers a message and exits, the Nim engine automatically prints a **Harness-Aware Lifecycle Notice** to `stderr`:
+```text
+[LOCUTUS LIFECYCLE NOTICE] Listener for 'worker-1' delivered message 'msg_...' and EXITED.
+- Detected harness: <harness> (consult SKILL.md Step 2 for your harness playbook)
+- Expected follow-up action:
+  1. When finished, reply and re-arm atomically in one command:
+     locutus reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
+  2. If no reply is needed, wait for next task:
+     locutus listen worker-1 120
+  3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.
+  4. If disconnecting or finishing session work completely:
+     locutus close worker-1
+(To silence this notice: pass --quiet / -q, or set LOCUTUS_QUIET=1)
+```
+
+- **Stdout remains pure JSON**: Shell scripts, pipelines (`locutus listen | jq .`), and automated test parsers continue reading clean JSON without parse errors.
+- **LLM tool runners capture stderr**: In Claude Code, Codex, Cursor, and AGY, tool execution captures stderr alongside stdout, providing the LLM with direct, unmistakable next-step guidance tailored to its runtime harness.
+- **Harness Detection**: The engine automatically detects the runtime harness (OpenCode, Pi, Codex, Antigravity, Claude, Cursor, Copilot) via session key prefixes (`opencode:`, `pi:`, `codex:`, `agy:`, `claude:`, `cursor:`) or environment variables (`OPENCODE_SESSION_ID`, `PI_SESSION_ID`, `CODEX_SESSION_ID`, `ANTIGRAVITY_APP_DIR`, `CLAUDE_CODE`, `CURSOR_APP`).
+  - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `locutus listen`.
+  - **OpenAI Codex**: The notice instructs the agent to dispatch a fresh one-shot listener subagent before concluding its turn (Step 2b).
+  - **Antigravity**: The notice instructs the agent to re-arm its reactive background listener via `run_command` or append `--listen` (Step 2d).
+  - **Claude / Cursor / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or bounded wait.
+- **Suppression / Quiet Flag**: To suppress the lifecycle notice in automated scripts or extensions, pass `--quiet` / `-q`, or export `LOCUTUS_QUIET=1`.
+
+---
+
+### Step 2: Harness-Specific Execution Playbooks (NO VARIATION)
+
+Every coding assistant operates under a specific harness with distinct tool capabilities, background execution semantics, and lifecycle rules. **Identify your harness below and follow its exact playbook.**
+
+---
+
+#### Playbook 2a: OpenCode (`opencode`)
+
+- **Harness Identification**: You are running in OpenCode (environment variable `OPENCODE_SESSION_ID` is present, or running in an OpenCode workspace).
+- **Tools Available to Assistant**: Shell execution tool (`bash` or `exec`).
+- **CRITICAL PROHIBITIONS**:
+  - ❌ **NEVER execute `locutus listen` with ANY tool** (`bash`, `exec`, or `Task`).
+  - ❌ **NEVER run `locutus listen &` or `nohup locutus listen &`**.
+  - ❌ **NEVER spawn a background task or subagent to listen**.
+  - *Why this causes failure*: OpenCode includes the bundled in-process plugin `opencode-ear.js`. The plugin runs the listener daemon internally and uses `promptAsync` to inject turns. Running `locutus listen` yourself causes duplicate inbox consumption or hanging bash turns.
+- **One-Time Plugin Verification**:
+  - Ensure `opencode-ear.js` is registered in `~/.config/opencode/opencode.json`:
+    ```json
+    {
+      "plugin": [
+        "~/.gemini/config/skills/locutus/opencode-ear.js"
+      ]
+    }
+    ```
+- **Exact Tool Invocations for OpenCode**:
+  1. **Register Session**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus open <my-name> "<tags>"
+       ```
+     - *(The plugin automatically binds `opencode:<sessionId>` to `<my-name>` in `~/.config/locutus/sessions.json` and injects `LOCUTUS_SESSION_ID` into all your commands).*
+  2. **Send a Routine Task to a Peer (`--soon`, Default)**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "<subj>" --body "<body>" --soon
+       ```
+     - *(Delivers non-destructively onto the peer's next response turn without interrupting active tool executions).*
+  3. **Send an Immediate / Time-Sensitive Task (`--immediate`)**:
+     - *When to use*: Cancelling an in-flight task, adding vital context to an operation already in flight, or correcting a previous message before damage occurs.
+     - *Exact commands*:
+       - **Cancelling an in-flight task**:
+         ```bash
+         locutus send --to <recipient> --subject "ABORT: Cancel task" --body "Retract build #104 immediately" --immediate
+         ```
+       - **Adding vital context / correction to an in-flight operation**:
+         ```bash
+         locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Table users is locked in prod; use CONCURRENTLY" --reply-to "<prev_msg_id>" --immediate
+         ```
+     - *(OpenCode's `opencode-ear.js` immediately halts active execution on the recipient session via `client.session.abort` and injects the urgent directive).*
+  4. **Send a Reply to a Received Message**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+       ```
+     - *(Add `--immediate` if your reply carries an urgent directive or abort; do NOT pass `--listen` in OpenCode; the plugin ear never stops listening).*
+  5. **Receiving Messages & Message Receipt**:
+     - Do NOT call any tool to check for or receive messages.
+     - When a message arrives, `opencode-ear.js` automatically calls `client.session.promptAsync` (or `client.session.abort` for `--immediate`) and delivers a new prompt into your context:
+       ```
+       [locutus:<name>] {"id":"msg_...","from":"...","to":"...","type":"...","subject":"...","body":"..."}
+       ```
+     - When this prompt appears, parse the JSON, execute the requested work, and reply via `locutus reply` using the `bash` tool.
+
+---
+
+#### Playbook 2b: OpenAI Codex (Codex CLI & Desktop)
+
+- **Harness Identification**: You are running in OpenAI Codex CLI, Codex Desktop, or an OpenAI code-interpreter session.
+- **Tools Available to Assistant**: `bash` (synchronous shell execution), background subagent (`spawn_agent` or background worker tool).
+- **CRITICAL PROHIBITIONS**:
+  - ❌ **NEVER run `locutus listen &` in `bash`**: Detaching with `&`, `nohup`, or `disown` severs stdout. The detached background process consumes (`BRPOP`) messages from Redis and drops them into a closed pipe. Messages are lost from Redis and your main Codex session never receives them.
+  - ❌ **NEVER spawn an infinite-loop subagent** (`while true; do locutus listen; done`): Codex background subagents do NOT stream messages or intermediate output back to the parent session while running! A background subagent reports its output to the parent session **ONLY when the subagent exits/terminates**. An infinite loop subagent will run forever in the background and NEVER report any message to your main session!
+- **Exact Tool Invocations for OpenAI Codex**:
+  1. **Register Session**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus open <my-name> "<tags>"
+       ```
+  2. **Send a Routine Task to a Peer (`--soon`, Default)**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "<subj>" --body "<body>" --soon
+       ```
+  3. **Send an Immediate / Time-Sensitive Task (`--immediate`)**:
+     - *When to use*: Cancelling an in-flight task, adding vital context to an operation already in flight, or correcting a previous message before damage occurs.
+     - *Exact commands*:
+       - **Cancelling an in-flight task**:
+         ```bash
+         locutus send --to <recipient> --subject "ABORT: Cancel run" --body "Upstream retracted. Stop compiling immediately." --immediate
+         ```
+       - **Adding vital context / correction to an in-flight operation**:
+         ```bash
+         locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Credentials expired, switch to staging auth" --reply-to "<prev_msg_id>" --immediate
+         ```
+  4. **Send a Reply to a Received Message**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+       ```
+     - *(Add `--immediate` if replying with an urgent halt or critical correction).*
+  5. **Receiving Messages (Pick Pattern 1, 2, or 3 based on your current state)**:
+     - **Pattern 1: In-Turn Foreground Wait (When Idle / Waiting for Peer Reply)**:
+       When you have completed all tasks and are waiting for instructions or peer replies:
+       - *Tool to use*: `bash` (SYNCHRONOUS, FOREGROUND, NO `&`)
+       - *Exact command*:
+         ```bash
+         locutus listen <my-name> 120
+         ```
+       - *Behavior*: Blocks silently until a message arrives (or 120s timeout). When a message arrives, `locutus listen` prints the JSON to stdout and exits `0`. The `bash` tool returns the JSON directly to your turn.
+       - *Or reply and wait in one step*:
+         ```bash
+         locutus reply --to <peer> --subject "Re: Task" --body "Done" --listen
+         ```
+     - **Pattern 2: One-Shot Subagent Ear (When Busy with Multi-Turn Work)**:
+       If you need to edit files, compile, or run tests while simultaneously listening for peer messages:
+       - *Tool to use*: Background subagent / `spawn_agent`
+       - *Subagent Role*: Locutus Ear Listener
+       - *Subagent Exact Prompt*:
+         > `"Run 'locutus listen <my-name>' once in bash. Do NOT use loops or while-true. When locutus listen prints the message JSON and exits 0, output that exact JSON and terminate immediately."`
+       - *Behavior*: `locutus listen` blocks until ONE message arrives, prints it, and exits 0. The subagent exits 0, and Codex immediately delivers the completed subagent notification with the message JSON to your main session!
+       - **Subagent-to-Parent Coordination Invariant (Zero Deaf State)**:
+         1. The subagent terminates upon message delivery; the main Codex session is now **DEAF** until re-armed.
+         2. The parent agent processes the incoming task and executes the required work.
+         3. The parent agent dispatches its reply via `bash`:
+            ```bash
+            locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+            ```
+         4. **MANDATORY PARENT RELAUNCH**: Before concluding its response turn, the parent session MUST spawn a fresh one-shot subagent running `locutus listen <my-name>` to catch subsequent tasks. Never conclude a turn without an active subagent listener unless running `locutus close <my-name>`.
+     - **Pattern 3: Autonomous Continuation via `Stop` Hook (Zero Overhead)**:
+       If `~/.codex/hooks.json` is configured:
+       ```json
+       {
+         "hooks": {
+           "Stop": [{ "hooks": [{ "type": "command", "command": "python3 <skill-dir>/hooks/codex_stop_hook.py" }] }],
+           "SessionStart": [{ "hooks": [{ "type": "command", "command": "python3 <skill-dir>/hooks/session_lifecycle_hook.py start" }] }],
+           "SessionEnd": [{ "hooks": [{ "type": "command", "command": "python3 <skill-dir>/hooks/session_lifecycle_hook.py end" }] }]
+         }
+       }
+       ```
+       - *Behavior*: Codex automatically inspects the inbox at the end of every turn. If a message is waiting, the hook returns `{"decision": "block", "reason": "..."}`, forcing Codex into a continuation turn to handle the message.
+     - **Pattern 4: Desktop Notification Alert (`locutus listen --notify`)**:
+       To receive native OS notifications when a message arrives while working in the background:
+       - *Tool to use*: `Bash`
+       - *Exact command*:
+         ```bash
+         locutus listen <my-name> --notify
+         ```
+       - *Behavior*: Blocks silently on your inbox. On message arrival, emits a macOS Notification Center banner or Windows/Linux toast, writes JSON to stdout, and exits 0.
+
+---
+
+#### Playbook 2c: Claude Code
+
+- **Harness Identification**: You are running in Claude Code CLI or Desktop (`claude`).
+- **Tools Available to Assistant**: Shell execution tool `Bash(command="...")`.
+- **Exact Tool Invocations for Claude Code**:
+  1. **Register Session**:
+     - *Tool to use*: `Bash`
+     - *Exact command*:
+       ```bash
+       locutus open <my-name> "<tags>"
+       ```
+  2. **Send a Routine Task to a Peer (`--soon`, Default)**:
+     - *Tool to use*: `Bash`
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "<subj>" --body "<body>" --soon
+       ```
+  3. **Send an Immediate / Time-Sensitive Task (`--immediate`)**:
+     - *When to use*: Cancelling an in-flight task, adding vital context to an operation already in flight, or correcting a previous message before damage occurs.
+     - *Exact commands*:
+       - **Cancelling an in-flight task**:
+         ```bash
+         locutus send --to <recipient> --subject "ABORT: Cancel build" --body "Retract build #104 immediately" --immediate
+         ```
+       - **Adding vital context / correction to an in-flight operation**:
+         ```bash
+         locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Credentials expired, switch to staging auth" --reply-to "<prev_msg_id>" --immediate
+         ```
+  4. **Send a Reply to a Received Message**:
+     - *Tool to use*: `Bash`
+     - *Exact command*:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+       ```
+     - *(Add `--immediate` if replying with an urgent halt or critical correction).*
+  5. **Receiving Messages & Continuous Listening**:
+     - **Method 1: Autonomous Continuation via `Stop` Hook (RECOMMENDED)**:
+       Configure `.claude/settings.json` (or `~/.claude/settings.json`):
+       ```json
+       {
+         "hooks": {
+           "Stop": [
+             {
+               "matcher": "*",
+               "hooks": [
+                 {
+                   "type": "command",
+                   "command": "python3 <skill-dir>/hooks/claude_stop_hook.py"
+                 }
+               ]
+             }
+           ],
+           "SessionStart": [
+             {
+               "matcher": "*",
+               "hooks": [
+                 {
+                   "type": "command",
+                   "command": "python3 <skill-dir>/hooks/session_lifecycle_hook.py start"
+                 }
+               ]
+             }
+           ],
+           "SessionEnd": [
+             {
+               "matcher": "*",
+               "hooks": [
+                 {
+                   "type": "command",
+                   "command": "python3 <skill-dir>/hooks/session_lifecycle_hook.py end"
+                 }
+               ]
+             }
+           ]
+         }
+       }
+       ```
+       - *Behavior*: Whenever Claude finishes responding, the hook checks the inbox. If messages are pending, the hook returns `{"decision": "block", ...}` and injects the messages into `additionalContext`, automatically continuing into the next turn.
+     - **Method 2: Piggybacked Re-Arm via `--listen`**:
+       When concluding a task without hooks, append `--listen` to your reply:
+       - *Tool to use*: `Bash`
+       - *Exact command*:
+         ```bash
+         locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
+         ```
+       - *Behavior*: Locutus delivers the reply and transitions in-process into blocking on your inbox. When the next message arrives, the process exits cleanly with pure JSON on stdout.
+     - **Method 3: Desktop Notification Alert (`locutus listen --notify`)**:
+       To receive native OS notifications when a message arrives while working in the background:
+       - *Tool to use*: `Bash`
+       - *Exact command*:
+         ```bash
+         locutus listen <my-name> --notify
+         ```
+       - *Behavior*: Blocks silently on your inbox. On message arrival, displays a system notification banner and exits cleanly with the message payload.
+
+---
+
+#### Playbook 2d: Google Antigravity (AGY)
+
+- **Harness Identification**: You are running in Google Antigravity (AGY) IDE or CLI (`run_command`, `manage_task`, `invoke_subagent`).
+- **Tools Available to Assistant**: `run_command`, `manage_task`, `invoke_subagent`, `send_message`.
+- **Exact Tool Invocations for AGY**:
+  1. **Register Session**:
+     - *Tool to use*: `run_command`
+     - *Arguments*:
+       ```python
+       run_command(CommandLine="locutus open <my-agent> \"<tags>\"", WaitMsBeforeAsync=5000)
+       ```
+  2. **Arm Background Ear (Native Reactive Wakeup)**:
+     - *Tool to use*: `run_command`
+     - *Arguments*:
+       ```python
+       run_command(CommandLine="locutus listen <my-agent>", WaitMsBeforeAsync=500)
+       ```
+     - **CRITICAL BEHAVIORAL RULE**: The command will be sent to the background as a background task. **DO NOT poll `manage_task(Action="status")` in a loop.** Simply proceed with your work or stop calling tools to conclude your turn. AGY's runtime triggers a **Reactive Wakeup** when `locutus listen` outputs the message, and delivers the message directly to your context!
+     - **Parent Turn Lifecycle Invariant (Zero Deaf State)**: Once `locutus listen` outputs the message and completes, its background task terminates. The agent is now **DEAF**! When you finish processing the task, you MUST re-arm inbox coverage before concluding your turn:
+       - Either append `--listen` to your reply (Action 6 below: Atomic Reply & Re-Arm), OR
+       - Re-launch the background ear via `run_command(CommandLine="locutus listen <my-agent>", WaitMsBeforeAsync=500)` before ending your turn.
+       - Then stop calling tools to yield the turn and await the next reactive wakeup.
+  3. **Send a Routine Task to a Peer (`--soon`, Default)**:
+     - *Tool to use*: `run_command`
+     - *Arguments*:
+       ```python
+       run_command(CommandLine="locutus send --to <recipient> --subject \"<subj>\" --body \"<body>\" --soon", WaitMsBeforeAsync=5000)
+       ```
+  4. **Send an Immediate / Time-Sensitive Task (`--immediate`)**:
+     - *When to use*: Cancelling an in-flight task, adding vital context to an operation already in flight, or correcting a previous message before damage occurs.
+     - *Arguments*:
+       - **Cancelling an in-flight task**:
+         ```python
+         run_command(CommandLine="locutus send --to <recipient> --subject \"ABORT: Cancel build\" --body \"Retract build #104 immediately\" --immediate", WaitMsBeforeAsync=5000)
+         ```
+       - **Adding vital context / correction to an in-flight operation**:
+         ```python
+         run_command(CommandLine="locutus send --to <recipient> --subject \"URGENT CONTEXT: Re: <prev_subj>\" --body \"STOP: Credentials expired, switch to staging auth\" --reply-to \"<prev_msg_id>\" --immediate", WaitMsBeforeAsync=5000)
+         ```
+  5. **Send a Reply to a Received Message**:
+     - *Tool to use*: `run_command`
+     - *Arguments*:
+       ```python
+       run_command(CommandLine="locutus reply --to <sender> --subject \"Re: <subj>\" --body \"<result>\" --reply-to \"<id>\"", WaitMsBeforeAsync=5000)
+       ```
+     - *(Add `--immediate` if replying with an urgent halt or critical correction).*
+  6. **Atomic Reply & Re-Arm**:
+     - *Tool to use*: `run_command`
+     - *Arguments*:
+       ```python
+       run_command(CommandLine="locutus reply --to <sender> --subject \"Re: <subj>\" --body \"<result>\" --reply-to \"<id>\" --listen", WaitMsBeforeAsync=500)
+       ```
+  7. **Autonomous Continuation via `Stop` Hook**:
+     - Configure in `~/.gemini/config/hooks.json` or `.agents/hooks.json`:
+       ```json
+       {
+         "locutus": {
+           "Stop": [
+             {
+               "type": "command",
+               "command": "python3 <skill-dir>/hooks/agy_stop_hook.py"
+             }
+           ]
+         }
+       }
+       ```
+
+---
+
+#### Playbook 2e: Pi Coding Agent (`pi`)
+
+- **Harness Identification**: You are running in Pi Coding Agent (`pi.dev` / `@earendil-works/pi-coding-agent`).
+- **Tools Available to Assistant**: `bash` / `sh` shell tools (or native `locutus` tool registered via `pi-ear.ts`).
+- **In-Process Extension Architecture**:
+  - Pi loads native TypeScript extensions from `~/.pi/agent/extensions/*.ts` on the fly via `jiti` without compilation.
+  - The Locutus Pi ear extension ([`pi-ear.ts`](skills/locutus/pi-ear.ts)) automatically binds your session ID (`pi:<sessionId>`), sets `LOCUTUS_AGENT_NAME`, and streams `locutus listen <agent> 0` in an unblocked background loop.
+  - When messages arrive, `pi-ear.ts` delivers formatted turns directly into your context window via Pi's session prompt API.
+  - When messages carry `--immediate` urgency, `pi-ear.ts` aborts any in-flight execution to deliver the urgent directive without delay.
+- **Exact Tool Invocations for Pi**:
+  1. **Register Session**:
+     - *Tool to use*: `bash` (or native `locutus` tool)
+     - *Exact command*:
+       ```bash
+       locutus open <my-name> "<tags>"
+       ```
+     - *(The extension automatically binds `pi:<sessionId>` to `<my-name>` in `~/.config/locutus/sessions.json` and injects `LOCUTUS_SESSION_ID` into your commands).*
+  2. **Send a Routine Task to a Peer (`--soon`, Default)**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "<subj>" --body "<body>" --soon
+       ```
+  3. **Send an Immediate / Time-Sensitive Task (`--immediate`)**:
+     - *When to use*: Cancelling an in-flight operation, adding vital context before execution, or correcting a message before damage occurs.
+     - *Exact commands*:
+       - **Cancelling an in-flight task**:
+         ```bash
+         locutus send --to <recipient> --subject "ABORT: Cancel build" --body "Retract build #104 immediately" --immediate
+         ```
+       - **Adding vital context / correction to an in-flight operation**:
+         ```bash
+         locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Credentials expired, switch to staging auth" --reply-to "<prev_msg_id>" --immediate
+         ```
+  4. **Send a Reply to a Received Message**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+       ```
+  5. **Receiving Messages & Message Receipt**:
+     - Do NOT run blocking loops or poll `check-inbox`.
+     - When a peer message arrives, `pi-ear.ts` stimulates your session turn loop automatically:
+       ```
+       [LOCUTUS BUS message for @<my-name> from @<sender> [host: <origin>] (subject: "<subj>")]:
+         <payload>
+       ```
+     - When this message appears, parse the instructions, complete the requested work, and reply via `locutus reply`.
+
+---
+
+#### Playbook 2f: Cursor Agent (`cursor`)
+
+- **Harness Identification**: You are running in Cursor (Composer / Agent mode).
+- **Tools Available to Assistant**: `terminal` / `run_terminal_cmd` (bash shell execution).
+- **Rules File**: Governed by canonical rules in `.cursor/rules/locutus.mdc` or `.cursorrules`.
+- **CRITICAL PROHIBITIONS**:
+  - ❌ **NEVER run `locutus listen &` in `terminal`**: Detached background processes drop output and sever your session from Redis.
+  - ❌ **NEVER poll `locutus check-inbox` in a tight loop**: Consumes CPU and context tokens.
+- **Exact Tool Invocations for Cursor**:
+  1. **Register Session**:
+     - *Tool to use*: `terminal`
+     - *Exact command*:
+       ```bash
+       locutus open <my-name> "<tags>"
+       ```
+  2. **Send a Routine Task to a Peer (`--soon`, Default)**:
+     - *Tool to use*: `terminal`
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "<subj>" --body "<body>" --soon
+       ```
+  3. **Send an Immediate / Time-Sensitive Task (`--immediate`)**:
+     - *Exact commands*:
+       - **Cancelling an in-flight task**:
+         ```bash
+         locutus send --to <recipient> --subject "ABORT: Cancel build" --body "Retract build #104 immediately" --immediate
+         ```
+       - **Adding vital context**:
+         ```bash
+         locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Table users is locked; abort migration" --reply-to "<prev_msg_id>" --immediate
+         ```
+  4. **Send a Reply to a Received Message**:
+     - *Tool to use*: `terminal`
+     - *Exact command*:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+       ```
+  5. **Waiting for Peer Responses (When Idle)**:
+     - When awaiting a peer reply:
+       ```bash
+       locutus listen <my-name> 120
+       ```
+     - Or reply and listen in one atomic step:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
+       ```
+  6. **Background Desktop Notifications**:
+     - Receive native OS notifications in an integrated Cursor terminal:
+       ```bash
+       locutus listen <my-name> --notify
+       ```
+     - Triggers native desktop notifications whenever peer agents send tasks or updates.
+
+---
+
+#### Playbook 2g: GitHub Copilot (`copilot`)
+
+- **Harness Identification**: You are running in GitHub Copilot CLI (`gh copilot`) or Copilot Chat agent mode.
+- **Tools Available to Assistant**: `bash` / terminal execution tool.
+- **Rules File**: Governed by repository instructions in `.github/copilot-instructions.md`.
+- **Exact Tool Invocations for GitHub Copilot**:
+  1. **Register Session**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus open <my-name> "<tags>"
+       ```
+  2. **Send a Routine Task (`--soon`, Default)**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "<subj>" --body "<body>" --soon
+       ```
+  3. **Send an Immediate Task / Cancellation (`--immediate`)**:
+     - *Exact command*:
+       ```bash
+       locutus send --to <recipient> --subject "ABORT: Cancel run" --body "Stop compiling immediately" --immediate
+       ```
+  4. **Send a Reply**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
+       ```
+  5. **Waiting for Peer Responses**:
+     - *Tool to use*: `bash`
+     - *Exact command*:
+       ```bash
+       locutus listen <my-name> 120
+       ```
+     - *(Or: `locutus reply --to <sender> ... --reply-to "<id>" --listen`)*.
+
+---
+
+#### Step 2h: Native Desktop Notifications for Idle Sessions (`locutus listen --notify`)
+
+When running in desktop environments (Cursor, VS Code, or an idle terminal tab), you can enable native operating system notifications:
 
 ```bash
-export LOCUTUS_AGENT_NAME="<your-agent-name>"
+locutus listen <my-name> --notify
 ```
+When a peer message arrives:
+1. Locutus emits a native OS notification banner (macOS Notification Center, Windows Action Center toast, or Linux `notify-send`) showing the sender, urgency, and subject.
+2. Emits the clean message JSON to stdout and exits `0`.
 
-The ear is **dormant unless an identity resolves**: it uses `LOCUTUS_AGENT_NAME`, else `<project>/.locutus.agent` (written by `locutus open`). It inherits the opencode process environment, so set `LOCUTUS_REDIS_URL` / `LOCUTUS_PROJECT` there too if the default Redis is wrong. Set `LOCUTUS_EAR_DISABLED=1` to disable. Confirm it armed by the log line `[locutus-ear] armed for <name>` and the `locutus listen <name>` child process.
-
-**When a message arrives**, the plugin injects it into your session as a user turn. Your context receives one line of this shape, prefixed `[locutus:<name>] `:
-
-```json
-{"id":"msg_...","from":"...","to":"...","type":"task","reply_to":null,"tags":[...],"subject":"...","body":"...","timestamp":"...","sig":"...","encrypted":false}
-```
-
-The plugin is already listening; you do **not** re-arm anything. Just parse the JSON (`from`, `type`, `subject`, `body`, `id`, `reply_to`), do the work, and reply:
-
-```bash
-locutus send --to "<from>" --type reply --subject "Re: <subject>" --body "<result>" --reply-to "<id>"
-```
-
-Conclude the turn normally. The plugin keeps the ear open the entire time.
 
 ### Step 3: Advanced Coordination Protocols
 
@@ -422,12 +939,10 @@ locutus pub build_events '{"commit": "348d001", "status": "passed"}'
 
 ### Playbook 6: Unbreakable Background Ear Execution
 *Goal: Keep an active ear on the bus without getting dropped during multi-turn coding.*
-- **Strategy A (Subagent Runtimes)**: Launch a dedicated background ear subagent running `locutus listen <agent>` in a continuous loop, forwarding incoming message payloads to the parent agent.
-- **Strategy B (Single-Agent Runtimes)**: Always append `--listen` (`-l`) to replies or sends:
-  ```bash
-  locutus reply --to orchestrator --subject "Done" --body "Merged PR" --listen
-  ```
-  Locutus automatically skips duplicate listeners if one is already active.
+- **OpenCode**: Do NOT run `locutus listen` with any tool. The bundled `opencode-ear.js` plugin keeps the ear open in the background automatically and injects new turns via `promptAsync` (Playbook 2a).
+- **OpenAI Codex**: Never background with `&`. While working, spawn a **ONE-SHOT subagent** that runs `locutus listen <name>` once and terminates upon delivery. When idle, run `locutus listen <name>` in foreground bash (Playbook 2b).
+- **Claude Code**: Re-arm with `locutus reply ... --listen` at task conclusion, or configure `.claude/settings.json` `Stop` hook (Playbook 2c).
+- **Antigravity (AGY)**: Launch `run_command(CommandLine="locutus listen <agent>", WaitMsBeforeAsync=500)` with native Reactive Wakeup, or configure `Stop` hook (Playbook 2d).
 
 ### Playbook 7: Orchestrator Scatter-Gather & Quorum Consensus
 *Goal: Fan out an objective across a pool of specialists and aggregate responses until quorum is met.*
@@ -610,6 +1125,39 @@ fence_token=$(locutus lock db_migration 60 --fencing --raw)
 
 # 3. Release lock when complete:
 locutus unlock db_migration
+```
+
+### Playbook 17: Time-Sensitive Interruption & In-Flight Context Injection (`--immediate`)
+*Goal: Abort in-flight operations, cancel runs, or inject vital corrections/context into active peer workflows before damage occurs.*
+
+```bash
+# 1. Cancelling an In-Flight Task / Build:
+locutus send --to builder-1 \
+  --subject "ABORT: Cancel build #104" \
+  --body "Upstream PR was retracted. Halt compilation immediately." \
+  --immediate
+
+# 2. Injecting Vital Context to a Message / Operation Already In Flight:
+# Use --reply-to with the target's in-flight task ID to attach vital corrections:
+locutus send --to db-worker \
+  --subject "URGENT CONTEXT: Re: Schema Migration" \
+  --body "STOP: Table 'users' has active locks in prod. Do not run ALTER TABLE without CONCURRENTLY" \
+  --reply-to "msg_1758694000_abcd" \
+  --immediate
+
+# 3. Emergency Security Halt across a Team or Tag Group:
+locutus broadcast --tags "deploy" \
+  --subject "SECURITY ALERT: Revoke Key" \
+  --body "Compromised credential detected in commit 4a9f. Halt deployment pipeline now." \
+  --immediate
+
+# 4. Synchronous Urgent Inquiry (Preempt peer for immediate answer):
+res=$(locutus request --to auth-service \
+  --subject "Verify Revocation" \
+  --body "tok_xyz" \
+  --immediate \
+  --timeout 10 \
+  --raw)
 ```
 
 ---

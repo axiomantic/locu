@@ -70,6 +70,7 @@ type
     prefix*: string
     project*: string
     agentName*: string
+    sessionId*: string
     secret*: string
     secretFile*: string
     encrypt*: bool
@@ -92,7 +93,7 @@ proc sourceLabel*(s: SettingSource): string =
   of srcCli: "cli flag"
 
 # Strip surrounding single or double quotes
-proc unquote(s: string): string =
+proc unquote*(s: string): string =
   let t = s.strip()
   if (t.startsWith("\"") and t.endsWith("\"")) or (t.startsWith("'") and t.endsWith("'")):
     if t.len >= 2:
@@ -231,6 +232,10 @@ proc applyDict(
       if v.len > 0:
         cfg.agentName = v
         cfg.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: v, source: source, detail: detail)
+    of "session_id", "sessionid", "locutus_session_id":
+      if v.len > 0:
+        cfg.sessionId = v
+        cfg.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: v, source: source, detail: detail)
     of "secret", "locutus_secret":
       if v.len > 0:
         cfg.secret = v
@@ -287,6 +292,9 @@ proc loadConfigFile(
     # Apply [default] section if present
     if toml.hasKey("default"):
       applyDict(cfg, toml["default"], source, path & " [default]")
+    # Apply [project] section if present
+    if toml.hasKey("project"):
+      applyDict(cfg, toml["project"], source, path & " [project]")
     # Apply requested profile if specified
     if targetProfile.len > 0:
       let profKey1 = "profiles." & targetProfile.toLowerAscii
@@ -325,6 +333,7 @@ type CliOverrides* = object
   prefix*: string
   project*: string
   agentName*: string
+  sessionId*: string
   secret*: string
   secretFile*: string
   encrypt*: Option[bool]
@@ -341,6 +350,7 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
     prefix: "locutus:",
     project: defProject,
     agentName: defProject & "-worker",
+    sessionId: "",
     secret: "",
     secretFile: "",
     encrypt: false,
@@ -357,6 +367,7 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
   result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: result.prefix, source: srcDefault, detail: "builtin default")
   result.provenance["project"] = ProvenanceEntry(key: "project", value: result.project, source: srcDefault, detail: "current directory basename")
   result.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: result.agentName, source: srcDefault, detail: "${project}-worker")
+  result.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: "", source: srcDefault, detail: "builtin default")
   result.provenance["encrypt"] = ProvenanceEntry(key: "encrypt", value: "false", source: srcDefault, detail: "builtin default")
   result.provenance["cluster"] = ProvenanceEntry(key: "cluster", value: "false", source: srcDefault, detail: "builtin default")
   result.provenance["heartbeat_ttl"] = ProvenanceEntry(key: "heartbeat_ttl", value: $result.heartbeatTtl, source: srcDefault, detail: "150s default")
@@ -417,6 +428,11 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
     result.agentName = envAgent
     result.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: envAgent, source: srcEnv, detail: "LOCUTUS_AGENT_NAME")
 
+  let envSessionId = getEnv("LOCUTUS_SESSION_ID", "")
+  if envSessionId.len > 0:
+    result.sessionId = envSessionId
+    result.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: envSessionId, source: srcEnv, detail: "LOCUTUS_SESSION_ID=" & envSessionId)
+
   let envSecret = getEnv("LOCUTUS_SECRET", "")
   if envSecret.len > 0:
     result.secret = envSecret
@@ -455,6 +471,10 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
   if cli.agentName.len > 0:
     result.agentName = cli.agentName
     result.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: cli.agentName, source: srcCli, detail: "--agent-name")
+
+  if cli.sessionId.len > 0:
+    result.sessionId = cli.sessionId
+    result.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: cli.sessionId, source: srcCli, detail: "--session-id")
 
   if cli.secret.len > 0:
     result.secret = cli.secret

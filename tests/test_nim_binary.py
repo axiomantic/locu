@@ -29,11 +29,17 @@ from tests.tripwire_locutus import LocutusPlugin, LocutusSchemaError
 @pytest.mark.unit
 class TestLocutusNimBinary(unittest.TestCase):
     def setUp(self):
+        self.test_home = tempfile.mkdtemp(prefix="locutus_test_home_")
         self.env = os.environ.copy()
+        self.env["HOME"] = self.test_home
         self.env["LOCUTUS_REDIS_URL"] = REDIS_URL
         self.env["LOCUTUS_REDIS_PREFIX"] = TEST_PREFIX
         self.env["LOCUTUS_PROJECT"] = "test_project"
         self.assertTrue(os.path.isfile(BIN_PATH), f"Binary not found at {BIN_PATH}")
+
+    def tearDown(self):
+        if hasattr(self, "test_home") and os.path.isdir(self.test_home):
+            shutil.rmtree(self.test_home, ignore_errors=True)
 
     def run_locutus(self, args, env_overrides=None, cwd=None):
         cmd_env = self.env.copy()
@@ -411,10 +417,11 @@ class TestLocutusNimBinary(unittest.TestCase):
             self.assertEqual(empty_listen.returncode, 1)
             self.assertIn("Error: No agent name specified", empty_listen.stderr)
 
-            # 2. When opening without explicit name, generates project-worker-XXXX and persists to .locutus.agent
-            open_res = self.run_locutus(["open"], cwd=tmpdir)
+            # 2. When opening with session-id, registers mapping and NEVER creates .locutus.agent
+            open_res = self.run_locutus(["open", "--session-id", "opencode:ses_test_08"], cwd=tmpdir)
             self.assertEqual(open_res.returncode, 0)
             self.assertIn("Agent Name :", open_res.stdout)
+            self.assertIn("Session ID : opencode:ses_test_08", open_res.stdout)
 
             # Extract generated agent name from stdout
             active_agent = ""
@@ -424,38 +431,63 @@ class TestLocutusNimBinary(unittest.TestCase):
                     break
             self.assertTrue(active_agent.startswith("test_project-worker-"))
 
-            # 3. Assert exact .locutus.agent file existence, content, and strict 0600 POSIX permissions
+            # 3. Assert exact .locutus.agent file is NOT created in working directory
             agent_file = os.path.join(tmpdir, ".locutus.agent")
-            self.assertTrue(os.path.isfile(agent_file), f"Expected .locutus.agent file at {agent_file}")
-            with open(agent_file, "r") as f:
-                persisted_name = f.read().strip()
-            self.assertEqual(persisted_name, active_agent)
+            self.assertFalse(os.path.isfile(agent_file), f".locutus.agent should NOT be created in workspace")
 
-            if os.name != "nt":
-                file_mode = os.stat(agent_file).st_mode & 0o777
-                self.assertEqual(file_mode, 0o600, f"Expected 0600 permissions on {agent_file}, got {oct(file_mode)}")
+            # Verify session mapping in global store via 'session get'
+            ses_get = self.run_locutus(["session", "get", "opencode:ses_test_08"])
+            self.assertEqual(ses_get.returncode, 0)
+            self.assertEqual(ses_get.stdout.strip(), active_agent)
 
-            # 4. Send to active agent without explicit --from (locutus infers sender from .locutus.agent)
+            # 4. Send to active agent using --session-id (infers sender from session mapping)
             send_res = self.run_locutus([
                 "send",
                 "--to", active_agent,
                 "--subject", "Self Ping",
                 "--body", "Testing persistence",
+                "--session-id", "opencode:ses_test_08",
             ], cwd=tmpdir)
             self.assertEqual(send_res.returncode, 0)
 
-            # 5. Listen without specifying name (reads active agent from cwd .locutus.agent)
-            listen_res = self.run_locutus(["listen", "2"], cwd=tmpdir)
+            # 5. Listen using --session-id (resolves active agent from session mapping)
+            listen_res = self.run_locutus(["listen", "2", "--session-id", "opencode:ses_test_08"], cwd=tmpdir)
             self.assertEqual(listen_res.returncode, 0)
             envelope = LocutusPlugin.validate_wire_envelope(listen_res.stdout.strip())
             self.assertEqual(envelope["from"], active_agent)
             self.assertEqual(envelope["to"], active_agent)
             self.assertEqual(envelope["body"], "Testing persistence")
 
-            # 6. Close without specifying name (should close active agent and delete .locutus.agent)
-            close_res = self.run_locutus(["close"], cwd=tmpdir)
+            # 6. Close using --session-id (should close active agent and unbind session mapping)
+            close_res = self.run_locutus(["close", "--session-id", "opencode:ses_test_08"], cwd=tmpdir)
             self.assertEqual(close_res.returncode, 0)
-            self.assertFalse(os.path.isfile(agent_file), ".locutus.agent should be deleted after close")
+            ses_after = self.run_locutus(["session", "get", "opencode:ses_test_08"])
+            self.assertEqual(ses_after.returncode, 1)
+
+            # 7. Test session CRUD subcommands
+            set_res = self.run_locutus(["session", "set", "claude:ses_crud_test", "crud_agent_99"])
+            self.assertEqual(set_res.returncode, 0)
+            self.assertIn("OK [session]", set_res.stdout)
+
+            get_res = self.run_locutus(["session", "get", "claude:ses_crud_test"])
+            self.assertEqual(get_res.returncode, 0)
+            self.assertEqual(get_res.stdout.strip(), "crud_agent_99")
+
+            list_res = self.run_locutus(["session", "list", "--json"])
+            self.assertEqual(list_res.returncode, 0)
+            sessions_data = json.loads(list_res.stdout.strip())
+            self.assertIn("claude:ses_crud_test", sessions_data)
+
+            del_res = self.run_locutus(["session", "remove", "claude:ses_crud_test"])
+            self.assertEqual(del_res.returncode, 0)
+            self.assertIn("OK [session] removed", del_res.stdout)
+
+            # 8. Assert plain open without session-id also NEVER creates .locutus.agent in working directory
+            plain_open = self.run_locutus(["open", "plain_agent_test"], cwd=tmpdir)
+            self.assertEqual(plain_open.returncode, 0)
+            self.assertFalse(os.path.isfile(os.path.join(tmpdir, ".locutus.agent")), ".locutus.agent must never be created in working directory")
+            self.run_locutus(["close", "plain_agent_test"])
+
 
     def test_09_multicast_broadcast_with_tags_routing(self):
         # Pre-cleanup
@@ -1162,7 +1194,7 @@ class TestLocutusNimBinary(unittest.TestCase):
         self.run_locutus(["close", agent])
         self.run_locutus(["open", agent, "worker"])
 
-        tmp_dir = os.path.expanduser("~/.config/locutus/tmp")
+        tmp_dir = os.path.join(self.test_home, ".config", "locutus", "tmp")
         os.makedirs(tmp_dir, exist_ok=True)
 
         try:
@@ -1277,7 +1309,7 @@ class TestLocutusNimBinary(unittest.TestCase):
             self.assertEqual(data["heartbeat_ttl"]["value"], "150")
             self.assertEqual(data["message_ttl"]["value"], "604800")
             self.assertEqual(data["listen_timeout"]["value"], "90")
-            self.assertEqual(os.path.normpath(data["secret_file"]["value"]), os.path.normpath(os.path.expanduser("~/.config/locutus/secret")))
+            self.assertEqual(os.path.normpath(data["secret_file"]["value"]), os.path.normpath(os.path.join(self.test_home, ".config", "locutus", "secret")))
 
             # 2. Staging profile verification with schema validation
             res_stg = self.run_locutus(["--profile", "staging", "config", "show", "--json"], env_overrides=clean_env, cwd=tmp_dir)
@@ -2092,32 +2124,24 @@ secret = "my_inline_secret_test_555"
             self.assertEqual(chk_del.stdout.strip(), "0")
 
     def test_33_multi_agent_workspace_and_env_isolation(self):
-        """Test that workspace-scoped .locutus.agent, LOCUTUS_AGENT_NAME, and project namespaces isolate agents."""
+        """Test that agent identity, LOCUTUS_AGENT_NAME, and project namespaces isolate agents (and .locutus.agent is never created in workspaces)."""
         tmp1 = tempfile.mkdtemp(prefix="locutus_ws1_")
         tmp2 = tempfile.mkdtemp(prefix="locutus_ws2_")
         proj1 = tempfile.mkdtemp(prefix="locutus_proj1_")
         proj2 = tempfile.mkdtemp(prefix="locutus_proj2_")
 
         try:
-            # 1. Open agent 1 in directory 1
-            res1 = self.run_locutus(["open", "agent_one_ws", "teamA"], cwd=tmp1)
+            # 1. Open agent 1 with session ID 1 in directory 1
+            res1 = self.run_locutus(["open", "agent_one_ws", "teamA", "--session-id", "opencode:ses_ws1"], cwd=tmp1)
             self.assertEqual(res1.returncode, 0)
             agent_file1 = os.path.join(tmp1, ".locutus.agent")
-            self.assertTrue(os.path.isfile(agent_file1))
-            with open(agent_file1, "r", encoding="utf-8") as f:
-                self.assertEqual(f.read().strip(), "agent_one_ws")
-            if os.name != "nt":
-                self.assertEqual(os.stat(agent_file1).st_mode & 0o777, 0o600)
+            self.assertFalse(os.path.isfile(agent_file1), ".locutus.agent must not be created in directory 1")
 
-            # 2. Open agent 2 in directory 2
-            res2 = self.run_locutus(["open", "agent_two_ws", "teamB"], cwd=tmp2)
+            # 2. Open agent 2 with session ID 2 in directory 2
+            res2 = self.run_locutus(["open", "agent_two_ws", "teamB", "--session-id", "opencode:ses_ws2"], cwd=tmp2)
             self.assertEqual(res2.returncode, 0)
             agent_file2 = os.path.join(tmp2, ".locutus.agent")
-            self.assertTrue(os.path.isfile(agent_file2))
-            with open(agent_file2, "r", encoding="utf-8") as f:
-                self.assertEqual(f.read().strip(), "agent_two_ws")
-            if os.name != "nt":
-                self.assertEqual(os.stat(agent_file2).st_mode & 0o777, 0o600)
+            self.assertFalse(os.path.isfile(agent_file2), ".locutus.agent must not be created in directory 2")
 
             # 3. Negative control: Send message ONLY to agent_two_ws
             self.run_locutus([
@@ -2125,17 +2149,17 @@ secret = "my_inline_secret_test_555"
                 "--subject", "Dir2Only", "--body", "PayloadTwo"
             ])
 
-            # In dir1, listen without passing name with 1s timeout: MUST NOT receive agent_two_ws message
-            listen_iso = self.run_locutus(["listen", "1"], cwd=tmp1)
+            # In dir1, listen with session 1: MUST NOT receive agent_two_ws message
+            listen_iso = self.run_locutus(["listen", "1", "--session-id", "opencode:ses_ws1"], cwd=tmp1)
             self.assertEqual(listen_iso.returncode, 0)
-            self.assertEqual(listen_iso.stdout.strip(), "", "Workspace 1 must not consume Workspace 2 messages")
+            self.assertEqual(listen_iso.stdout.strip(), "", "Session 1 must not consume Session 2 messages")
 
-            # 4. In dir1, send message to agent_one_ws and consume it
+            # 4. In dir1, send message to agent_one_ws and consume it via session 1
             self.run_locutus([
                 "send", "--from", "sender_bot", "--to", "agent_one_ws",
                 "--subject", "Dir1", "--body", "Payload1"
             ])
-            listen1 = self.run_locutus(["listen", "2"], cwd=tmp1)
+            listen1 = self.run_locutus(["listen", "2", "--session-id", "opencode:ses_ws1"], cwd=tmp1)
             self.assertEqual(listen1.returncode, 0)
             data1 = json.loads(listen1.stdout.strip())
             LocutusPlugin.validate_wire_envelope(data1)
@@ -2144,8 +2168,8 @@ secret = "my_inline_secret_test_555"
             self.assertEqual(msg1.from_agent, "sender_bot")
             self.assertEqual(msg1.body, "Payload1")
 
-            # 5. In dir2, consume the pending message for agent_two_ws
-            listen2 = self.run_locutus(["listen", "2"], cwd=tmp2)
+            # 5. In dir2, consume the pending message for agent_two_ws via session 2
+            listen2 = self.run_locutus(["listen", "2", "--session-id", "opencode:ses_ws2"], cwd=tmp2)
             self.assertEqual(listen2.returncode, 0)
             data2 = json.loads(listen2.stdout.strip())
             LocutusPlugin.validate_wire_envelope(data2)
@@ -2154,7 +2178,7 @@ secret = "my_inline_secret_test_555"
             self.assertEqual(msg2.from_agent, "sender_bot")
             self.assertEqual(msg2.body, "PayloadTwo")
 
-            # 6. LOCUTUS_AGENT_NAME env var overrides workspace directory file
+            # 6. LOCUTUS_AGENT_NAME env var overrides session mapping
             env_override = {"LOCUTUS_AGENT_NAME": "agent_override_env"}
             self.run_locutus([
                 "send", "--from", "sender_bot", "--to", "agent_override_env",
@@ -5142,6 +5166,500 @@ secret = "my_inline_secret_test_555"
                 p.kill()
                 p.wait()
             subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", hb_key], capture_output=True)
+
+    def test_65_urgency_immediate_vs_soon(self):
+        """Verify that send, reply, and request support --immediate and --soon urgency modes."""
+        agent = f"urgency_agent_{int(time.time() * 1000)}"
+        inbox_key = f"{TEST_PREFIX}inbox:{agent}"
+
+        try:
+            # 1. Default send should set urgency to 'soon'
+            res_default = self.run_locutus([
+                "send", "--to", agent, "--from", "dispatcher",
+                "--subject", "Normal task", "--body", "Do this soon"
+            ])
+            self.assertEqual(res_default.returncode, 0)
+            res_listen = self.run_locutus(["listen", agent, "2"])
+            self.assertEqual(res_listen.returncode, 0)
+            msg1 = json.loads(res_listen.stdout.strip())
+            self.assertEqual(msg1.get("urgency"), "soon")
+
+            # 2. --immediate flag sets urgency to 'immediate'
+            res_imm = self.run_locutus([
+                "send", "--to", agent, "--from", "dispatcher",
+                "--subject", "Urgent stop", "--body", "Stop immediately",
+                "--immediate"
+            ])
+            self.assertEqual(res_imm.returncode, 0)
+            res_listen = self.run_locutus(["listen", agent, "2"])
+            self.assertEqual(res_listen.returncode, 0)
+            msg2 = json.loads(res_listen.stdout.strip())
+            self.assertEqual(msg2.get("urgency"), "immediate")
+
+            # 3. Explicit --soon flag sets urgency to 'soon'
+            res_soon = self.run_locutus([
+                "send", "--to", agent, "--from", "dispatcher",
+                "--subject", "Queued review", "--body", "Review when convenient",
+                "--soon"
+            ])
+            self.assertEqual(res_soon.returncode, 0)
+            res_listen = self.run_locutus(["listen", agent, "2"])
+            self.assertEqual(res_listen.returncode, 0)
+            msg3 = json.loads(res_listen.stdout.strip())
+            self.assertEqual(msg3.get("urgency"), "soon")
+
+            # 4. --delivery=immediate and --urgency=immediate work
+            res_deliv = self.run_locutus([
+                "send", "--to", agent, "--from", "dispatcher",
+                "--subject", "Delivery param", "--body", "Param test",
+                "--delivery=immediate"
+            ])
+            self.assertEqual(res_deliv.returncode, 0)
+            res_listen = self.run_locutus(["listen", agent, "2"])
+            self.assertEqual(res_listen.returncode, 0)
+            msg4 = json.loads(res_listen.stdout.strip())
+            self.assertEqual(msg4.get("urgency"), "immediate")
+
+            # 5. reply supports --immediate
+            res_reply = self.run_locutus([
+                "reply", "--to", agent, "--from", "worker",
+                "--subject", "Re: Urgent stop", "--body", "Acknowledged and stopped",
+                "--immediate"
+            ])
+            self.assertEqual(res_reply.returncode, 0)
+            res_listen = self.run_locutus(["listen", agent, "2"])
+            self.assertEqual(res_listen.returncode, 0)
+            msg5 = json.loads(res_listen.stdout.strip())
+            self.assertEqual(msg5.get("type"), "reply")
+            self.assertEqual(msg5.get("urgency"), "immediate")
+        finally:
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
+
+    def test_66_check_inbox_and_enhanced_drain(self):
+        """Test locutus check-inbox exit codes and drain --hook/--json with encryption and auth."""
+        agent = "test_drain_agent"
+        inbox_key = f"{TEST_PREFIX}inbox:{agent}"
+        subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
+
+        try:
+            # 1. Empty inbox: check-inbox must output 0 and exit code 1
+            res_empty = self.run_locutus(["check-inbox", agent])
+            self.assertEqual(res_empty.returncode, 1)
+            self.assertEqual(res_empty.stdout.strip(), "0")
+
+            # 2. Send plain message
+            res_send1 = self.run_locutus([
+                "send", "--to", agent, "--from", "alice",
+                "--subject", "Code Review", "--body", "Please review PR #42",
+                "--urgency=soon"
+            ])
+            self.assertEqual(res_send1.returncode, 0)
+
+            # 3. Send encrypted message
+            res_send2 = self.run_locutus([
+                "send", "--to", agent, "--from", "security_lead",
+                "--subject", "API Key Rotate", "--body", "Secret rotation required immediately",
+                "--immediate", "--encrypt"
+            ])
+            self.assertEqual(res_send2.returncode, 0)
+
+            # 4. Check inbox: count must be 2 and exit code 0
+            res_count = self.run_locutus(["check-inbox", agent])
+            self.assertEqual(res_count.returncode, 0)
+            self.assertEqual(res_count.stdout.strip(), "2")
+
+            # 5. Drain with --hook: must return formatted continuation block
+            res_hook = self.run_locutus(["drain", "50", agent, "--hook"])
+            self.assertEqual(res_hook.returncode, 0)
+            hook_text = res_hook.stdout.strip()
+
+            self.assertIn(f"[LOCUTUS BUS] 2 new messages received on inbox for '{agent}':", hook_text)
+            self.assertRegex(hook_text, r"- From @alice( \[host: [^\]]+\])? \(subject: \"Code Review\"\) \[type: task, urgency: soon\]:")
+            self.assertIn("Please review PR #42", hook_text)
+            self.assertRegex(hook_text, r"- From @security_lead( \[host: [^\]]+\])? \(subject: \"API Key Rotate\"\) \[type: task, urgency: immediate\]:")
+            self.assertIn("Secret rotation required immediately", hook_text)
+
+            # 6. Verify inbox is now empty
+            res_after = self.run_locutus(["check-inbox", agent])
+            self.assertEqual(res_after.returncode, 1)
+            self.assertEqual(res_after.stdout.strip(), "0")
+
+            # Drain on empty inbox with --hook should return empty string
+            res_hook_empty = self.run_locutus(["drain", "50", agent, "--hook"])
+            self.assertEqual(res_hook_empty.returncode, 0)
+            self.assertEqual(res_hook_empty.stdout.strip(), "")
+
+            # 7. Test drain with --json on a single message
+            self.run_locutus([
+                "send", "--to", agent, "--from", "bob",
+                "--subject", "JSON Drain Test", "--body", "Payload content",
+            ])
+            res_json = self.run_locutus(["drain", "50", agent, "--json"])
+            self.assertEqual(res_json.returncode, 0)
+            drained_list = json.loads(res_json.stdout.strip())
+            self.assertIsInstance(drained_list, list)
+            self.assertEqual(len(drained_list), 1)
+            self.assertEqual(drained_list[0]["from"], "bob")
+            self.assertEqual(drained_list[0]["body"], "Payload content")
+            self.assertIn("host", drained_list[0])
+            self.assertTrue(len(drained_list[0]["host"]) > 0)
+
+        finally:
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
+
+    def test_67_multi_harness_coordination_pi_cursor_copilot(self):
+        """Test multi-harness inter-agent coordination across Pi, Cursor, and GitHub Copilot."""
+        pi_sid = f"pi:ses_{int(time.time())}_pi"
+        cursor_sid = f"cursor:ses_{int(time.time())}_cur"
+        copilot_sid = f"copilot:ses_{int(time.time())}_cop"
+
+        pi_agent = "pi_worker"
+        cursor_agent = "cursor_worker"
+        copilot_agent = "copilot_worker"
+
+        queue_name = f"harness_jobs_{int(time.time())}"
+
+        try:
+            # 1. Register session mappings
+            self.run_locutus(["session", "set", pi_sid, pi_agent])
+            self.run_locutus(["session", "set", cursor_sid, cursor_agent])
+            self.run_locutus(["session", "set", copilot_sid, copilot_agent])
+
+            # 2. Pi sends urgent task to Cursor
+            res_pi_send = self.run_locutus(
+                ["send", "--to", cursor_agent, "--subject", "Build Check", "--body", "Halt build #10", "--immediate"],
+                env_overrides={"LOCUTUS_SESSION_ID": pi_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+            self.assertEqual(res_pi_send.returncode, 0)
+
+            # 3. Cursor drains task and verifies metadata
+            res_cur_drain = self.run_locutus(
+                ["drain", "1", cursor_agent, "--json"],
+                env_overrides={"LOCUTUS_SESSION_ID": cursor_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+            self.assertEqual(res_cur_drain.returncode, 0)
+            cur_msgs = json.loads(res_cur_drain.stdout.strip())
+            task_msg = cur_msgs if isinstance(cur_msgs, dict) else cur_msgs[0]
+            self.assertEqual(task_msg["from"], pi_agent)
+            self.assertEqual(task_msg["urgency"], "immediate")
+            self.assertIn("host", task_msg)
+
+            # 4. Cursor replies to Pi
+            res_cur_reply = self.run_locutus(
+                ["reply", "--to", pi_agent, "--subject", "Re: Build Check", "--body", "Build halted successfully", "--reply-to", task_msg["id"]],
+                env_overrides={"LOCUTUS_SESSION_ID": cursor_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+            self.assertEqual(res_cur_reply.returncode, 0)
+
+            # Verify Pi inbox received reply
+            res_pi_drain = self.run_locutus(
+                ["drain", "1", pi_agent, "--json"],
+                env_overrides={"LOCUTUS_SESSION_ID": pi_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+            self.assertEqual(res_pi_drain.returncode, 0)
+            pi_msgs = json.loads(res_pi_drain.stdout.strip())
+            reply_msg = pi_msgs if isinstance(pi_msgs, dict) else pi_msgs[0]
+            self.assertEqual(reply_msg["from"], cursor_agent)
+            self.assertEqual(reply_msg["reply_to"], task_msg["id"])
+
+            # 5. Pi enqueues task; Copilot claims and acknowledges it
+            self.run_locutus(
+                ["enqueue", queue_name, "--subject", "Process Data", "--body", "data_payload"],
+                env_overrides={"LOCUTUS_SESSION_ID": pi_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+
+            res_claim = self.run_locutus(
+                ["claim", queue_name, "10", "--lease", "30"],
+                env_overrides={"LOCUTUS_SESSION_ID": copilot_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+            self.assertEqual(res_claim.returncode, 0)
+            claimed = json.loads(res_claim.stdout.strip())
+            self.assertEqual(claimed["subject"], "Process Data")
+
+            res_ack = self.run_locutus(
+                ["ack", queue_name, claimed["id"]],
+                env_overrides={"LOCUTUS_SESSION_ID": copilot_sid, "LOCUTUS_AGENT_NAME": ""}
+            )
+            self.assertEqual(res_ack.returncode, 0)
+
+        finally:
+            self.run_locutus(["session", "remove", pi_sid])
+            self.run_locutus(["session", "remove", cursor_sid])
+            self.run_locutus(["session", "remove", copilot_sid])
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", f"{TEST_PREFIX}inbox:{cursor_agent}"], capture_output=True)
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", f"{TEST_PREFIX}inbox:{pi_agent}"], capture_output=True)
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", f"{TEST_PREFIX}queue:{queue_name}"], capture_output=True)
+
+    def test_68_listen_with_notify_flag(self):
+        """Verify that 'locutus listen --notify' and '-n' block, trigger notification logic safely, and exit 0 with JSON payload."""
+        agent_name = f"notif_agent_{int(time.time() * 1000)}"
+        inbox_key = f"{TEST_PREFIX}inbox:{agent_name}"
+
+        try:
+            # 1. Start background listener with --notify
+            proc = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10", "--notify"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=self.env
+            )
+
+            # Wait briefly for listener to attach
+            time.sleep(0.4)
+
+            # 2. Dispatch a message to the agent
+            res_send = self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Critical Notification",
+                "--body", "Database migration complete",
+                "--immediate"
+            ])
+            self.assertEqual(res_send.returncode, 0)
+
+            # 3. Wait for listener to receive message and exit
+            stdout, stderr = proc.communicate(timeout=5)
+            self.assertEqual(proc.returncode, 0)
+
+            # 4. Verify stdout contains valid message payload
+            payload = json.loads(stdout.strip())
+            self.assertEqual(payload["to"], agent_name)
+            self.assertEqual(payload["subject"], "Critical Notification")
+            self.assertEqual(payload["body"], "Database migration complete")
+            self.assertEqual(payload["urgency"], "immediate")
+
+            # 5. Verify short flag -n argument parsing on a timed out wait
+            res_timed = self.run_locutus(["listen", agent_name, "1", "-n"])
+            self.assertEqual(res_timed.returncode, 0)
+            self.assertEqual(res_timed.stdout.strip(), "")
+
+        finally:
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
+
+    def test_69_listen_lifecycle_postamble_and_quiet_flag(self):
+        """Verify that locutus listen emits lifecycle guidance to stderr upon exit, and that --quiet/-q/LOCUTUS_QUIET suppresses it."""
+        agent_name = f"lifecycle_agent_{int(time.time() * 1000)}"
+        inbox_key = f"{TEST_PREFIX}inbox:{agent_name}"
+        base_env = self.env.copy()
+        try:
+            # 1. Start listener without quiet flag in background
+            proc = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=base_env
+            )
+            time.sleep(0.4)
+
+            # 2. Send a task
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Build Feature",
+                "--body", "Implement user billing API",
+                "--soon"
+            ])
+
+            stdout, stderr = proc.communicate(timeout=5)
+            self.assertEqual(proc.returncode, 0)
+
+            # Stdout must be pure valid JSON
+            payload = json.loads(stdout.strip())
+            self.assertEqual(payload["subject"], "Build Feature")
+
+            # Stderr must contain lifecycle notice and re-arm instructions
+            self.assertIn("[LOCUTUS LIFECYCLE NOTICE]", stderr)
+            self.assertIn("locutus reply --to", stderr)
+            self.assertIn("--listen", stderr)
+            self.assertIn(f"locutus listen {agent_name}", stderr)
+            self.assertIn(f"locutus close {agent_name}", stderr)
+
+            # 3. Test --quiet flag: lifecycle notice must be suppressed
+            proc_q = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10", "--quiet"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=base_env
+            )
+            time.sleep(0.4)
+
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Quiet Task",
+                "--body", "Should not print notice",
+                "--soon"
+            ])
+
+            stdout_q, stderr_q = proc_q.communicate(timeout=5)
+            self.assertEqual(proc_q.returncode, 0)
+            payload_q = json.loads(stdout_q.strip())
+            self.assertEqual(payload_q["subject"], "Quiet Task")
+            self.assertNotIn("[LOCUTUS LIFECYCLE NOTICE]", stderr_q)
+
+            # 4. Test LOCUTUS_QUIET=1 environment variable suppression
+            proc_env = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**base_env, "LOCUTUS_QUIET": "1"}
+            )
+            time.sleep(0.4)
+
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Env Quiet Task",
+                "--body", "Env should suppress",
+                "--soon"
+            ])
+
+            stdout_env, stderr_env = proc_env.communicate(timeout=5)
+            self.assertEqual(proc_env.returncode, 0)
+            self.assertNotIn("[LOCUTUS LIFECYCLE NOTICE]", stderr_env)
+
+            # 5. Test drain with --hook includes NEXT-STEP ACTION block
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Hook Action Test",
+                "--body", "Follow next step instructions",
+                "--soon"
+            ])
+            res_hook = self.run_locutus(["drain", "50", agent_name, "--hook"])
+            self.assertEqual(res_hook.returncode, 0)
+            self.assertIn("[LOCUTUS NEXT-STEP ACTION]:", res_hook.stdout)
+            self.assertIn("locutus reply ... --listen", res_hook.stdout)
+            self.assertIn(f"locutus close {agent_name}", res_hook.stdout)
+
+            # 6. Test clean unregister via locutus close
+            res_close = self.run_locutus(["close", agent_name])
+            self.assertEqual(res_close.returncode, 0)
+
+        finally:
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", f"{TEST_PREFIX}listener:{agent_name}"], capture_output=True)
+
+    def test_70_harness_specific_lifecycle_notices(self):
+        """Verify that locutus listen and drain --hook emit harness-tailored playbooks based on environment variables."""
+        agent_name = f"harness_agent_{int(time.time() * 1000)}"
+        inbox_key = f"{TEST_PREFIX}inbox:{agent_name}"
+        base_env = self.env.copy()
+
+        try:
+            # 1. OpenCode harness detection
+            proc_opencode = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**base_env, "OPENCODE_SESSION_ID": "ses_opencode_123"}
+            )
+            time.sleep(0.4)
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Task for OpenCode",
+                "--body", "Run test suite",
+                "--soon"
+            ])
+            _, stderr_opencode = proc_opencode.communicate(timeout=5)
+            self.assertEqual(proc_opencode.returncode, 0)
+            self.assertIn("Detected harness: opencode", stderr_opencode)
+            self.assertIn("In-process extension fiber is active. DO NOT run a blocking 'locutus listen'", stderr_opencode)
+
+            # 2. OpenCode drain --hook next-step action
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Another OpenCode Task",
+                "--body", "Refactor module",
+                "--soon"
+            ])
+            res_hook_opencode = subprocess.run(
+                [BIN_PATH, "drain", "50", agent_name, "--hook"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**base_env, "OPENCODE_SESSION_ID": "ses_opencode_123"}
+            )
+            self.assertEqual(res_hook_opencode.returncode, 0)
+            self.assertIn("Extension fiber automatically receives new tasks; DO NOT run a blocking 'locutus listen'", res_hook_opencode.stdout)
+
+            # 3. Codex harness detection
+            proc_codex = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**base_env, "CODEX_SESSION_ID": "codex_session_456"}
+            )
+            time.sleep(0.4)
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Task for Codex",
+                "--body", "Investigate logs",
+                "--soon"
+            ])
+            _, stderr_codex = proc_codex.communicate(timeout=5)
+            self.assertEqual(proc_codex.returncode, 0)
+            self.assertIn("Detected harness: codex", stderr_codex)
+            self.assertIn("Codex subagents (SKILL.md Step 2b)", stderr_codex)
+
+            # 4. Antigravity harness detection
+            proc_agy = subprocess.Popen(
+                [BIN_PATH, "listen", agent_name, "10"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**base_env, "ANTIGRAVITY_APP_DIR": "/tmp/agy"}
+            )
+            time.sleep(0.4)
+            self.run_locutus([
+                "send", "--to", agent_name,
+                "--subject", "Task for Antigravity",
+                "--body", "Pair program",
+                "--soon"
+            ])
+            _, stderr_agy = proc_agy.communicate(timeout=5)
+            self.assertEqual(proc_agy.returncode, 0)
+            self.assertIn("Detected harness: antigravity", stderr_agy)
+            self.assertIn("Antigravity reactive pattern (SKILL.md Step 2d)", stderr_agy)
+
+        finally:
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
+            subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", f"{TEST_PREFIX}listener:{agent_name}"], capture_output=True)
+            self.run_locutus(["close", agent_name])
+
+    def test_71_guide_lifecycle_and_config(self):
+        """Verify locutus guide install, check, and uninstall subcommands."""
+        with tempfile.TemporaryDirectory(prefix="locutus_guide_test_") as tmpdir:
+            agents_file = os.path.join(tmpdir, "AGENTS.md")
+            
+            # 1. Check on missing file
+            check_res = self.run_locutus(["guide", "check", agents_file])
+            self.assertEqual(check_res.returncode, 0)
+            self.assertIn("[MISSING]", check_res.stdout)
+
+            # 2. Install guide into new file
+            inst_res = self.run_locutus(["guide", "install", agents_file])
+            self.assertEqual(inst_res.returncode, 0)
+            self.assertIn("Created", inst_res.stdout)
+            self.assertTrue(os.path.isfile(agents_file))
+            with open(agents_file) as f:
+                content = f.read()
+            self.assertIn("<!-- BEGIN LOCUTUS GUIDE [v1.0] -->", content)
+            self.assertIn("<!-- END LOCUTUS GUIDE -->", content)
+
+            # 3. Check installed status
+            check_res2 = self.run_locutus(["guide", "check", agents_file])
+            self.assertEqual(check_res2.returncode, 0)
+            self.assertIn("[INSTALLED] Locutus Guide is installed in:", check_res2.stdout)
+
+            # 4. Uninstall guide
+            uninst_res = self.run_locutus(["guide", "uninstall", agents_file])
+            self.assertEqual(uninst_res.returncode, 0)
+            self.assertIn("Successfully uninstalled", uninst_res.stdout)
+            with open(agents_file) as f:
+                content2 = f.read()
+            self.assertNotIn("BEGIN LOCUTUS GUIDE", content2)
 
 
 if __name__ == "__main__":

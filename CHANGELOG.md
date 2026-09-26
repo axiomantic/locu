@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ephemeral real-time streaming (`locutus pub` and `locutus sub`).
   - Live agent operational state and activity tracking (`locutus status`).
 - **Host & Multi-Terminal Isolation**:
-  - Multi-tiered agent identity resolution prioritizing CLI arguments, `LOCUTUS_AGENT_NAME` process environment variables, and workspace `.locutus.agent` files.
+  - Multi-tiered agent identity resolution prioritizing CLI arguments, `LOCUTUS_AGENT_NAME` process environment variables, session ID mappings, and user-level fallbacks.
   - Automatic listener auto-registration into live directory sets.
 - **Universal Assistant Integration**:
   - Canonical agent skill specification in `skills/locutus/SKILL.md` compatible with Claude Code, Antigravity, Cursor, OpenCode, Codex, and Hermes via `npx skills` and `skilz`.

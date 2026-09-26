@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }} / vfox-nim)
+    name: Test (${{ matrix.os }} / Nim)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -48,11 +48,11 @@ jobs:
           Start-Sleep -Seconds 2
           & "C:\redis\redis-cli.exe" ping
 
-      - name: Set up Nim via mise (vfox-nim)
+      - name: Set up Nim via mise
         uses: jdx/mise-action@v4
         with:
           tool_versions: |
-            vfox:elijahr/vfox-nim 2.2.0
+            nim 2.2.12
           cache: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
