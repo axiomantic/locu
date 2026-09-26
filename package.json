@@ -4,9 +4,9 @@
   "description": "Inter-assistant communication bus, monotonic fencing locks, and work queues over Redis",
   "main": "bin/run.js",
   "bin": {
-    "locu": "./bin/run.js",
-    "locuti": "./bin/run.js",
-    "locutus": "./bin/run.js"
+    "locu": "bin/run.js",
+    "locuti": "bin/run.js",
+    "locutus": "bin/run.js"
   },
   "files": [
     "bin/",
@@ -23,7 +23,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/axiomantic/locu.git"
+    "url": "git+https://github.com/axiomantic/locu.git"
   },
   "keywords": [
     "ai",

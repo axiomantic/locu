@@ -449,6 +449,9 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Upgrade npm to latest
+        run: npm install -g npm@latest
+
       - name: Check if already published on npm
         id: npm-check
         run: |
