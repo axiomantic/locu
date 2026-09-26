@@ -1,0 +1,98 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Build & Publish to npm (OIDC)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js (v22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Reconcile Version and Tag
+        id: versioning
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+            PKG_VERSION=$(node -p "require('./package.json').version")
+            if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+              echo "Updating package.json version from $PKG_VERSION to $TAG_VERSION..."
+              npm version "$TAG_VERSION" --no-git-tag-version
+              git add package.json
+              git commit -m "chore(release): bump package.json to v$TAG_VERSION [skip ci]" || true
+              git push origin main || true
+            fi
+            TARGET_VERSION="$TAG_VERSION"
+          else
+            PKG_VERSION=$(node -p "require('./package.json').version")
+            TAG_NAME="v$PKG_VERSION"
+            if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+              echo "Creating missing tag $TAG_NAME for version $PKG_VERSION..."
+              git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+              git push origin "$TAG_NAME"
+            else
+              echo "Tag $TAG_NAME already exists."
+            fi
+            TARGET_VERSION="$PKG_VERSION"
+          fi
+
+          echo "version=$TARGET_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if already published on npm
+        id: npm-check
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name")
+          PKG_VER="${{ steps.versioning.outputs.version }}"
+          if npm view "${PKG_NAME}@${PKG_VER}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "${PKG_NAME}@${PKG_VER} is already published on npm. Skipping publish step."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            echo "${PKG_NAME}@${PKG_VER} is not yet published. Proceeding..."
+          fi
+
+      - name: Setup Nim via mise
+        if: steps.npm-check.outputs.already_published == 'false'
+        uses: jdx/mise-action@v4
+        with:
+          tool_versions: |
+            nim 2.2.12
+          cache: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile Native Locutus Binary
+        if: steps.npm-check.outputs.already_published == 'false'
+        run: |
+          mkdir -p bin
+          nim c -d:release -o:bin/locutus src/locutus.nim
+          chmod 755 bin/locutus bin/run.js scripts/postinstall.js
+
+      - name: Publish to npm via OIDC
+        if: steps.npm-check.outputs.already_published == 'false'
+        run: npm publish --provenance
