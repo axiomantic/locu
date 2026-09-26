@@ -242,13 +242,18 @@ jobs:
           test -n "$KEY1"
           test -f /tmp/clean-darwin-arm64/skills/locutus/SKILL.md
 
-          echo "=== [2/2] Verifying macOS amd64 tarball via Rosetta 2 ==="
+          echo "=== [2/2] Verifying macOS amd64 tarball ==="
           mkdir -p /tmp/clean-darwin-amd64
           tar -xzf dist/locutus-darwin-amd64.tar.gz -C /tmp/clean-darwin-amd64
-          arch -x86_64 /tmp/clean-darwin-amd64/locutus --help | grep -F "Nim Native"
-          KEY2=$(arch -x86_64 /tmp/clean-darwin-amd64/locutus get-secret)
-          test -n "$KEY2"
+          file /tmp/clean-darwin-amd64/locutus | grep -q "x86_64"
           test -f /tmp/clean-darwin-amd64/skills/locutus/SKILL.md
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 /tmp/clean-darwin-amd64/locutus --help | grep -F "Nim Native"
+            KEY2=$(arch -x86_64 /tmp/clean-darwin-amd64/locutus get-secret)
+            test -n "$KEY2"
+          else
+            echo "Rosetta 2 not available on runner; verified Mach-O x86_64 via file utility"
+          fi
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
