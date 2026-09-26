@@ -179,7 +179,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         self.assertEqual(stat.st_mode & 0o777, 0o755)
         run_res = subprocess.run([binary_path, "--version"], capture_output=True, text=True)
         self.assertEqual(run_res.returncode, 0)
-        self.assertIn("0.1.2", run_res.stdout)
+        self.assertIn("0.1.3", run_res.stdout)
 
         # 2. Strict directory snapshot assertion: NO skill directories created for ANY assistant
         assistant_roots = [
@@ -582,14 +582,14 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertIn(key, data, f"Scoop manifest missing required key '{key}'")
 
         # Version synchronization with repo
-        self.assertEqual(data["version"], "0.1.2")
+        self.assertEqual(data["version"], "0.1.3")
         self.assertEqual(data["license"], "MIT")
-        self.assertEqual(data["homepage"], "https://github.com/axiomantic/locutus")
+        self.assertEqual(data["homepage"], "https://github.com/axiomantic/locu")
         self.assertIn("64bit", data["architecture"])
 
         arch_64 = data["architecture"]["64bit"]
         self.assertEqual(arch_64.get("bin"), "locutus.exe")
-        expected_url = f"https://github.com/axiomantic/locutus/releases/download/v{data['version']}/locutus-windows-amd64.zip"
+        expected_url = f"https://github.com/axiomantic/locu/releases/download/v{data['version']}/locutus-windows-amd64.zip"
         self.assertEqual(arch_64.get("url"), expected_url)
 
         # Autoupdate pattern
@@ -626,11 +626,11 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 raise ValueError("Missing 64bit architecture definition")
 
         with self.assertRaises(ValueError):
-            _validate_scoop_schema({"version": "0.1.2"})
+            _validate_scoop_schema({"version": "0.1.3"})
         with self.assertRaises(ValueError):
             _validate_scoop_schema({"version": "invalid_ver", "description": "d", "homepage": "h", "license": "MIT", "architecture": {"64bit": {}}})
         with self.assertRaises(ValueError):
-            _validate_scoop_schema({"version": "0.1.2", "description": "d", "homepage": "h", "license": "MIT", "architecture": {}})
+            _validate_scoop_schema({"version": "0.1.3", "description": "d", "homepage": "h", "license": "MIT", "architecture": {}})
 
     def test_08_homebrew_formula_spec(self):
         """Verify Homebrew formula architecture stanzas, version sync, installation, caveats, and test block."""
@@ -644,9 +644,9 @@ class TestInstallerAndUninstaller(unittest.TestCase):
 
         # 1. Structural Ruby formula parsing
         self.assertIn("class Locutus < Formula", content)
-        self.assertRegex(content, r'version\s+"0\.1\.2"', "Homebrew version must match repository version 0.1.2")
+        self.assertRegex(content, r'version\s+"0\.1\.3"', "Homebrew version must match repository version 0.1.3")
         self.assertRegex(content, r'license\s+"MIT"', "Homebrew license must be MIT")
-        self.assertIn('homepage "https://github.com/axiomantic/locutus"', content)
+        self.assertIn('homepage "https://github.com/axiomantic/locu"', content)
 
         # 2. Multi-platform OS & Architecture blocks (macOS + Linux, arm64 + amd64)
         self.assertIn("on_macos do", content)

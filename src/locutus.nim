@@ -77,7 +77,7 @@ const
   leaderLua*     = staticRead("../scripts/leader.lua")
   workflowLua*   = staticRead("../scripts/workflow.lua")
   sweepLua*      = staticRead("../scripts/sweep.lua")
-  LocutusVersion* = "0.1.2"
+  LocutusVersion* = "0.1.3"
 
 # Cryptographic Helpers
 proc computeSha1*(text: string): string =

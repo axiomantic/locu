@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Locutus Universal Installer for macOS and Linux
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash
 #
 # Uninstallation:
-#   curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash -s -- --uninstall
 #   # Or if you have the script locally:
 #   ./scripts/install.sh --uninstall
 #
@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-REPO="axiomantic/locutus"
+REPO="axiomantic/locu"
 GITHUB_URL="https://github.com/${REPO}"
 
 # 0. Handle Uninstallation
@@ -254,7 +254,7 @@ install_skills() {
   # Option A: skills.sh (Vercel Labs) via npx
   if command -v npx >/dev/null 2>&1; then
     echo "Attempting global skill installation via skills.sh (npx)..."
-    if npx -y skills add axiomantic/locutus -g -a '*' -y 2>/dev/null; then
+    if npx -y skills add axiomantic/locu -g -a '*' -y 2>/dev/null; then
       echo "✓ Locutus skill installed globally via skills.sh."
       SKILL_INSTALLED=1
     fi
@@ -263,7 +263,7 @@ install_skills() {
   # Option B: skilz (Spillwave)
   if [ "${SKILL_INSTALLED}" -eq 0 ] && command -v skilz >/dev/null 2>&1; then
     echo "Attempting global skill installation via skilz..."
-    if skilz -y install https://github.com/axiomantic/locutus 2>/dev/null; then
+    if skilz -y install https://github.com/axiomantic/locu 2>/dev/null; then
       echo "✓ Locutus skill installed globally via skilz."
       SKILL_INSTALLED=1
     fi
@@ -376,8 +376,8 @@ install_skills() {
   else
     echo "Notice: No coding assistant directories detected yet."
     echo "Install the skill into your assistant at any time using:"
-    echo "    npx skills add axiomantic/locutus -g"
-    echo "    # Or: skilz install https://github.com/axiomantic/locutus"
+    echo "    npx skills add axiomantic/locu -g"
+    echo "    # Or: skilz install https://github.com/axiomantic/locu"
   fi
 }
 

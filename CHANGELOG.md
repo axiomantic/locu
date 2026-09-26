@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-26
+
 ### Added
+- **Primary CLI Command `locu`**: Renamed primary CLI executable to `locu` (with `locuti` and `locutus` preserved as 100% backward-compatible aliases).
+- **GitHub Repository Migration**: Repository moved to `https://github.com/axiomantic/locu`.
+- **NPM Package `@axiomantic/locu`**: Official distribution via npm with cross-platform native binaries for macOS (Apple Silicon & Intel), Linux (x86_64 & aarch64), and Windows.
 - **Distributed Fencing Tokens for Locks (`locutus lock --fencing`)**: Concurrency guard against delayed zombie writes (`locutus lock <lock_name> [ttl_sec] [--fencing] [--raw]`). Automatically increments and returns a monotonic integer sequence counter stored at `${prefix}lock:fencing:<lock_name>` via `scripts/lock.lua`. Allows downstream storage, databases, and peer agents to detect and reject out-of-order writes from delayed processes whose lock leases have expired.
 - **Cluster Health Watchdog & Sweeper (`locutus sweep`)**: Proactive cluster cleanup utility (`locutus sweep [--dry-run] [--raw]`). Scans active agent directories in Redis to prune entries whose heartbeats have lapsed, inspects listener locks across the cluster, and automatically removes orphaned listener locks tied to dead local PIDs via `scripts/sweep.lua` and host process verification.
 - **Directed Acyclic Graph (DAG) Workflow Engine (`locutus workflow`)**: Declarative multi-stage pipeline coordination (`locutus workflow <define|next|resolve|fail|status> <flow_id>`). Supports complex DAG dependencies (`--deps "test:lint;build:lint;deploy:test,build"`), automatic dependency resolution, instant stage unlocking upon step completion, and failure handling via `scripts/workflow.lua`.
@@ -118,3 +123,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Windows Scoop manifest in `packaging/scoop/locutus.json`.
   - Universal 1-line installer and uninstaller scripts (`scripts/install.sh`, `scripts/install.ps1`).
   - Cross-compilation release pipeline generating standalone binaries and tarballs for Linux (amd64, arm64), macOS (Apple Silicon, Intel), and Windows (x64).
+
+[Unreleased]: https://github.com/axiomantic/locu/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/axiomantic/locu/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/axiomantic/locu/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/axiomantic/locu/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/axiomantic/locu/releases/tag/v0.1.0

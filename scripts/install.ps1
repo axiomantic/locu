@@ -9,7 +9,7 @@
     Configures %LOCALAPPDATA%\Programs\locutus and updates the User PATH.
 .EXAMPLE
     # Install:
-    irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps1 | iex
+    irm https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.ps1 | iex
 
     # Uninstall:
     & .\scripts\install.ps1 -Uninstall
@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = "axiomantic/locutus"
+$Repo = "axiomantic/locu"
 $GitHubUrl = "https://github.com/$Repo"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\locutus"
 
@@ -196,7 +196,7 @@ function Install-Skills {
     if (Get-Command npx -ErrorAction SilentlyContinue) {
         Write-Host "Attempting global skill installation via skills.sh (npx)..." -ForegroundColor Yellow
         try {
-            & npx -y skills add axiomantic/locutus -g -a '*' -y
+            & npx -y skills add axiomantic/locu -g -a '*' -y
             Write-Host "[+] Locutus skill installed globally via skills.sh." -ForegroundColor Green
             $skillInstalled = $true
         }
@@ -207,7 +207,7 @@ function Install-Skills {
     if (-not $skillInstalled -and (Get-Command skilz -ErrorAction SilentlyContinue)) {
         Write-Host "Attempting global skill installation via skilz..." -ForegroundColor Yellow
         try {
-            & skilz -y install https://github.com/axiomantic/locutus
+            & skilz -y install https://github.com/axiomantic/locu
             Write-Host "[+] Locutus skill installed globally via skilz." -ForegroundColor Green
             $skillInstalled = $true
         }
@@ -270,8 +270,8 @@ function Install-Skills {
     } else {
         Write-Host "Notice: No coding assistant directories detected yet." -ForegroundColor Gray
         Write-Host "Install the skill into your assistant at any time using:"
-        Write-Host "    npx skills add axiomantic/locutus -g"
-        Write-Host "    # Or: skilz install https://github.com/axiomantic/locutus"
+        Write-Host "    npx skills add axiomantic/locu -g"
+        Write-Host "    # Or: skilz install https://github.com/axiomantic/locu"
     }
 }
 

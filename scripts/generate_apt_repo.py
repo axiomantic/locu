@@ -148,7 +148,7 @@ def main():
 
   <h2>Installation via APT</h2>
   <pre><code># 1. Add repository to sources
-echo "deb [trusted=yes] https://axiomantic.github.io/locutus/apt/ ./" | sudo tee /etc/apt/sources.list.d/locutus.list
+echo "deb [trusted=yes] https://axiomantic.github.io/locu/apt/ ./" | sudo tee /etc/apt/sources.list.d/locutus.list
 
 # 2. Update and install
 sudo apt-get update
@@ -158,9 +158,9 @@ sudo apt-get install -y locutus</code></pre>
   <pre><code>brew install axiomantic/tap/locutus</code></pre>
 
   <h2>Universal One-Line Installer</h2>
-  <pre><code>curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.sh | bash</code></pre>
+  <pre><code>curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash</code></pre>
 
-  <p>For documentation, source code, and release downloads, visit the <a href="https://github.com/axiomantic/locutus">Locutus GitHub Repository</a>.</p>
+  <p>For documentation, source code, and release downloads, visit the <a href="https://github.com/axiomantic/locu">Locu GitHub Repository</a>.</p>
 </body>
 </html>
 """

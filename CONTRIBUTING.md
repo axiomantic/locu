@@ -32,8 +32,8 @@ Alternatively, if you manage tools manually:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/axiomantic/locutus.git
-cd locutus
+git clone https://github.com/axiomantic/locu.git
+cd locu
 
 # 2. Build native Nim binary (1 second)
 nim c -d:release -o:bin/locutus src/locutus.nim
@@ -302,8 +302,8 @@ flowchart TD
 
     subgraph Tier2["Tier 2: Universal Multi-Agent Installer"]
         T2_Script["Universal Install Script<br/><code>curl -fsSL .../install.sh | bash</code>"]
-        T2_Skills["skills.sh (Vercel Labs)<br/><code>npx -y skills add axiomantic/locutus -g</code>"]
-        T2_Skilz["skilz (Spillwave)<br/><code>skilz install axiomantic/locutus</code>"]
+        T2_Skills["skills.sh (Vercel Labs)<br/><code>npx -y skills add axiomantic/locu -g</code>"]
+        T2_Skilz["skilz (Spillwave)<br/><code>skilz install axiomantic/locu</code>"]
     end
 
     subgraph Tier3["Tier 3: OS Package Managers"]

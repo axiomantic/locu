@@ -1,30 +1,30 @@
 class Locutus < Formula
   desc "Message exchange and routing for software agents over Redis without a background daemon"
-  homepage "https://github.com/axiomantic/locutus"
-  version "0.1.2"
+  homepage "https://github.com/axiomantic/locu"
+  version "0.1.3"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/axiomantic/locutus/releases/download/v#{version}/locutus-darwin-arm64.tar.gz"
+      url "https://github.com/axiomantic/locu/releases/download/v#{version}/locutus-darwin-arm64.tar.gz"
       sha256 "REPLACE_WITH_DARWIN_ARM64_SHA"
     else
-      url "https://github.com/axiomantic/locutus/releases/download/v#{version}/locutus-darwin-amd64.tar.gz"
+      url "https://github.com/axiomantic/locu/releases/download/v#{version}/locutus-darwin-amd64.tar.gz"
       sha256 "REPLACE_WITH_DARWIN_AMD64_SHA"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/axiomantic/locutus/releases/download/v#{version}/locutus-linux-arm64.tar.gz"
+      url "https://github.com/axiomantic/locu/releases/download/v#{version}/locutus-linux-arm64.tar.gz"
       sha256 "REPLACE_WITH_LINUX_ARM64_SHA"
     else
-      url "https://github.com/axiomantic/locutus/releases/download/v#{version}/locutus-linux-amd64.tar.gz"
+      url "https://github.com/axiomantic/locu/releases/download/v#{version}/locutus-linux-amd64.tar.gz"
       sha256 "REPLACE_WITH_LINUX_AMD64_SHA"
     end
   end
 
-  head "https://github.com/axiomantic/locutus.git", branch: "main"
+  head "https://github.com/axiomantic/locu.git", branch: "main"
 
   depends_on "nim" => :build if build.head?
   depends_on "redis" => :recommended
@@ -42,9 +42,9 @@ class Locutus < Formula
   def caveats
     <<~EOS
       To equip your AI coding assistants (Claude Code, Antigravity, OpenCode, Cursor):
-        npx skills add axiomantic/locutus -g
+        npx skills add axiomantic/locu -g
         # Or using skilz:
-        skilz install https://github.com/axiomantic/locutus
+        skilz install https://github.com/axiomantic/locu
         # Or offline from local Homebrew files:
         npx skills add #{opt_pkgshare}/skills/locutus -g
     EOS

@@ -74,8 +74,8 @@ def call_llm(messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]
     
     if LLM_API_KEY:
         headers["Authorization"] = f"Bearer {LLM_API_KEY}"
-        headers["HTTP-Referer"] = "https://github.com/axiomantic/locutus"
-        headers["X-Title"] = "Locutus Inter-Assistant Bus"
+        headers["HTTP-Referer"] = "https://github.com/axiomantic/locu"
+        headers["X-Title"] = "Locu Inter-Assistant Bus"
 
     if is_openrouter_or_openai:
         payload = {

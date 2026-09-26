@@ -1,12 +1,12 @@
 <div align="center">
 
-# Locutus
+# Locu
 
 **Fast, simple message exchange between AI coding assistants over Redis.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/axiomantic/locutus/actions/workflows/ci.yml/badge.svg)](https://github.com/axiomantic/locutus/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-116%20Passing-success.svg)](tests/)
+[![CI](https://github.com/axiomantic/locu/actions/workflows/ci.yml/badge.svg)](https://github.com/axiomantic/locu/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/Tests-129%20Passing-success.svg)](tests/)
 [![Redis](https://img.shields.io/badge/Redis-6.2%2B-red.svg)](https://redis.io)
 [![Valkey](https://img.shields.io/badge/Valkey-7.2%2B-purple.svg)](https://valkey.io)
 [![Nim](https://img.shields.io/badge/Nim-2.0%2B-yellow.svg)](https://nim-lang.org)
@@ -20,7 +20,7 @@
 
 ## Table of Contents
 
-- [What is Locutus?](#what-is-locutus)
+- [What is Locu?](#what-is-locu)
 - [30-Second Quickstart](#30-second-quickstart)
   - [1. Install (Engine + AI Agent Skills)](#1-install-engine--ai-agent-skills)
   - [2. Try it in Your Terminals](#2-try-it-in-your-terminals)
@@ -47,11 +47,14 @@
 
 ---
 
-## What is Locutus?
+## What is Locu?
 
-**Locutus** (CLI alias: `locu`) is an inter-agent communication bus that lets AI coding assistants (such as Claude Code, OpenCode, Cursor, Windsurf, Antigravity, and Ollama) exchange tasks and messages across terminals, editors, and machines.
+**Locu** (formerly *Locutus*; CLI aliases: `locu`, `locuti`, `locutus`) is an inter-agent communication bus that lets AI coding assistants (such as Claude Code, OpenCode, Cursor, Windsurf, Antigravity, and Ollama) exchange tasks and messages across terminals, editors, and machines.
 
-Instead of running a complex background server, Locutus routes and queues messages directly through **Redis** or **Valkey**.
+Instead of running a complex background server, Locu routes and queues messages directly through **Redis** or **Valkey**.
+
+> [!NOTE]
+> **Command Naming**: `locu` is the primary executable command. `locuti` and `locutus` are included as 100% backward-compatible aliases across npm, pre-compiled binaries, and package managers.
 
 ### Pairing with Braid for Workspace Isolation
 While Locutus coordinates agent messaging, task claiming, and distributed locking, agents frequently need isolated workspaces to compile and test code without stepping on `main`.
@@ -80,25 +83,25 @@ npx @axiomantic/locu --help
 
 **Terminal A (Worker 1):**
 ```bash
-locutus open worker-1 "backend,qa"
-locutus listen
+locu open worker-1 "backend,qa"
+locu listen
 ```
 *Registers `worker-1` and waits for incoming tasks with zero CPU and zero token consumption.*
 
 **Terminal B (Worker 2):**
 ```bash
-locutus open worker-2 "frontend,qa"
-locutus listen
+locu open worker-2 "frontend,qa"
+locu listen
 ```
 *Registers `worker-2` and waits on its own inbox.*
 
 **Terminal C (Coordinator / Sender):**
 ```bash
 # 1-to-1 Direct Task (O2O):
-locutus send --to worker-1 --subject "Run Tests" --body "pytest tests/auth"
+locu send --to worker-1 --subject "Run Tests" --body "pytest tests/auth"
 
 # 1-to-Many Group Broadcast (O2M):
-locutus broadcast --tags "qa" --subject "Deploy Staging" --body "Verify build v1.2"
+locu broadcast --tags "qa" --subject "Deploy Staging" --body "Verify build v1.2"
 ```
 *Terminal A receives the direct task; both Terminal A and Terminal B receive the multicast broadcast instantly.*
 
@@ -107,18 +110,18 @@ locutus broadcast --tags "qa" --subject "Deploy Staging" --body "Verify build v1
 You can coordinate multiple coding assistants across different terminal windows or editors using natural language:
 
 **Terminal 1 — The Orchestrator (Lead Assistant):**
-> *"You are the coordinator for this project. Connect to Locutus as lead. Check who is online with `/locutus who`, broadcast the test plan to the 'qa' group, and assign API work to 'backend'."*
-- The lead registers (`locutus open lead "orchestrator"`), inspects the active roster (`locutus who`), and broadcasts work:
+> *"You are the coordinator for this project. Connect to Locu as lead. Check who is online with `locu who`, broadcast the test plan to the 'qa' group, and assign API work to 'backend'."*
+- The lead registers (`locu open lead "orchestrator"`), inspects the active roster (`locu who`), and broadcasts work:
   ```bash
-  locutus broadcast --tags "qa" --subject "Test Plan" --body "Validate auth endpoints on staging"
-  locutus broadcast --tags "backend" --subject "API Task" --body "Implement POST /api/v1/login"
+  locu broadcast --tags "qa" --subject "Test Plan" --body "Validate auth endpoints on staging"
+  locu broadcast --tags "backend" --subject "API Task" --body "Implement POST /api/v1/login"
   ```
 
 **Terminal 2 — Backend Worker Assistant (e.g. Claude Code or Cursor):**
-> *"Connect to Locutus as worker-backend with tag 'backend'. Listen for tasks, implement them, and send replies back to lead."*
-- The worker registers (`locutus open worker-backend "backend"`), blocks on `locutus listen` (consuming **0 CPU** and **0 tokens** while waiting), receives the task, implements the code, and replies:
+> *"Connect to Locu as worker-backend with tag 'backend'. Listen for tasks, implement them, and send replies back to lead."*
+- The worker registers (`locu open worker-backend "backend"`), blocks on `locu listen` (consuming **0 CPU** and **0 tokens** while waiting), receives the task, implements the code, and replies:
   ```bash
-  locutus send --to lead --type reply --subject "Re: API Task" --body "Login endpoint implemented in src/auth.py. Tests green."
+  locu send --to lead --type reply --subject "Re: API Task" --body "Login endpoint implemented in src/auth.py. Tests green."
   ```
 
 **Terminal 3 — QA Worker Assistant (e.g. Antigravity or Windsurf):**
@@ -131,21 +134,21 @@ Locutus extends point-to-point and group messaging with dedicated primitives des
 
 | Coordination Primitive | Purpose & Architecture Guarantee | Core Command | Recipe |
 |:---|:---|:---|:---:|
-| **Safe File Locking** | Distributed mutual exclusion with automatic lease expiration | `locutus lock file:src/router.ts 60` | [Recipe 1](#1-safe-concurrent-file-editing) |
-| **Worker Pools** | Competing consumers with FIFO dispatch and fair scheduling | `locutus enqueue <q>` / `locutus work <q>` | [Recipe 2](#2-distributing-batch-jobs-across-a-worker-pool) |
-| **Synchronous RPC** | Request-reply blocking on an ephemeral correlation channel | `locutus request --to <agent> --subject "..." --body "..."` | [Recipe 3](#3-synchronous-rpc-delegation-specialist-query) |
-| **Status & Activity** | Real-time cluster presence with focus broadcast and directory queries | `locutus status <busy\|idle> "..."` / `locutus who` | [Recipe 4](#4-team-discovery--live-focus-broadcasting) |
-| **Scatter-Gather** | Fan-out queries across specialist pools with quorum aggregation | `locutus scatter --targets @tag --quorum N --timeout 15` | [Recipe 5](#5-orchestrator-scatter-gather--quorum-consensus) |
-| **Reliable Task Leases** | At-least-once claims, in-flight lease renewal, and DLQ routing | `locutus claim <q> --lease 60` / `locutus ack <q> <id>` | [Recipe 6](#6-fault-tolerant-worker-mesh-with-leases--dead-letter-queue) |
-| **Shared Blackboard** | Durable shared KV & list scratchpad with OCC revision tracking | `locutus blackboard <set\|get\|append\|snapshot\|load>` | [Recipe 7](#7-shared-blackboard--roundtable-scratchpad) |
-| **Floor Control** | Roundtable speaker ring preventing cross-talk during discussions | `locutus floor <request\|yield\|pass\|status> <room>` | [Recipe 8](#8-moderated-roundtable-discussion-with-floor-control) |
-| **Cancellation Tokens** | Global abort signal halting runaway worker executions instantly | `locutus cancel <run_id> --reason "..."` | [Recipe 9](#9-coordinated-run-cancellation-across-workers) |
-| **Blind Consensus Voting** | Secret-ballot consensus eliminating model anchoring bias | `locutus ballot <open\|cast\|tally\|status> <id>` | [Recipe 10](#10-blind-consensus-voting-to-eliminate-anchoring-bias) |
-| **Leader Election** | Resilient coordinator lease with automatic preemption failover | `locutus leader <acquire\|renew\|resign\|status> <role>` | [Recipe 11](#11-self-healing-leader-election--automated-failover) |
-| **DAG Workflow Engine** | Multi-stage pipeline graph with automatic dependency unlocking | `locutus workflow <define\|next\|resolve\|export\|import>` | [Recipe 12](#12-dag-based-multi-stage-workflow-pipeline) |
-| **Cluster Health Sweeper** | Cursor-based SCAN watchdog pruning dead agents & stale listeners | `locutus sweep [--dry-run] [--raw]` | [Recipe 13](#13-cluster-health-sweeping--self-healing-watchdog) |
-| **Fencing Tokens** | Monotonic integer sequence counter preventing zombie writes | `locutus lock <resource> 60 --fencing` | [Recipe 14](#14-distributed-locking-with-monotonic-fencing-tokens) |
-| **Pub/Sub Streaming** | Real-time ephemeral broadcast streaming without queue memory | `locutus pub <channel> "..."` / `locutus sub <channel>` | [CLI Reference](#2-cli-command-reference) |
+| **Safe File Locking** | Distributed mutual exclusion with automatic lease expiration | `locu lock file:src/router.ts 60` | [Recipe 1](#1-safe-concurrent-file-editing) |
+| **Worker Pools** | Competing consumers with FIFO dispatch and fair scheduling | `locu enqueue <q>` / `locu work <q>` | [Recipe 2](#2-distributing-batch-jobs-across-a-worker-pool) |
+| **Synchronous RPC** | Request-reply blocking on an ephemeral correlation channel | `locu request --to <agent> --subject "..." --body "..."` | [Recipe 3](#3-synchronous-rpc-delegation-specialist-query) |
+| **Status & Activity** | Real-time cluster presence with focus broadcast and directory queries | `locu status <busy\|idle> "..."` / `locu who` | [Recipe 4](#4-team-discovery--live-focus-broadcasting) |
+| **Scatter-Gather** | Fan-out queries across specialist pools with quorum aggregation | `locu scatter --targets @tag --quorum N --timeout 15` | [Recipe 5](#5-orchestrator-scatter-gather--quorum-consensus) |
+| **Reliable Task Leases** | At-least-once claims, in-flight lease renewal, and DLQ routing | `locu claim <q> --lease 60` / `locu ack <q> <id>` | [Recipe 6](#6-fault-tolerant-worker-mesh-with-leases--dead-letter-queue) |
+| **Shared Blackboard** | Durable shared KV & list scratchpad with OCC revision tracking | `locu blackboard <set\|get\|append\|snapshot\|load>` | [Recipe 7](#7-shared-blackboard--roundtable-scratchpad) |
+| **Floor Control** | Roundtable speaker ring preventing cross-talk during discussions | `locu floor <request\|yield\|pass\|status> <room>` | [Recipe 8](#8-moderated-roundtable-discussion-with-floor-control) |
+| **Cancellation Tokens** | Global abort signal halting runaway worker executions instantly | `locu cancel <run_id> --reason "..."` | [Recipe 9](#9-coordinated-run-cancellation-across-workers) |
+| **Blind Consensus Voting** | Secret-ballot consensus eliminating model anchoring bias | `locu ballot <open\|cast\|tally\|status> <id>` | [Recipe 10](#10-blind-consensus-voting-to-eliminate-anchoring-bias) |
+| **Leader Election** | Resilient coordinator lease with automatic preemption failover | `locu leader <acquire\|renew\|resign\|status> <role>` | [Recipe 11](#11-self-healing-leader-election--automated-failover) |
+| **DAG Workflow Engine** | Multi-stage pipeline graph with automatic dependency unlocking | `locu workflow <define\|next\|resolve\|export\|import>` | [Recipe 12](#12-dag-based-multi-stage-workflow-pipeline) |
+| **Cluster Health Sweeper** | Cursor-based SCAN watchdog pruning dead agents & stale listeners | `locu sweep [--dry-run] [--raw]` | [Recipe 13](#13-cluster-health-sweeping--self-healing-watchdog) |
+| **Fencing Tokens** | Monotonic integer sequence counter preventing zombie writes | `locu lock <resource> 60 --fencing` | [Recipe 14](#14-distributed-locking-with-monotonic-fencing-tokens) |
+| **Pub/Sub Streaming** | Real-time ephemeral broadcast streaming without queue memory | `locu pub <channel> "..."` / `locu sub <channel>` | [CLI Reference](#2-cli-command-reference) |
 
 ---
 
@@ -157,178 +160,178 @@ Minimal, production-ready recipes for common multi-agent coordination patterns:
 Acquire a distributed lease before modifying shared files to prevent overwrite collisions across parallel agents:
 ```bash
 # 1. Acquire 60-second lease (returns 0 on success, 1 on conflict):
-locutus lock file:src/router.ts 60
+locu lock file:src/router.ts 60
 
 # 2. Safely inspect, edit, or refactor the file...
 
 # 3. Release lease immediately upon completion:
-locutus unlock file:src/router.ts
+locu unlock file:src/router.ts
 ```
 
 ### 2. Distributing Batch Jobs Across a Worker Pool
 Farm out independent tasks across interchangeable worker assistants with guaranteed exactly-once delivery:
 ```bash
 # Orchestrator pushes tasks:
-locutus enqueue test_suite --subject "Auth Tests" --body "tests/auth_test.go"
-locutus enqueue test_suite --subject "API Tests" --body "tests/api_test.go"
+locu enqueue test_suite --subject "Auth Tests" --body "tests/auth_test.go"
+locu enqueue test_suite --subject "API Tests" --body "tests/api_test.go"
 
 # Workers consume tasks concurrently (blocks silently until available):
-task=$(locutus work test_suite)
+task=$(locu work test_suite)
 ```
 
 ### 3. Synchronous RPC Delegation (Specialist Query)
 Delegate a specialized query or verification and block for the clean result:
 ```bash
 # Requester (blocks up to 30s; --raw outputs clean response body):
-res=$(locutus request --to db-expert --subject "Query Plan" --body "SELECT * FROM users" --timeout 30 --raw)
+res=$(locu request --to db-expert --subject "Query Plan" --body "SELECT * FROM users" --timeout 30 --raw)
 
 # Specialist Responder:
-locutus reply --to orchestrator --subject "Re: Query Plan" --body "Add composite index on (created_at, user_id)" --reply-to <req_id> --listen
+locu reply --to orchestrator --subject "Re: Query Plan" --body "Add composite index on (created_at, user_id)" --reply-to <req_id> --listen
 ```
 
 ### 4. Team Discovery & Live Focus Broadcasting
 Check active teammates before dispatching tasks, and broadcast current focus to coordinators:
 ```bash
 # Discover active agents cluster-wide:
-locutus who -a --json
+locu who -a --json
 
 # Broadcast current focus:
-locutus status busy "Refactoring auth middleware"
+locu status busy "Refactoring auth middleware"
 
 # Signal completion when ready:
-locutus status idle "Awaiting next task"
+locu status idle "Awaiting next task"
 ```
 
 ### 5. Orchestrator Scatter-Gather & Quorum Consensus
 Fan out an objective across a pool of specialists and aggregate responses until quorum is met:
 ```bash
 # Fan out to all agents with tag 'reviewers', waiting for at least 2 approvals:
-replies=$(locutus scatter --targets @reviewers --subject "Review PR #42" --body "Please review diff in staging" --quorum 2 --timeout 15)
+replies=$(locu scatter --targets @reviewers --subject "Review PR #42" --body "Please review diff in staging" --quorum 2 --timeout 15)
 
 # Or fan out to explicit agents and pipe bare response bodies:
-locutus scatter --targets "analyzer1,analyzer2" --subject "Benchmark" --body "run" --raw
+locu scatter --targets "analyzer1,analyzer2" --subject "Benchmark" --body "run" --raw
 ```
 
 ### 6. Fault-Tolerant Worker Mesh with Leases & Dead-Letter Queue
 Non-destructively claim tasks with leases and eliminate task loss on worker crash:
 ```bash
 # 1. Claim task with 60-second lease (supports --run-id for cancellation awareness):
-task=$(locutus claim batch_pipeline --lease 60 --run-id run_042)
+task=$(locu claim batch_pipeline --lease 60 --run-id run_042)
 task_id=$(echo "$task" | jq -r '.id')
 
 # 2. For long-running execution (>60s), periodically renew lease to prevent task theft:
-locutus claim renew batch_pipeline "$task_id" --lease 60
+locu claim renew batch_pipeline "$task_id" --lease 60
 
 # 3. Confirm completion and release lease:
-locutus ack batch_pipeline "$task_id"
+locu ack batch_pipeline "$task_id"
 ```
 
 ### 7. Shared Blackboard & Roundtable Scratchpad
 Share persistent specs and append ideas across agents without context ballooning:
 ```bash
 # 1. Set shared architecture specification:
-locutus blackboard set brainstorm arch_spec '{"runtime": "nim", "crypto": "openssl_evp"}'
+locu blackboard set brainstorm arch_spec '{"runtime": "nim", "crypto": "openssl_evp"}'
 
 # 2. Query current Optimistic Concurrency Control (OCC) revision:
-rev=$(locutus blackboard rev brainstorm arch_spec)
+rev=$(locu blackboard rev brainstorm arch_spec)
 # => "1"
 
 # 3. Append ideas or action items:
-locutus blackboard append brainstorm ideas "Idea 1: Add monotonic fencing tokens to mutex locks"
-locutus blackboard append brainstorm ideas "Idea 2: DAG-based workflow pipeline engine"
+locu blackboard append brainstorm ideas "Idea 1: Add monotonic fencing tokens to mutex locks"
+locu blackboard append brainstorm ideas "Idea 2: DAG-based workflow pipeline engine"
 
 # 4. Take room snapshot:
-locutus blackboard snapshot brainstorm
+locu blackboard snapshot brainstorm
 ```
 
 ### 8. Moderated Roundtable Discussion with Floor Control
 Coordinate turn-taking and prevent cross-talk during multi-agent discussions:
 ```bash
 # 1. Request the floor (with a 30s speaker lease). Blocks if occupied:
-locutus floor request design_room 30
+locu floor request design_room 30
 
 # 2. Write speaking points or broadcast to participants:
-locutus blackboard append design_room notes "Speaker proposal: Split monolithic config into modular schemas"
+locu blackboard append design_room notes "Speaker proposal: Split monolithic config into modular schemas"
 
 # 3. Yield floor to the next waiting speaker:
-locutus floor yield design_room
+locu floor yield design_room
 # Or pass explicitly:
-locutus floor pass design_room specialist_bob
+locu floor pass design_room specialist_bob
 ```
 
 ### 9. Coordinated Run Cancellation Across Workers
 Publish cancellation tokens to immediately stop background jobs and prevent wasted AI token spend:
 ```bash
 # 1. Lead / Orchestrator cancels run:
-locutus cancel run_042 --reason "Aborted by lead: switching models"
+locu cancel run_042 --reason "Aborted by lead: switching models"
 
 # 2. Workers pass --run-id directly to work/claim loops (exits 0 immediately if cancelled):
-locutus work batch_pipeline 30 --run-id run_042
+locu work batch_pipeline 30 --run-id run_042
 
 # Or manual pre-check before expensive inferences:
-if locutus cancel check run_042 --exit-code; then
+if locu cancel check run_042 --exit-code; then
   echo "Job was cancelled! Halting execution."
   exit 0
 fi
 
 # 3. Clear token when starting fresh execution:
-locutus cancel clear run_042
+locu cancel clear run_042
 ```
 
 ### 10. Blind Consensus Voting to Eliminate Anchoring Bias
 Conduct unbiased, sealed-ballot votes across independent models:
 ```bash
 # 1. Open ballot:
-locutus ballot open framework_choice --options "react,vue,svelte" --voters "claude,gpt,gemini"
+locu ballot open framework_choice --options "react,vue,svelte" --voters "claude,gpt,gemini"
 
 # 2. Assistants cast sealed ballots:
-locutus ballot cast framework_choice --vote "svelte" --voter "claude"
-locutus ballot cast framework_choice --vote "svelte" --voter "gpt"
-locutus ballot cast framework_choice --vote "react" --voter "gemini"
+locu ballot cast framework_choice --vote "svelte" --voter "claude"
+locu ballot cast framework_choice --vote "svelte" --voter "gpt"
+locu ballot cast framework_choice --vote "react" --voter "gemini"
 
 # 3. Reveal tally and determine winner:
-locutus ballot tally framework_choice --close
+locu ballot tally framework_choice --close
 ```
 
 ### 11. Self-Healing Leader Election & Automated Failover
 Maintain resilient mesh coordination with preemption leases and failover:
 ```bash
 # 1. Acquire leadership lease (30s):
-locutus leader acquire cluster_lead 30
+locu leader acquire cluster_lead 30
 
 # 2. While running, periodically heartbeat/renew:
-locutus leader renew cluster_lead 30
+locu leader renew cluster_lead 30
 
 # 3. Check current leader:
-locutus leader status cluster_lead
+locu leader status cluster_lead
 
 # 4. Release leadership to standby nodes:
-locutus leader resign cluster_lead
+locu leader resign cluster_lead
 ```
 
 ### 12. DAG-Based Multi-Stage Workflow Pipeline
 Coordinate complex pipelines where dependent tasks unlock automatically as upstream stages finish:
 ```bash
 # 1. Define pipeline graph:
-locutus workflow define release_pipeline \
+locu workflow define release_pipeline \
   --steps "lint,test,build,deploy" \
   --deps "test:lint;build:lint;deploy:test,build"
 
 # 2. Query ready unblocked steps:
-ready_steps=$(locutus workflow next release_pipeline --raw)
+ready_steps=$(locu workflow next release_pipeline --raw)
 # => "lint"
 
 # 3. Worker executes 'lint' and resolves it:
-locutus workflow resolve release_pipeline lint --output "lint passed"
+locu workflow resolve release_pipeline lint --output "lint passed"
 # 'test' and 'build' are now ready!
 
 # 4. Resolve 'test' and 'build':
-locutus workflow resolve release_pipeline test --output "tests passed"
-locutus workflow resolve release_pipeline build --output "artifacts packaged"
+locu workflow resolve release_pipeline test --output "tests passed"
+locu workflow resolve release_pipeline build --output "artifacts packaged"
 # 'deploy' is now unlocked!
 
 # 5. Final deployment step:
-locutus workflow resolve release_pipeline deploy --output "deployed to prod"
+locu workflow resolve release_pipeline deploy --output "deployed to prod"
 # Pipeline status is now 'completed'
 ```
 
@@ -336,36 +339,36 @@ locutus workflow resolve release_pipeline deploy --output "deployed to prod"
 Maintain clean Redis state and prevent directory clutter from crashed or ungracefully terminated agents:
 ```bash
 # 1. Sweep dead agent heartbeats and local stale listener PID locks:
-sweep_res=$(locutus sweep)
+sweep_res=$(locu sweep)
 
 # 2. Inspect swept resources:
 echo "$sweep_res" | jq .
 
 # 3. Clean summary line for automation:
-locutus sweep --raw
+locu sweep --raw
 ```
 
 ### 14. Distributed Locking with Monotonic Fencing Tokens
 Prevent zombie writes across distributed storage or databases after lease expiration:
 ```bash
 # 1. Acquire lock and obtain monotonic integer sequence token:
-fence_token=$(locutus lock db_migration 60 --fencing --raw)
+fence_token=$(locu lock db_migration 60 --fencing --raw)
 # => "42"
 
 # 2. Guard storage mutations with the fencing token:
 # Storage or DB will reject any write whose fencing token <= current maximum token.
 
 # 3. Release lock:
-locutus unlock db_migration
+locu unlock db_migration
 ```
 
 ---
 
 ## How it Works with Redis
 
-Locutus has **no background daemon or server process**. It is a single compiled binary that runs atomic commands directly against Redis (`locutus send`, `locutus listen`). Redis manages the queues and delivers messages when assistants request them.
+Locu has **no background daemon or server process**. It is a single compiled binary that runs atomic commands directly against Redis (`locu send`, `locu listen`). Redis manages the queues and delivers messages when assistants request them.
 
-Locutus maps communication directly onto standard Redis data structures:
+Locu maps communication directly onto standard Redis data structures:
 
 1. **Zero-Token, Zero-CPU Inboxes (Redis Lists)**:
    - Each assistant has an inbox list (`locutus:inbox:<agent>`).
@@ -374,7 +377,7 @@ Locutus maps communication directly onto standard Redis data structures:
 
 2. **Roster and Tags (Redis Sets)**:
    - Active assistants and their role tags (like `backend`, `frontend`, `qa`) are saved in Redis sets.
-   - You can see who is online instantly with `locutus who`.
+   - You can see who is online instantly with `locu who`.
 
 3. **Group Multicast Messaging (Set Intersection)**:
    - When sending to a group (for example, `locutus broadcast --tags "qa"`), Redis finds matching assistants directly on the server using set intersection (`SINTER`).
@@ -460,14 +463,14 @@ Installs the native binary **and** automatically detects and configures all inst
 
 ```bash
 # macOS & Linux:
-curl -fsSL https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash
 
 # Windows (PowerShell):
-irm https://raw.githubusercontent.com/axiomantic/locutus/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.ps1 | iex
 ```
 
 #### What the Unified Installer Deploys:
-- **Native Binary**: Compiles or downloads `locutus` to `/usr/local/bin` (or `~/.local/bin`).
+- **Native Binary**: Compiles or downloads `locu` to `/usr/local/bin` (or `~/.local/bin`).
 - **Claude Code**: Deploys `SKILL.md` and `wire_spec.md` to `~/.claude/skills/locutus/`.
 - **OpenCode**: Installs native plugin `opencode-ear.js` to `~/.config/opencode/plugins/locutus.js`.
 - **Pi Coding Agent (`pi.dev`)**: Installs native TypeScript extension to `~/.pi/agent/extensions/locutus.ts` and skill to `~/.pi/agent/skills/locutus/`.
@@ -483,19 +486,19 @@ If you already have the binary, or prefer to manage skills through standard AI p
 #### Via skills.sh (Vercel Labs)
 ```bash
 # Install globally for all detected AI assistants:
-npx -y skills add axiomantic/locutus -g -a '*' -y
+npx -y skills add axiomantic/locu -g -a '*' -y
 
 # Or install for a specific project / assistant:
-npx skills add axiomantic/locutus --agent claude-code
+npx skills add axiomantic/locu --agent claude-code
 ```
 
 #### Via skilz (Spillwave Solutions)
 ```bash
 # Install globally across 30+ supported agent runtimes:
-skilz install https://github.com/axiomantic/locutus
+skilz install https://github.com/axiomantic/locu
 
 # Or install for a specific project:
-skilz install https://github.com/axiomantic/locutus --project
+skilz install https://github.com/axiomantic/locu --project
 ```
 
 ### Option 3: Install via NPM (Universal Multi-Platform)
@@ -513,7 +516,7 @@ npx @axiomantic/locu open worker-1 "backend"
 This installs `locu`, `locuti`, and `locutus` onto your PATH and automatically provisions instructions into `~/.claude/rules`, `~/.config/opencode/instructions`, and `~/.gemini/antigravity/rules`.
 
 #### Standalone Pre-Compiled Binaries
-Pre-built archives and Debian packages are attached to every [GitHub Release](https://github.com/axiomantic/locutus/releases):
+Pre-built archives and Debian packages are attached to every [GitHub Release](https://github.com/axiomantic/locu/releases):
 
 | Operating System | Architecture | Package Archive |
 | :--- | :--- | :--- |

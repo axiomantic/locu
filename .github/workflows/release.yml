@@ -26,19 +26,14 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Building Locutus version ${VERSION}"
 
-      - name: Setup asdf
-        uses: asdf-vm/actions/setup@v3
+      - name: Set up Nim via mise
+        uses: jdx/mise-action@v4
         with:
-          asdf_branch: v0.14.1
-
-      - name: Install Nim via asdf-nim
-        run: |
-          . "$HOME/.asdf/asdf.sh"
-          asdf plugin add nim https://github.com/asdf-community/asdf-nim.git
-          asdf install nim 2.2.0
-          asdf global nim 2.2.0
-          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
-          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+          tool_versions: |
+            nim 2.2.12
+          cache: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cross-compilation toolchains & QEMU
         run: |
@@ -207,19 +202,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup asdf
-        uses: asdf-vm/actions/setup@v3
+      - name: Set up Nim via mise
+        uses: jdx/mise-action@v4
         with:
-          asdf_branch: v0.14.1
-
-      - name: Install Nim via asdf-nim
-        run: |
-          . "$HOME/.asdf/asdf.sh"
-          asdf plugin add nim https://github.com/asdf-community/asdf-nim.git
-          asdf install nim 2.2.0
-          asdf global nim 2.2.0
-          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
-          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+          tool_versions: |
+            nim 2.2.12
+          cache: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compile macOS Apple Silicon (arm64) binary
         run: |
@@ -277,7 +267,7 @@ jobs:
       - name: Set up Nim compiler
         uses: jiro4989/setup-nim-action@v2
         with:
-          nim-version: '2.2.0'
+          nim-version: '2.2.12'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up official Nimble & DLLs
@@ -348,13 +338,33 @@ jobs:
           sha256sum locutus-* *.deb > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Extract Release Notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python3 -c "
+          import re, sys
+          ver = '${GITHUB_REF#refs/tags/v}'
+          try:
+              with open('CHANGELOG.md') as f:
+                  content = f.read()
+              m = re.search(r'## \[?' + re.escape(ver) + r'\]?[^\n]*\n(.*?)(?=\n## \[|\Z)', content, re.DOTALL)
+              notes = m.group(1).strip() if m else ''
+          except Exception:
+              notes = ''
+          if not notes:
+              notes = f'Release v{ver}'
+          with open('RELEASE_NOTES.md', 'w') as out:
+              out.write(notes + '\n')
+          "
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          body_path: RELEASE_NOTES.md
           files: |
             release-assets/*
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: false
 
@@ -386,4 +396,56 @@ jobs:
             exit 0
           }
           ./scripts/update-homebrew-tap.sh "${VERSION}" release-assets || true
+
+  publish-npm:
+    name: Publish to npm (OIDC)
+    needs: [publish-release]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js (v22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Check if already published on npm
+        id: npm-check
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name")
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if npm view "${PKG_NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "${PKG_NAME}@${VERSION} is already published on npm. Skipping publish step."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            echo "${PKG_NAME}@${VERSION} is not yet published. Proceeding..."
+          fi
+
+      - name: Set up Nim via mise
+        if: steps.npm-check.outputs.already_published == 'false'
+        uses: jdx/mise-action@v4
+        with:
+          tool_versions: |
+            nim 2.2.12
+          cache: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile Native Binary for NPM Package
+        if: steps.npm-check.outputs.already_published == 'false'
+        run: |
+          mkdir -p bin
+          nim c -d:release --opt:speed -o:bin/locutus src/locutus.nim
+          ln -sf locutus bin/locu
+          chmod 755 bin/locutus bin/locu bin/run.js scripts/postinstall.js
+
+      - name: Publish to npm via OIDC
+        if: steps.npm-check.outputs.already_published == 'false'
+        run: npm publish --provenance
 
