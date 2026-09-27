@@ -9,9 +9,9 @@ Description: Message exchange and routing for software agents over Redis
  structures without an intermediate background daemon. Includes HMAC-SHA256
  authentication, dead-agent pruning, and optional AES-256-CBC encryption.
 Filename: locutus_0.1.3_amd64.deb
-Size: 455712
-MD5sum: bf71fb704747ab3ddad4f385fe0be07a
-SHA256: 888681610d89d1bffd90bd6c8922c9dde9a53fd011986157578a88cdfc69d7ba
+Size: 455706
+MD5sum: 74670cb8aacf2adb7936ba63e28c8395
+SHA256: 890acfc481b51651b91f63007098e0748cba9ea2bf902e77dad054a808abef13
 
 Package: locutus
 Version: 0.1.3
@@ -24,7 +24,7 @@ Description: Message exchange and routing for software agents over Redis
  structures without an intermediate background daemon. Includes HMAC-SHA256
  authentication, dead-agent pruning, and optional AES-256-CBC encryption.
 Filename: locutus_0.1.3_arm64.deb
-Size: 454928
-MD5sum: 7967847f3b7f5f3c1ab53cb8e468b92b
-SHA256: fa7353570ca572ee65ffde3e22f453431d36ef5b9dba096f17ece7301600b7b1
+Size: 454984
+MD5sum: 74605ed523e6f36880d8bd051741ff84
+SHA256: 9646ef66f10540109f48580d754b304c086191b5f18b0b173dc0adbdcb6baa95
 
