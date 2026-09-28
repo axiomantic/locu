@@ -21,12 +21,12 @@ npm install -g @axiomantic/rhizo @axiomantic/vine
 
 ### 1. Invariants & Identity
 * **No Workspace-Scoped Identity Files**:
-  Agent identity is strictly decoupled from directory paths. **Never create or read `.rhizo.agent` or `.locutus.agent` in any project or workspace directory.** Agent identity is resolved exclusively through:
-  1. `RHIZO_AGENT_NAME` (or legacy `LOCUTUS_AGENT_NAME`) environment variable.
+  Agent identity is strictly decoupled from directory paths. **Never create or read `.rhizo.agent` in any project or workspace directory.** Agent identity is resolved exclusively through:
+  1. `RHIZO_AGENT_NAME` environment variable.
   2. Harness session ID mapping (`RHIZO_SESSION_ID=<runtime>:<sessionId>` via `~/.config/rhizo/sessions.json` or Redis).
   3. Explicit CLI flag: `rhizo open <name> "<tags>"`.
 * **Zero Dirty Commits**:
-  All agent state, lockfiles, temporary buffers, and session files must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.rhizo.*`, `.locutus.*`, `*.lock`).
+  All agent state, lockfiles, temporary buffers, and session files must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.rhizo.*`, `*.lock`).
 
 ### 2. Harness Listener Discipline & Capability-Based Execution (Anti-Token-Thrash)
 * **Zero Timeouts (Anti-Token-Thrash Invariant)**:
@@ -81,13 +81,13 @@ npm install -g @axiomantic/rhizo @axiomantic/vine
 * **No Workspace-Scoped Identity Files**:
   Agent identity is strictly decoupled from directory paths. Never create or read `.rhizo.agent` or `.vine.agent` in any project or strand directory.
 * **Zero Dirty Commits**:
-  All strand state, lockfiles, temporary buffers, and manifests must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.vine.json`, `.braid.json`, `workspaces/`).
+  All strand state, lockfiles, temporary buffers, and manifests must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.vine.json`, `workspaces/`).
 * **Compaction Recovery**:
   Whenever starting a session or recovering from context compaction, inspect active strands before editing canonical files:
   ```bash
   vine list 2>/dev/null || rift list 2>/dev/null || ls -la ~/Development/workspaces/ 2>/dev/null || true
   ```
-  If an assigned task has an active `.vine.json` (or `.braid.json`), re-anchor to that directory instead of touching the canonical repository root.
+  If an assigned task has an active `.vine.json`, re-anchor to that directory instead of touching the canonical repository root.
 
 ---
 
@@ -154,7 +154,7 @@ done
    cp -c -R "$CANONICAL_REPO/.venv" "$STRAND_DIR/.venv"
    ```
 3. **If NOT relocatable**: **Do not blind-copy** (prevents mutating parent environment via absolute shebangs).
-   - Check `vine.toml` (or `braid.toml`) for `venv_policy`:
+   - Check `vine.toml` for `venv_policy`:
      - If `recreate`: Run `UV_VENV_RELOCATABLE=1 uv venv "$STRAND_DIR/.venv"` (~12ms).
      - If `prompt` (default): Ask user whether to recreate or skip.
 
