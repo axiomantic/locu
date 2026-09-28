@@ -84,6 +84,9 @@ jobs:
       - name: Install dependencies
         run: scripts/ci/install-deps.sh
 
+      - name: Verify rule files in sync with AGENTS.md
+        run: python scripts/compile_rules.py --check
+
       - name: Compile native Nim binary
         run: scripts/ci/build.sh
 

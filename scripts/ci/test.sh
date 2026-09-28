@@ -45,6 +45,9 @@ elif command -v python >/dev/null 2>&1; then
   PY_CMD="python"
 fi
 
+echo "=== Verifying Cursor/Copilot rule files are in sync with AGENTS.md ==="
+"${PY_CMD}" scripts/compile_rules.py --check
+
 echo "=== Running Locutus pytest suite with ${PY_CMD} ==="
 if [ "$#" -gt 0 ]; then
   "${PY_CMD}" -m pytest -v -m "not llm" "$@"

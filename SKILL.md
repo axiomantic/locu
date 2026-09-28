@@ -141,7 +141,7 @@ flowchart TD
     Recipe1 --> InTurn["Execute Task / Tool Calls<br/>(Normal Turn Processing)"]
     InTurn --> Check{"Do you need to reply or wait for next task?"}
     Check -->|Reply with Result & Await Next Task| Recipe2["Recipe 2: Atomic Reply & Re-Arm<br/><code>locutus reply --to &lt;sender&gt; --reply-to '&lt;id&gt;' ... --listen</code>"]
-    Check -->|No Reply Needed, Just Wait| Recipe2b["Recipe 2b: Bounded Wait<br/><code>locutus listen &lt;my-name&gt; 120</code>"]
+    Check -->|No Reply Needed, Just Wait| Recipe2b["Recipe 2b: Indefinite Wait (Zero Timeout)<br/><code>locutus listen &lt;my-name&gt;</code>"]
     Check -->|Work Completely Finished| RecipeClose["Recipe 5: Clean Disconnect<br/><code>locutus close &lt;my-name&gt;</code>"]
     Check -->|Using Autonomous Continuation Hooks| Recipe4["Recipe 4: Stop Hook Continuation<br/>Turn ends naturally; hook detects incoming message & continues"]
     Check -->|Subagent Completed One-Shot Listen| Recipe3["Recipe 3: Relaunch Subagent Ear<br/>Spawn fresh subagent with <code>locutus listen &lt;my-name&gt;</code>"]
@@ -162,7 +162,7 @@ flowchart TD
 - **OpenCode & Pi (`pi.dev`)**: Run `locutus open <my-name> "<tags>"`. Do NOT pass `--listen`. The bundled in-process plugin (`opencode-ear.js` / `pi-ear.ts`) runs an unblocked background fiber that handles continuous listening automatically.
 - **Antigravity (AGY)**:
   - Register: `run_command(CommandLine="locutus open <my-name> \"<tags>\"", WaitMsBeforeAsync=5000)`
-  - Arm background ear: `run_command(CommandLine="locutus listen <my-name>", WaitMsBeforeAsync=500)` (Native reactive wakeup fires when a message arrives).
+  - Arm background ear: `run_command(CommandLine="locutus listen <my-name>", WaitMsBeforeAsync=500, IsDaemon=true)` (Native reactive wakeup fires when a message arrives).
 
 #### 2. Recipe 2: Post-Task Transition ("After Task Finishes: Do I Re-Open?")
 - **DO I NEED TO RUN `locutus open` AGAIN?**
@@ -175,11 +175,11 @@ flowchart TD
   - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`locutus request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
   - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. This prevents the race condition where a peer sends a follow-up task before your next command can execute. When the next message arrives, it outputs the JSON payload and exits `0` directly into your next turn.
 - **WHAT IF NO REPLY IS NEEDED (JUST WAITING FOR WORK)?**
-  Run:
+  Run with **NO TIMEOUT**:
   ```bash
-  locutus listen <my-name> 120
+  locutus listen <my-name>
   ```
-  - **Why `120` seconds**: A bounded timeout prevents hanging indefinitely on dead connections while consuming **0 CPU and 0 tokens** while blocked.
+  - **Default Must Always Be Infinite Wait (`timeout = 0` / no timeout)**: Never specify an arbitrary bounded timeout (e.g. 30s or 120s). When a timeout expires, the command exits empty, forcing the assistant into an unnecessary LLM inference cycle (token thrashing) just to re-run the listener. A Redis `BLPOP` blocks indefinitely at the socket level with 0 CPU, 0 bandwidth, and 0 tokens burned until work actually arrives. Timeouts are optional and explicitly discouraged.
 
 #### 3. Recipe 3: Subagent Ear Completion & Relaunch
 When running in an assistant that uses a one-shot subagent to listen (e.g. OpenAI Codex Pattern 2):
@@ -212,8 +212,8 @@ When `locutus listen` delivers a message and exits, the Nim engine automatically
 - Expected follow-up action:
   1. When finished, reply and re-arm atomically in one command:
      locutus reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
-  2. If no reply is needed, wait for next task:
-     locutus listen worker-1 120
+  2. If no reply is needed, wait for next task (zero-timeout infinite wait):
+     locutus listen worker-1
   3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.
   4. If disconnecting or finishing session work completely:
      locutus close worker-1
@@ -226,14 +226,55 @@ When `locutus listen` delivers a message and exits, the Nim engine automatically
   - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `locutus listen`.
   - **OpenAI Codex**: The notice instructs the agent to dispatch a fresh one-shot listener subagent before concluding its turn (Step 2b).
   - **Antigravity**: The notice instructs the agent to re-arm its reactive background listener via `run_command` or append `--listen` (Step 2d).
-  - **Claude / Cursor / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or bounded wait.
+  - **Claude / Cursor / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or zero-timeout wait.
 - **Suppression / Quiet Flag**: To suppress the lifecycle notice in automated scripts or extensions, pass `--quiet` / `-q`, or export `LOCUTUS_QUIET=1`.
 
 ---
 
-### Step 2: Harness-Specific Execution Playbooks (NO VARIATION)
+### Step 2: Capability-Based Listener Execution Protocol (Introspect Your Runtime Tools)
 
-Every coding assistant operates under a specific harness with distinct tool capabilities, background execution semantics, and lifecycle rules. **Identify your harness below and follow its exact playbook.**
+Rather than relying on hardcoded harness names, evaluate your available runtime tools according to this capability decision tree. **Always prefer in-process extensions or direct main-chat background tasks over subagents to minimize token overhead and provide a direct line of interruption:**
+
+```mermaid
+flowchart TD
+    Start([Evaluate Available Tools]) --> CheckPlugin{"Has In-Process Extension Plugin?<br/>(e.g., OpenCode opencode-ear.js / Pi)"}
+    CheckPlugin -->|Yes| Branch1["Branch 1: In-Process Extension (Tier 1)<br/>• 0 LLM token overhead<br/>• DO NOT execute locutus listen with any tool<br/>• Plugin streams ear & injects turns automatically"]
+    CheckPlugin -->|No| CheckDaemon{"Has Shell Command tool<br/>with native daemon parameter?<br/>(e.g., run_command(IsDaemon=true))"}
+    CheckDaemon -->|Yes| Branch2["Branch 2: Native Daemon Shell Task (Tier 2)<br/>• 0 subagent token overhead<br/>• Run locutus listen in main chat with IsDaemon=true<br/>• Harness reactively resumes turn on stdout"]
+    CheckDaemon -->|No| CheckSubagent{"Has Subagent / Task tool<br/>with background parameter?<br/>(e.g., Task(background=true))"}
+    CheckSubagent -->|Yes| Branch3["Branch 3: Background Subagent Ear (Tier 3)<br/>• Dispatch subagent with background parameter<br/>• <b>INSIDE subagent: command is BLOCKING (No double-daemons!)</b><br/>• One-and-done: exits on message to notify parent"]
+    CheckSubagent -->|No| Branch4["Branch 4: Synchronous Shell Only (Tier 4)<br/>• <b>DO NOT run locutus listen</b> (freezes active turn!)<br/>• Inform user of harness limitation<br/>• Check inbox explicitly via locutus check-inbox"]
+```
+
+#### The Token Efficiency Hierarchy & Streaming vs. One-and-Done Subagents:
+
+1. **Why Direct Background Tasks in the Main Chat are Preferred Over Subagents**:
+   - Spawning a subagent incurs substantial token overhead: system prompt initialization, tool schema serialization, and extra reasoning inference cycles just to run a shell command.
+   - A direct background daemon task in the main chat (e.g. Antigravity `run_command(IsDaemon=true)`) or an in-process plugin (e.g. OpenCode `opencode-ear.js`) consumes **0 subagent LLM inference tokens** and maintains a direct, immediate line of interruption into the active conversation turn.
+2. **Why Subagents Cannot Stream Messages (The Completion Barrier)**:
+   - In harnesses like Claude Code and OpenAI Codex, subagents do NOT stream intermediate standard output lines back to the parent chat while running. The parent session is only notified **upon subagent completion / exit**.
+   - If a subagent were to run an infinite streaming loop (`while true; do locutus listen; done`), the subagent would never exit, and the parent chat would never receive any message!
+   - Therefore, inside subagents, `locutus listen` **must be one-and-done**: it blocks until one message arrives, outputs the JSON, and exits 0, allowing the subagent to report the payload back to the parent.
+3. **Where Streaming Operates Today**:
+   - Streaming listener loops operate continuously inside **Tier 1 in-process extensions** (`opencode-ear.js`, `pi-ear.ts`), which supervise background child processes in Node/Bun and inject prompts into the host application without any LLM subagent overhead.
+
+#### The Four Capability Branches:
+
+1. **Branch 1: In-Process Harness Ear Extension** (e.g. OpenCode `opencode-ear.js`, Pi `pi-ear.ts`):
+   - Do NOT execute `locutus listen` with any tool. Continuous listening is handled automatically in-process, delivering incoming turns directly into your context loop with 0 LLM token overhead.
+2. **Branch 2: Shell Tool with Native Daemon / Background Support in Main Chat** (e.g. `run_command(..., IsDaemon=true, WaitMsBeforeAsync=500)`):
+   - Preferred over subagents: direct line of communication with zero subagent token overhead. Run the listener command via the tool's native background execution parameter. The platform reactively resumes your turn when an incoming message arrives. Do not poll in a loop.
+3. **Branch 3: Subagent / Task Tool with Background Support** (e.g. `Task(..., background=true)`, `spawn_agent`):
+   - Dispatch the listener in a background subagent when native daemon shell execution is unavailable.
+   - **Never run shell `&`**: Backgrounding is handled by the harness container, not the shell.
+   - **CRITICAL INVARIANT — NO DOUBLE-DAEMONS**: Inside the subagent, the command itself must be **SYNCHRONOUS AND BLOCKING** (`locutus listen <agent>`). Do NOT run as a daemon or background process inside the subagent. The subagent container is backgrounded by the parent; the command running inside it must block on Redis until a message arrives, output the JSON payload, and terminate cleanly so the harness delivers the message back to the parent session. Subagents report output only upon exit (they cannot stream intermediate lines to the parent), so the listener must be one-and-done inside the subagent.
+4. **Branch 4: Synchronous-Only Shell Execution (Neither Capability Available)**:
+   - If the harness only provides synchronous foreground shell tools with no managed background parameter, **DO NOT run `locutus listen`**. A blocking listen call will freeze the conversation turn, lock user input, and destroy interactivity.
+   - **Inform the user of this platform limitation**: Explain that the current harness lacks native background execution and cannot maintain an active listener without blocking the chat. Advise the user that incoming communications over `locutus` must be checked explicitly (e.g. via `locutus check-inbox` on demand or during user turns).
+
+---
+
+### Reference Implementations & Concrete Harness Playbooks
 
 ---
 
@@ -304,7 +345,8 @@ Every coding assistant operates under a specific harness with distinct tool capa
 - **Harness Identification**: You are running in OpenAI Codex CLI, Codex Desktop, or an OpenAI code-interpreter session.
 - **Tools Available to Assistant**: `bash` (synchronous shell execution), background subagent (`spawn_agent` or background worker tool).
 - **CRITICAL PROHIBITIONS**:
-  - ❌ **NEVER run `locutus listen &` in `bash`**: Detaching with `&`, `nohup`, or `disown` severs stdout. The detached background process consumes (`BRPOP`) messages from Redis and drops them into a closed pipe. Messages are lost from Redis and your main Codex session never receives them.
+  - ❌ **NEVER run `locutus listen &` in `bash` or redirect output (`> /dev/null 2>&1 &`, `> file.log &`)**: Detaching with `&`, `nohup`, or `disown` severs stdout. Redirecting output swallows the message event stream. The detached background process consumes (`BRPOP`) messages from Redis and drops them into a closed pipe or file, so your main session never receives them.
+  - ❌ **NEVER pass arbitrary bounded timeouts (e.g. `locutus listen <my-name> 30` or `120`)**: Bounded timeouts cause token thrashing (empty turn wakeups when timer expires). Always run with **NO TIMEOUT** (infinite wait).
   - ❌ **NEVER spawn an infinite-loop subagent** (`while true; do locutus listen; done`): Codex background subagents do NOT stream messages or intermediate output back to the parent session while running! A background subagent reports its output to the parent session **ONLY when the subagent exits/terminates**. An infinite loop subagent will run forever in the background and NEVER report any message to your main session!
 - **Exact Tool Invocations for OpenAI Codex**:
   1. **Register Session**:
@@ -340,12 +382,12 @@ Every coding assistant operates under a specific harness with distinct tool capa
   5. **Receiving Messages (Pick Pattern 1, 2, or 3 based on your current state)**:
      - **Pattern 1: In-Turn Foreground Wait (When Idle / Waiting for Peer Reply)**:
        When you have completed all tasks and are waiting for instructions or peer replies:
-       - *Tool to use*: `bash` (SYNCHRONOUS, FOREGROUND, NO `&`)
+       - *Tool to use*: `bash` (SYNCHRONOUS, FOREGROUND, NO `&`, NO REDIRECTS)
        - *Exact command*:
          ```bash
-         locutus listen <my-name> 120
+         locutus listen <my-name>
          ```
-       - *Behavior*: Blocks silently until a message arrives (or 120s timeout). When a message arrives, `locutus listen` prints the JSON to stdout and exits `0`. The `bash` tool returns the JSON directly to your turn.
+       - *Behavior*: Blocks silently at the Redis socket level with no timeout and 0 token burn until a message arrives. When a message arrives, `locutus listen` prints the JSON to stdout and exits `0`. The `bash` tool returns the JSON directly to your turn.
        - *Or reply and wait in one step*:
          ```bash
          locutus reply --to <peer> --subject "Re: Task" --body "Done" --listen
@@ -391,7 +433,11 @@ Every coding assistant operates under a specific harness with distinct tool capa
 #### Playbook 2c: Claude Code
 
 - **Harness Identification**: You are running in Claude Code CLI or Desktop (`claude`).
-- **Tools Available to Assistant**: Shell execution tool `Bash(command="...")`.
+- **Tools Available to Assistant**: Shell execution tool `Bash(command="...")`, Subagent execution tool `Task(prompt="...", background=true)`.
+- **CRITICAL PROHIBITIONS**:
+  - ❌ **NEVER run `locutus listen &` in `Bash`**: Detaching with `&`, `nohup`, or `disown` severs process tracking.
+  - ❌ **NEVER redirect stdout or stderr (`> /dev/null 2>&1 &` or `> /tmp/listen.log &`)**: Redirecting output **swallows the notification stream**! When a message arrives over Redis, the output is lost into a file or `/dev/null`, meaning the harness event loop never sees the message, never wakes up, and never executes the task.
+  - ❌ **NEVER specify arbitrary bounded timeouts (e.g. `locutus listen <my-name> 30`)**: Bounded timeouts cause **catastrophic token thrashing** (120 empty wakeups/hour). Always run with **NO TIMEOUT** (infinite wait). Redis `BLPOP` consumes 0 CPU, 0 bandwidth, and 0 tokens while waiting.
 - **Exact Tool Invocations for Claude Code**:
   1. **Register Session**:
      - *Tool to use*: `Bash`
@@ -423,8 +469,14 @@ Every coding assistant operates under a specific harness with distinct tool capa
        locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
        ```
      - *(Add `--immediate` if replying with an urgent halt or critical correction).*
-  5. **Receiving Messages & Continuous Listening**:
-     - **Method 1: Autonomous Continuation via `Stop` Hook (RECOMMENDED)**:
+  5. **Receiving Messages & Continuous Listening (Pick Method 1, 2, or 3)**:
+     - **Method 1: Background Listener Subagent via `Task(background=true)` (RECOMMENDED)**:
+       When you want to keep the primary chat session 100% interactive, responsive to the user, and unblocked:
+       - *Tool to use*: `Task` (with `background=true`)
+       - *Task Prompt*:
+         > `"Run 'locutus listen <my-name>' in bash with NO timeout. Do NOT run with '&' and do NOT redirect stdout/stderr. When locutus listen prints the message JSON and exits 0, return that exact JSON."`
+       - *Behavior*: The background subagent blocks natively at the socket level without burning tokens. The main chat session stays completely free. When a message arrives, the subagent wakes up, exits 0, and notifies the parent session with the payload.
+     - **Method 2: Autonomous Continuation via `Stop` Hook**:
        Configure `.claude/settings.json` (or `~/.claude/settings.json`):
        ```json
        {
@@ -466,22 +518,22 @@ Every coding assistant operates under a specific harness with distinct tool capa
        }
        ```
        - *Behavior*: Whenever Claude finishes responding, the hook checks the inbox. If messages are pending, the hook returns `{"decision": "block", ...}` and injects the messages into `additionalContext`, automatically continuing into the next turn.
-     - **Method 2: Piggybacked Re-Arm via `--listen`**:
-       When concluding a task without hooks, append `--listen` to your reply:
+     - **Method 3: Piggybacked Re-Arm via `--listen`**:
+       When concluding a task without hooks or subagents, append `--listen` to your reply:
        - *Tool to use*: `Bash`
        - *Exact command*:
          ```bash
          locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
          ```
-       - *Behavior*: Locutus delivers the reply and transitions in-process into blocking on your inbox. When the next message arrives, the process exits cleanly with pure JSON on stdout.
-     - **Method 3: Desktop Notification Alert (`locutus listen --notify`)**:
+       - *Behavior*: Locutus delivers the reply and transitions in-process into blocking indefinitely on your inbox. When the next message arrives, the process exits cleanly with pure JSON on stdout.
+     - **Method 4: Desktop Notification Alert (`locutus listen --notify`)**:
        To receive native OS notifications when a message arrives while working in the background:
        - *Tool to use*: `Bash`
        - *Exact command*:
          ```bash
          locutus listen <my-name> --notify
          ```
-       - *Behavior*: Blocks silently on your inbox. On message arrival, displays a system notification banner and exits cleanly with the message payload.
+       - *Behavior*: Blocks silently on your inbox with no timeout. On message arrival, displays a system notification banner and exits cleanly with the message payload.
 
 ---
 
@@ -489,6 +541,10 @@ Every coding assistant operates under a specific harness with distinct tool capa
 
 - **Harness Identification**: You are running in Google Antigravity (AGY) IDE or CLI (`run_command`, `manage_task`, `invoke_subagent`).
 - **Tools Available to Assistant**: `run_command`, `manage_task`, `invoke_subagent`, `send_message`.
+- **CRITICAL PROHIBITIONS**:
+  - ❌ **NEVER run with `&` in CommandLine or redirect output (`> /dev/null 2>&1 &`)**: `run_command` manages processes natively. Appending `&` or redirecting stdout/stderr severs output capture, meaning the reactive wakeup will NEVER trigger and the message will be lost.
+  - ❌ **NEVER pass bounded timeouts (e.g. `locutus listen <my-agent> 300`)**: Bounded timeouts cause empty wakeups and token thrashing. Always run with **NO TIMEOUT** (infinite wait).
+  - ❌ **DO NOT poll `manage_task(Action="status")` in a loop**: AGY's runtime automatically wakes the agent on stdout output.
 - **Exact Tool Invocations for AGY**:
   1. **Register Session**:
      - *Tool to use*: `run_command`
@@ -500,12 +556,12 @@ Every coding assistant operates under a specific harness with distinct tool capa
      - *Tool to use*: `run_command`
      - *Arguments*:
        ```python
-       run_command(CommandLine="locutus listen <my-agent>", WaitMsBeforeAsync=500)
+       run_command(CommandLine="locutus listen <my-agent>", WaitMsBeforeAsync=500, IsDaemon=true)
        ```
      - **CRITICAL BEHAVIORAL RULE**: The command will be sent to the background as a background task. **DO NOT poll `manage_task(Action="status")` in a loop.** Simply proceed with your work or stop calling tools to conclude your turn. AGY's runtime triggers a **Reactive Wakeup** when `locutus listen` outputs the message, and delivers the message directly to your context!
      - **Parent Turn Lifecycle Invariant (Zero Deaf State)**: Once `locutus listen` outputs the message and completes, its background task terminates. The agent is now **DEAF**! When you finish processing the task, you MUST re-arm inbox coverage before concluding your turn:
        - Either append `--listen` to your reply (Action 6 below: Atomic Reply & Re-Arm), OR
-       - Re-launch the background ear via `run_command(CommandLine="locutus listen <my-agent>", WaitMsBeforeAsync=500)` before ending your turn.
+       - Re-launch the background ear via `run_command(CommandLine="locutus listen <my-agent>", WaitMsBeforeAsync=500, IsDaemon=true)` before ending your turn.
        - Then stop calling tools to yield the turn and await the next reactive wakeup.
   3. **Send a Routine Task to a Peer (`--soon`, Default)**:
      - *Tool to use*: `run_command`
@@ -643,9 +699,9 @@ Every coding assistant operates under a specific harness with distinct tool capa
        locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"
        ```
   5. **Waiting for Peer Responses (When Idle)**:
-     - When awaiting a peer reply:
+     - When awaiting a peer reply (zero-timeout infinite wait):
        ```bash
-       locutus listen <my-name> 120
+       locutus listen <my-name>
        ```
      - Or reply and listen in one atomic step:
        ```bash
@@ -691,9 +747,9 @@ Every coding assistant operates under a specific harness with distinct tool capa
        ```
   5. **Waiting for Peer Responses**:
      - *Tool to use*: `bash`
-     - *Exact command*:
+     - *Exact command* (zero-timeout infinite wait):
        ```bash
-       locutus listen <my-name> 120
+       locutus listen <my-name>
        ```
      - *(Or: `locutus reply --to <sender> ... --reply-to "<id>" --listen`)*.
 
