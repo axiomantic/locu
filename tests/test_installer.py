@@ -99,21 +99,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         )
         self.assertNotEqual(res_bad.returncode, 0, "Installer should fail on unwritable INSTALL_DIR")
 
-        # Tripwire interaction verification & sandbox negative control
-        mock_cmd = ["bash", INSTALL_SH, "--version"]
-        tripwire.subprocess.mock_run(mock_cmd, returncode=0, stdout="Locutus 0.1.2 (tripwire mock)\n", stderr="")
-        with tripwire:
-            tw_res = subprocess.run(mock_cmd, capture_output=True, text=True)
-            self.assertEqual(tw_res.returncode, 0)
-            self.assertEqual(tw_res.stdout, "Locutus 0.1.2 (tripwire mock)\n")
-
-        tripwire.subprocess.assert_run(
-            command=mock_cmd,
-            returncode=0,
-            stdout="Locutus 0.1.2 (tripwire mock)\n",
-            stderr="",
-        )
-
+        # Tripwire sandbox negative control: verify unmocked interactions are trapped
         with self.assertRaises(tripwire.UnmockedInteractionError):
             with tripwire:
                 subprocess.run(["bash", "-c", "echo tripwire_negative_control_escape"])
@@ -193,40 +179,21 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 self.assertNotIn("skills", dnames, f"NO_SKILLS=1 leaked skills directory in {dpath}")
                 self.assertEqual(fnames, [], f"NO_SKILLS=1 leaked unexpected file {fnames} in {dpath}")
 
-        # 3. Tripwire subprocess mocking and negative control assertion
-        mock_cmd = ["bash", INSTALL_SH, "--test-no-skills"]
-        tripwire.subprocess.mock_run(
-            mock_cmd,
-            returncode=0,
-            stdout="Skipping AI agent skill installation (mock)\n",
-            stderr="",
-        )
+        # 3. Tripwire interaction mismatch negative control
+        test_cmd = ["echo", "tripwire_mismatch_control"]
+        tripwire.subprocess.mock_run(test_cmd, returncode=0, stdout="test\n", stderr="")
         with tripwire:
-            tw_res = subprocess.run(mock_cmd, capture_output=True, text=True)
-            self.assertEqual(tw_res.returncode, 0)
-            self.assertIn("Skipping", tw_res.stdout)
-
-        tripwire.subprocess.assert_run(
-            command=mock_cmd,
-            returncode=0,
-            stdout="Skipping AI agent skill installation (mock)\n",
-            stderr="",
-        )
-
-        # Negative control on tripwire interaction assertion mismatch
-        tripwire.subprocess.mock_run(mock_cmd, returncode=0, stdout="test\n", stderr="")
-        with tripwire:
-            subprocess.run(mock_cmd, capture_output=True, text=True)
+            subprocess.run(test_cmd, capture_output=True, text=True)
         with self.assertRaises(tripwire.InteractionMismatchError):
             tripwire.subprocess.assert_run(
-                command=["bash", INSTALL_SH, "--different-unmatched-arg"],
+                command=["echo", "different_unmatched_arg"],
                 returncode=0,
                 stdout="test\n",
                 stderr="",
             )
         # Consume the interaction so the timeline has zero unasserted calls at teardown
         tripwire.subprocess.assert_run(
-            command=mock_cmd,
+            command=test_cmd,
             returncode=0,
             stdout="test\n",
             stderr="",
@@ -750,8 +717,8 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertIn(bjob, needs, f"publish-release must depend on {bjob} to prevent race conditions")
 
         # 4. Packaging assertions across operating systems
-        self.assertIn("tar -czf dist/locutus-linux-amd64.tar.gz -C dist/linux-amd64 locutus skills", raw_yaml)
-        self.assertIn("tar -czf dist/locutus-darwin-arm64.tar.gz -C dist/darwin-arm64 locutus skills", raw_yaml)
+        self.assertIn("tar -czf dist/locutus-linux-amd64.tar.gz -C dist/linux-amd64 locutus locu skills", raw_yaml)
+        self.assertIn("tar -czf dist/locutus-darwin-arm64.tar.gz -C dist/darwin-arm64 locutus locu skills", raw_yaml)
         self.assertIn("Copy-Item -Recurse -Force skills dist\\windows-amd64\\skills", raw_yaml)
         self.assertIn("cp -r skills/locutus deb-amd64/usr/share/locutus/skills/", raw_yaml)
         self.assertIn("npx skills add /usr/share/locutus/skills/locutus -g", raw_yaml)

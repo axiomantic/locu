@@ -33,16 +33,16 @@ function readLocalSessionMap() {
 function isSessionSupposedToListen(sessionId) {
   if (!sessionId)
     return null;
-  if (process.env.LOCUTUS_AGENT_NAME)
-    return process.env.LOCUTUS_AGENT_NAME;
   const sessionKey = `opencode:${sessionId}`;
   const map = readLocalSessionMap();
   const entry = map[sessionKey];
-  if (!entry)
-    return null;
-  if (typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
+  if (entry && typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
     return null;
   }
+  if (process.env.LOCUTUS_AGENT_NAME)
+    return process.env.LOCUTUS_AGENT_NAME;
+  if (!entry)
+    return null;
   const name = typeof entry === "string" ? entry : entry.agent;
   return name || null;
 }
@@ -119,6 +119,11 @@ function sanitizeAgentName(name) {
 }
 function resolveSessionAgent(sessionId, fallbackName) {
   if (sessionId) {
+    const map = readLocalSessionMap();
+    const entry = map[`opencode:${sessionId}`];
+    if (entry && typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
+      return "";
+    }
     const supposed = isSessionSupposedToListen(sessionId);
     if (supposed)
       return supposed;
@@ -135,6 +140,8 @@ function resolveSessionAgent(sessionId, fallbackName) {
 }
 
 // src/supervisor.ts
+import { spawn as nodeSpawn } from "child_process";
+import { createInterface } from "readline";
 var activeListeners = new Map;
 var sessionToAgent = new Map;
 function isListenerAlive(agentName) {
@@ -145,7 +152,10 @@ function isListenerAlive(agentName) {
     return false;
   if (!listener.state.proc)
     return false;
-  if (typeof listener.state.proc.exitCode === "number" && listener.state.proc.exitCode !== null)
+  const proc = listener.state.proc;
+  if (typeof proc.exitCode === "number" && proc.exitCode !== null)
+    return false;
+  if (proc.killed)
     return false;
   return true;
 }
@@ -157,7 +167,11 @@ async function* listenLines(name, cwd, state) {
       break;
     let proc = null;
     try {
-      proc = typeof Bun !== "undefined" && Bun?.spawn ? Bun.spawn([bin, "listen", name], { cwd, stdout: "pipe", stderr: "pipe" }) : null;
+      if (typeof Bun !== "undefined" && Bun?.spawn) {
+        proc = Bun.spawn([bin, "listen", name], { cwd, stdout: "pipe", stderr: "pipe" });
+      } else {
+        proc = nodeSpawn(bin, ["listen", name], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+      }
       if (state)
         state.proc = proc;
       firstSpawnFailure = true;
@@ -174,28 +188,37 @@ async function* listenLines(name, cwd, state) {
       await new Promise((r) => setTimeout(r, 500));
       continue;
     }
-    const dec = new TextDecoder;
-    const reader = proc.stdout.getReader();
-    let buf = "";
     try {
-      for (;; ) {
-        const { done, value } = await reader.read();
-        if (done)
-          break;
-        buf += dec.decode(value, { stream: true });
-        let i;
-        while ((i = buf.indexOf(`
+      if (typeof proc.stdout.getReader === "function") {
+        const dec = new TextDecoder;
+        const reader = proc.stdout.getReader();
+        let buf = "";
+        for (;; ) {
+          const { done, value } = await reader.read();
+          if (done)
+            break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf(`
 `)) >= 0) {
-          const line = buf.slice(0, i);
-          buf = buf.slice(i + 1);
-          const t2 = line.trim();
-          if (t2)
-            yield t2;
+            const line = buf.slice(0, i);
+            buf = buf.slice(i + 1);
+            const t2 = line.trim();
+            if (t2)
+              yield t2;
+          }
+        }
+        const t = buf.trim();
+        if (t)
+          yield t;
+      } else {
+        const rl = createInterface({ input: proc.stdout });
+        for await (const line of rl) {
+          const t = line.trim();
+          if (t)
+            yield t;
         }
       }
-      const t = buf.trim();
-      if (t)
-        yield t;
     } catch {}
     if (state?.aborted)
       break;
@@ -385,17 +408,22 @@ function verifyAndEnsureListener(client, sessionId, cwd = process.cwd()) {
 }
 async function syncSessions(client, directory) {
   const cwd = directory || process.cwd();
+  console.error(`[locutus-ear] syncSessions called for cwd: ${cwd}`);
   try {
-    if (!client.session?.list)
+    if (!client.session?.list) {
+      console.error(`[locutus-ear] client.session.list is not available!`);
       return;
+    }
     const res = await client.session.list();
+    console.error(`[locutus-ear] client.session.list in ${cwd}:`, typeof res === "object" ? JSON.stringify(res).slice(0, 200) : res);
     const list = Array.isArray(res) ? res : res && ("data" in res) && Array.isArray(res.data) ? res.data : [];
     if (!Array.isArray(list))
       return;
     for (const s of list) {
       if (s.time && s.time.archived)
         continue;
-      if (isSessionSupposedToListen(s.id)) {
+      const name = isSessionSupposedToListen(s.id);
+      if (name) {
         verifyAndEnsureListener(client, s.id, cwd);
       }
     }
@@ -423,14 +451,15 @@ function getOrientationReminder(sessionId) {
 }
 
 // src/index.ts
-var armed = false;
+var armedDirectories = new Set;
 var LocutusEar = async (ctx) => {
   if (process.env.LOCUTUS_EAR_DISABLED === "1")
     return {};
   const client = ctx.client;
   const directory = ctx.directory || process.cwd();
-  if (!armed) {
-    armed = true;
+  console.error("[locutus-ear] init directory:", directory);
+  if (!armedDirectories.has(directory)) {
+    armedDirectories.add(directory);
     if (process.env.LOCUTUS_AGENT_NAME) {
       startAgentListener(client, process.env.LOCUTUS_AGENT_NAME, directory, null);
     }
@@ -456,7 +485,11 @@ var LocutusEar = async (ctx) => {
         return;
       if (event.type === "session.created" && event.properties?.info?.id) {
         const s = event.properties.info;
-        if (isSessionSupposedToListen(s.id)) {
+        let name = isSessionSupposedToListen(s.id);
+        if (!name) {
+          name = resolveSessionAgent(s.id, s.title);
+        }
+        if (name) {
           verifyAndEnsureListener(client, s.id, directory);
         }
       } else if (event.type === "session.deleted" && event.properties?.info?.id) {
@@ -469,8 +502,14 @@ var LocutusEar = async (ctx) => {
           sessionToAgent.delete(sid);
         }
       } else if ((event.type === "session.resumed" || event.type === "session.selected" || event.type === "session.updated") && event.properties?.info?.id) {
-        const sid = event.properties.info.id;
-        verifyAndEnsureListener(client, sid, directory);
+        const s = event.properties.info;
+        let name = isSessionSupposedToListen(s.id);
+        if (!name) {
+          name = resolveSessionAgent(s.id, s.title);
+        }
+        if (name) {
+          verifyAndEnsureListener(client, s.id, directory);
+        }
       }
     }
   };

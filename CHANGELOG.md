@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Native Task Routing Engine (`locu route`)**:
+  - Declarative routing schema (`locu-routes.yaml` or `.locutus/routes.yaml`) dispatching unstructured task prompts directly to agent queues with matched tags and lease durations.
+  - Integration with Laya System 1 decision models supporting `choice`, `score`, and `noul` (trigger) questions over HTTP.
+  - Intelligent chunking and sliding-window aggregation strategies (`max_confidence`, `max`, `min`, `average`, `all`, `any`, `threshold`) with fail-fast limits.
+  - Route configuration linter (`locu route lint [--check-service]`) validating question references, aggregation strategies, and endpoint availability.
+- **Rule Compilation Pipeline (`scripts/compile_rules.py`)**:
+  - Automated single-source rule generator compiling Cursor rules (`skills/locutus/rules/cursor-rules.mdc`) and GitHub Copilot instructions (`skills/locutus/rules/copilot-instructions.md` and `.github/copilot-instructions.md`) directly from canonical `AGENTS.md`.
+  - Added pre-commit hook in `.githooks/pre-commit` and CI drift assertion (`--check`) in `.github/workflows/ci.yml` and `scripts/ci/test.sh`.
+- **Coding Harness Ear Verification Playbook**:
+  - Dedicated 4-phase verification playbook (`docs/playbooks/coding-harness-ear-verification/SKILL.md`) using Computer Use / macOS-MCP to verify zero-touch idle listening, autonomous task acceptance, in-flight preemption, and turn-end re-arming.
+
+### Changed
+- **Capability-Based Execution & Runtime Introspection**:
+  - Replaced hardcoded harness matrices across `AGENTS.md`, `SKILL.md`, `README.md`, and `src/guide.nim` with a universal capability decision tree based on runtime tool introspection.
+  - Established the Token Efficiency Hierarchy: strictly prioritizes Tier 1 in-process extensions and Tier 2 main-chat background daemon commands (`run_command(IsDaemon=true)`) over subagents to eliminate token overhead and maintain a direct line of interruption.
+  - Codified the "No Double-Daemons" discipline and Subagent Completion Barrier: subagents report output only upon exit, requiring synchronous blocking execution (`locutus listen <agent>`) inside subagent containers (`Task(background=true)`).
+  - Enforced zero-timeout infinite wait default (`timeout = 0`) across all documentation and instructions to permanently eliminate token thrashing from empty polling wakeups.
+  - Completely purged legacy MCP server mentions and negative priming across all instruction and rule files.
+
+### Fixed
+- **OpenCode Ear Desktop Runtime Compatibility**:
+  - Added dual runtime detection in `opencode-ear.js` supporting both Bun (`Bun.spawn`) and Node/Electron (`child_process.spawn` + `readline.createInterface`), eliminating silent startup deafness in OpenCode Desktop GUI.
+  - Fixed session auto-registration to resolve unmapped sessions on `session.created`, `syncSessions`, and `shell.env` without requiring manual commands.
+
 ## [0.1.3] - 2026-09-26
 
 ### Added

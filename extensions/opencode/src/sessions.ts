@@ -46,18 +46,19 @@ export function getMappedAgent(sessionKey: string): string | null {
 
 export function isSessionSupposedToListen(sessionId?: string | null): string | null {
   if (!sessionId) return null
-  if (process.env.LOCUTUS_AGENT_NAME) return process.env.LOCUTUS_AGENT_NAME
 
   const sessionKey = `opencode:${sessionId}`
   const map = readLocalSessionMap()
   const entry = map[sessionKey]
-  if (!entry) return null
 
   // If explicitly closed or disabled, must not listen
-  if (typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
+  if (entry && typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
     return null
   }
 
+  if (process.env.LOCUTUS_AGENT_NAME) return process.env.LOCUTUS_AGENT_NAME
+
+  if (!entry) return null
   const name = typeof entry === "string" ? entry : entry.agent
   return name || null
 }
@@ -135,6 +136,11 @@ export function sanitizeAgentName(name?: string | null): string {
 
 export function resolveSessionAgent(sessionId?: string | null, fallbackName?: string | null): string {
   if (sessionId) {
+    const map = readLocalSessionMap()
+    const entry = map[`opencode:${sessionId}`]
+    if (entry && typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
+      return ""
+    }
     const supposed = isSessionSupposedToListen(sessionId)
     if (supposed) return supposed
   }

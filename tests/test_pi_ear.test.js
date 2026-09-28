@@ -28,6 +28,8 @@ describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
 
   afterEach(() => {
     process.env.HOME = originalHome
+    delete process.env.LOCUTUS_AGENT_NAME
+    delete process.env.LOCUTUS_SESSION_ID
     try {
       rmSync(tempHome, { recursive: true, force: true })
     } catch {}

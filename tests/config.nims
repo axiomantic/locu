@@ -1,0 +1,9 @@
+# locutus/tests/config.nims
+switch("path", "/Users/eek/Development/tripwire/src")
+switch("path", "../src")
+switch("path", "plugins")
+switch("import", "tripwire/auto")
+switch("import", "redis_tripwire")
+switch("define", "tripwireActive")
+switch("define", "TripwireCapThreshold:200")
+switch("warning", "UnusedImport:off")

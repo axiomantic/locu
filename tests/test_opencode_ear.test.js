@@ -251,5 +251,34 @@ describe("opencode-ear plugin", () => {
     const afterCloseResult = LocutusEar.verifyAndEnsureListener(mockClient, "ses_active", tempHome)
     expect(afterCloseResult).toBe(false)
   })
+
+  it("automatically arms listener and registers agent on session.created without waiting for shell.env", async () => {
+    const sessionsPath = join(tempHome, ".config", "locutus", "sessions.json")
+    const mockClient = {
+      session: {
+        list: async () => []
+      }
+    }
+
+    const hooks = await LocutusEar({ client: mockClient, directory: tempHome })
+
+    // Simulate brand new session created event in GUI
+    await hooks.event({
+      event: {
+        type: "session.created",
+        properties: { info: { id: "ses_auto_arm_42", title: "Refactor Work" } }
+      }
+    })
+
+    // Verify it was immediately registered and armed in sessions.json
+    expect(existsSync(sessionsPath)).toBe(true)
+    const saved = JSON.parse(readFileSync(sessionsPath, "utf8"))
+    expect(saved["opencode:ses_auto_arm_42"]).toBeDefined()
+    expect(saved["opencode:ses_auto_arm_42"].agent).toBe("refactor-work")
+    expect(saved["opencode:ses_auto_arm_42"].status).toBe("active")
+
+    // Verify isListenerAlive
+    expect(LocutusEar.isListenerAlive("refactor-work")).toBe(true)
+  })
 })
 

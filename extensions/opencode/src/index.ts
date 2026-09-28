@@ -24,20 +24,21 @@ import {
 import { getOrientationReminder } from "./orientation"
 import type { PluginContext, OpenCodeEvent } from "./types"
 
-let armed = false
+const armedDirectories = new Set<string>()
 
 export const LocutusEar = async (ctx: PluginContext) => {
   if (process.env.LOCUTUS_EAR_DISABLED === "1") return {}
   const client = ctx.client
   const directory = ctx.directory || process.cwd()
+  console.error("[locutus-ear] init directory:", directory)
 
-  if (!armed) {
-    armed = true
+  if (!armedDirectories.has(directory)) {
+    armedDirectories.add(directory)
     // Initial bootstrap: if global LOCUTUS_AGENT_NAME is set, listen for it
     if (process.env.LOCUTUS_AGENT_NAME) {
       startAgentListener(client, process.env.LOCUTUS_AGENT_NAME, directory, null)
     }
-    // Discover live sessions and arm listener only for active registered sessions
+    // Discover live sessions and arm listener for active registered sessions
     syncSessions(client, directory).catch((e) => console.error("[locutus-ear]", e))
   }
 
@@ -61,7 +62,11 @@ export const LocutusEar = async (ctx: PluginContext) => {
       if (!event) return
       if (event.type === "session.created" && event.properties?.info?.id) {
         const s = event.properties.info
-        if (isSessionSupposedToListen(s.id)) {
+        let name = isSessionSupposedToListen(s.id)
+        if (!name) {
+          name = resolveSessionAgent(s.id, s.title)
+        }
+        if (name) {
           verifyAndEnsureListener(client, s.id, directory)
         }
       } else if (event.type === "session.deleted" && event.properties?.info?.id) {
@@ -77,9 +82,14 @@ export const LocutusEar = async (ctx: PluginContext) => {
         (event.type === "session.resumed" || event.type === "session.selected" || event.type === "session.updated") &&
         event.properties?.info?.id
       ) {
-        const sid = event.properties.info.id
-        // Verify listener is active for resumed session if supposed to have one
-        verifyAndEnsureListener(client, sid, directory)
+        const s = event.properties.info
+        let name = isSessionSupposedToListen(s.id)
+        if (!name) {
+          name = resolveSessionAgent(s.id, s.title)
+        }
+        if (name) {
+          verifyAndEnsureListener(client, s.id, directory)
+        }
       }
     }
   }

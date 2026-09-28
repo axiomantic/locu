@@ -1,0 +1,1 @@
+../../docs/playbooks/coding-harness-ear-verification/SKILL.md

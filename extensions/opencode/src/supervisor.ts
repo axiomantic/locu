@@ -1,9 +1,9 @@
-// extensions/opencode/src/supervisor.ts
-// Subprocess supervisor for streaming `locutus listen` lines into OpenCode sessions.
-
+import { spawn as nodeSpawn } from "node:child_process"
+import { createInterface } from "node:readline"
 import {
   getLocutusBin,
   isSessionSupposedToListen,
+  resolveSessionAgent,
   getSessionIdForAgent
 } from "./sessions"
 import type { ListenerState, ActiveListener, OpenCodeClient, SubprocessHandle, OpenCodeSessionInfo } from "./types"
@@ -16,7 +16,9 @@ export function isListenerAlive(agentName: string): boolean {
   if (!listener || !listener.state) return false
   if (listener.state.aborted) return false
   if (!listener.state.proc) return false
-  if (typeof listener.state.proc.exitCode === "number" && listener.state.proc.exitCode !== null) return false
+  const proc = listener.state.proc as any
+  if (typeof proc.exitCode === "number" && proc.exitCode !== null) return false
+  if (proc.killed) return false
   return true
 }
 
@@ -27,9 +29,11 @@ export async function* listenLines(name: string, cwd: string, state: ListenerSta
     if (state?.aborted) break
     let proc: SubprocessHandle | null = null
     try {
-      proc = (typeof Bun !== "undefined" && Bun?.spawn)
-        ? (Bun.spawn([bin, "listen", name], { cwd, stdout: "pipe", stderr: "pipe" }) as unknown as SubprocessHandle)
-        : null
+      if (typeof Bun !== "undefined" && Bun?.spawn) {
+        proc = Bun.spawn([bin, "listen", name], { cwd, stdout: "pipe", stderr: "pipe" }) as unknown as SubprocessHandle
+      } else {
+        proc = nodeSpawn(bin, ["listen", name], { cwd, stdio: ["ignore", "pipe", "pipe"] }) as unknown as SubprocessHandle
+      }
       if (state) state.proc = proc
       firstSpawnFailure = true
     } catch (err: unknown) {
@@ -47,24 +51,34 @@ export async function* listenLines(name: string, cwd: string, state: ListenerSta
       continue
     }
 
-    const dec = new TextDecoder()
-    const reader = (proc.stdout as any).getReader()
-    let buf = ""
     try {
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        let i
-        while ((i = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, i)
-          buf = buf.slice(i + 1)
+      if (typeof (proc.stdout as any).getReader === "function") {
+        // Bun Web ReadableStream
+        const dec = new TextDecoder()
+        const reader = (proc.stdout as any).getReader()
+        let buf = ""
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += dec.decode(value, { stream: true })
+          let i
+          while ((i = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, i)
+            buf = buf.slice(i + 1)
+            const t = line.trim()
+            if (t) yield t
+          }
+        }
+        const t = buf.trim()
+        if (t) yield t
+      } else {
+        // Node.js Readable stream
+        const rl = createInterface({ input: proc.stdout as NodeJS.ReadableStream })
+        for await (const line of rl) {
           const t = line.trim()
           if (t) yield t
         }
       }
-      const t = buf.trim()
-      if (t) yield t
     } catch {
       // stream closed / child killed; fall through and re-arm unless aborted
     }
@@ -277,16 +291,21 @@ export function verifyAndEnsureListener(
 
 export async function syncSessions(client: OpenCodeClient, directory?: string): Promise<void> {
   const cwd = directory || process.cwd()
+  console.error(`[locutus-ear] syncSessions called for cwd: ${cwd}`)
   try {
-    if (!client.session?.list) return
+    if (!client.session?.list) {
+      console.error(`[locutus-ear] client.session.list is not available!`)
+      return
+    }
     const res = await client.session.list()
+    console.error(`[locutus-ear] client.session.list in ${cwd}:`, typeof res === "object" ? JSON.stringify(res).slice(0, 200) : res)
     const list: OpenCodeSessionInfo[] = Array.isArray(res) ? res : (res && "data" in res && Array.isArray(res.data) ? res.data : [])
     if (!Array.isArray(list)) return
 
     for (const s of list) {
       if (s.time && s.time.archived) continue
-      // Only verify and start listener if session is explicitly active/registered
-      if (isSessionSupposedToListen(s.id)) {
+      const name = isSessionSupposedToListen(s.id)
+      if (name) {
         verifyAndEnsureListener(client, s.id, cwd)
       }
     }
