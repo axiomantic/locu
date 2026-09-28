@@ -1,9 +1,10 @@
 {
-  "name": "@axiomantic/locu",
+  "name": "@axiomantic/rhizo",
   "version": "0.1.3",
   "description": "Inter-assistant communication bus, monotonic fencing locks, and work queues over Redis",
   "main": "bin/run.js",
   "bin": {
+    "rhizo": "bin/run.js",
     "locu": "bin/run.js",
     "locuti": "bin/run.js",
     "locutus": "bin/run.js"
@@ -23,7 +24,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/axiomantic/locu.git"
+    "url": "git+https://github.com/axiomantic/rhizo.git"
   },
   "keywords": [
     "ai",
@@ -33,12 +34,13 @@
     "orchestration",
     "claude",
     "opencode",
-    "antigravity"
+    "antigravity",
+    "rhizo"
   ],
   "author": "axiomantic",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/axiomantic/locu/issues"
+    "url": "https://github.com/axiomantic/rhizo/issues"
   },
-  "homepage": "https://github.com/axiomantic/locu#readme"
+  "homepage": "https://github.com/axiomantic/rhizo#readme"
 }

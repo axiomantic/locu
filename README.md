@@ -1,11 +1,11 @@
 <div align="center">
 
-# Locu
+# Rhizo
 
 **Fast, simple message exchange between AI coding assistants over Redis.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/axiomantic/locu/actions/workflows/ci.yml/badge.svg)](https://github.com/axiomantic/locu/actions/workflows/ci.yml)
+[![CI](https://github.com/axiomantic/rhizo/actions/workflows/ci.yml/badge.svg)](https://github.com/axiomantic/rhizo/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/Tests-129%20Passing-success.svg)](tests/)
 [![Redis](https://img.shields.io/badge/Redis-6.2%2B-red.svg)](https://redis.io)
 [![Valkey](https://img.shields.io/badge/Valkey-7.2%2B-purple.svg)](https://valkey.io)
@@ -57,10 +57,10 @@ Instead of running a complex background server, Locu routes and queues messages 
 > [!NOTE]
 > **Command Naming**: `locu` is the primary executable command. `locuti` and `locutus` are included as 100% backward-compatible aliases across npm, pre-compiled binaries, and package managers.
 
-### Pairing with Braid for Workspace Isolation
+### Pairing with Vine & Garden for Full Orchestration
 While Locutus coordinates agent messaging, task claiming, and distributed locking, agents frequently need isolated workspaces to compile and test code without stepping on `main`.
 
-Locutus pairs natively with [**Braid**](https://github.com/axiomantic/braid):
+Locutus pairs natively with [**Braid**](https://github.com/axiomantic/vine):
 1. **Claim Task**: `locu claim queue:myproj:tasks --lease 1800` (yields monotonic `fencing_token`).
 2. **Spin Zero-Cost Strand**: `braid new <task_id> --worktree` (sub-second APFS CoW workspace).
 3. **Verify Two-Key Gate**: `braid gate --json` (Key 1 in-memory conflict check + Key 2 live compiler/test suite).
@@ -74,7 +74,7 @@ Locutus pairs natively with [**Braid**](https://github.com/axiomantic/braid):
 
 ```bash
 # Install globally via npm (provides locu, locuti, and locutus):
-npm install -g @axiomantic/locu
+npm install -g @axiomantic/rhizo
 
 # Or run directly without installation via npx:
 npx @axiomantic/locu --help
@@ -496,10 +496,10 @@ npx skills add axiomantic/locu --agent claude-code
 #### Via skilz (Spillwave Solutions)
 ```bash
 # Install globally across 30+ supported agent runtimes:
-skilz install https://github.com/axiomantic/locu
+skilz install https://github.com/axiomantic/rhizo
 
 # Or install for a specific project:
-skilz install https://github.com/axiomantic/locu --project
+skilz install https://github.com/axiomantic/rhizo --project
 ```
 
 ### Option 3: Install via NPM (Universal Multi-Platform)
@@ -508,7 +508,7 @@ The recommended distribution mechanism across macOS, Linux, and Windows is the o
 
 ```bash
 # Install globally (automatically provisions harness rules and native binaries):
-npm install -g @axiomantic/locu
+npm install -g @axiomantic/rhizo
 
 # Or run ad-hoc via npx without installing:
 npx @axiomantic/locu open worker-1 "backend"
@@ -517,7 +517,7 @@ npx @axiomantic/locu open worker-1 "backend"
 This installs `locu`, `locuti`, and `locutus` onto your PATH and automatically provisions instructions into `~/.claude/rules`, `~/.config/opencode/instructions`, and `~/.gemini/antigravity/rules`.
 
 #### Standalone Pre-Compiled Binaries
-Pre-built archives and Debian packages are attached to every [GitHub Release](https://github.com/axiomantic/locu/releases):
+Pre-built archives and Debian packages are attached to every [GitHub Release](https://github.com/axiomantic/rhizo/releases):
 
 | Operating System | Architecture | Package Archive |
 | :--- | :--- | :--- |

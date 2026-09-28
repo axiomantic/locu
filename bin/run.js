@@ -8,31 +8,24 @@ function findBinary() {
   const arch = process.arch;
   const platform = process.platform;
 
-  // 1. Direct binary in bin/ (locu or locutus)
-  const locuBin = path.join(__dirname, `locu${ext}`);
-  if (fs.existsSync(locuBin)) return locuBin;
-  const directBin = path.join(__dirname, `locutus${ext}`);
-  if (fs.existsSync(directBin)) return directBin;
+  for (const name of ['rhizo', 'locu', 'locutus']) {
+    const directBin = path.join(__dirname, `${name}${ext}`);
+    if (fs.existsSync(directBin)) return directBin;
 
-  // 2. Platform-arch specific binary
-  const platformLocu = path.join(__dirname, `locu-${platform}-${arch}${ext}`);
-  if (fs.existsSync(platformLocu)) return platformLocu;
-  const platformBin = path.join(__dirname, `locutus-${platform}-${arch}${ext}`);
-  if (fs.existsSync(platformBin)) return platformBin;
+    const platformBin = path.join(__dirname, `${name}-${platform}-${arch}${ext}`);
+    if (fs.existsSync(platformBin)) return platformBin;
 
-  // 3. Vendor directory
-  const vendorLocu = path.join(__dirname, '..', 'vendor', 'bin', `locu${ext}`);
-  if (fs.existsSync(vendorLocu)) return vendorLocu;
-  const vendorBin = path.join(__dirname, '..', 'vendor', 'bin', `locutus${ext}`);
-  if (fs.existsSync(vendorBin)) return vendorBin;
+    const vendorBin = path.join(__dirname, '..', 'vendor', 'bin', `${name}${ext}`);
+    if (fs.existsSync(vendorBin)) return vendorBin;
+  }
 
   return null;
 }
 
 const binPath = findBinary();
 if (!binPath) {
-  console.error(`Error: @axiomantic/locu native binary not found for ${process.platform}-${process.arch}.`);
-  console.error(`Please visit https://github.com/axiomantic/locu/releases to download.`);
+  console.error(`Error: @axiomantic/rhizo native binary not found for ${process.platform}-${process.arch}.`);
+  console.error(`Please visit https://github.com/axiomantic/rhizo/releases to download.`);
   process.exit(1);
 }
 
@@ -46,7 +39,7 @@ const res = spawnSync(binPath, process.argv.slice(2), {
 });
 
 if (res.error) {
-  console.error(`Failed to execute locu: ${res.error.message}`);
+  console.error(`Failed to execute binary: ${res.error.message}`);
   process.exit(1);
 }
 

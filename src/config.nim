@@ -121,19 +121,27 @@ proc getSystemConfigPath*(): string =
 
 proc getUserConfigPath*(): string =
   when defined(windows):
+    let r = getEnv("APPDATA", getHomeDir() / "AppData" / "Roaming") / "rhizo" / "config.toml"
+    if fileExists(r): return r
     return getEnv("APPDATA", getHomeDir() / "AppData" / "Roaming") / "locutus" / "config.toml"
   elif defined(macosx):
+    let rApp = getHomeDir() / "Library" / "Application Support" / "rhizo" / "config.toml"
+    if fileExists(rApp): return rApp
+    let rXdg = getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "rhizo" / "config.toml"
+    if fileExists(rXdg): return rXdg
     let appSupp = getHomeDir() / "Library" / "Application Support" / "locutus" / "config.toml"
     if fileExists(appSupp): return appSupp
     return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "locutus" / "config.toml"
   else:
+    let r = getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "rhizo" / "config.toml"
+    if fileExists(r): return r
     return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "locutus" / "config.toml"
 
 # Walk up from current directory to find workspace configuration or git root
 proc findWorkspaceConfigPath*(startDir: string = getCurrentDir()): string =
   var cur = startDir
   while true:
-    for candidate in [".locutus.toml", "locutus.toml", ".locutus.json", ".env", "AGENTS.md"]:
+    for candidate in [".rhizo.toml", "rhizo.toml", ".rhizo.json", ".locutus.toml", "locutus.toml", ".locutus.json", ".env", "AGENTS.md"]:
       let p = cur / candidate
       if fileExists(p):
         return p
@@ -377,7 +385,7 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
   # Resolve profile selector
   var targetProfile = cli.profile
   if targetProfile.len == 0:
-    targetProfile = getEnv("LOCUTUS_PROFILE", "")
+    targetProfile = getEnv("RHIZO_PROFILE", getEnv("LOCUTUS_PROFILE", ""))
   if targetProfile.len > 0:
     result.profile = targetProfile
 
@@ -399,7 +407,7 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
   # Step 5: Custom Config File Override (if provided via CLI or LOCUTUS_CONFIG)
   var customPath = cli.configFile
   if customPath.len == 0:
-    customPath = getEnv("LOCUTUS_CONFIG", "")
+    customPath = getEnv("RHIZO_CONFIG", getEnv("LOCUTUS_CONFIG", ""))
   if customPath.len > 0:
     customPath = expandPathSafe(customPath)
     if fileExists(customPath):
@@ -408,48 +416,48 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
       stderr.writeLine("Warning: Specified configuration file does not exist: " & customPath)
 
   # Step 6: Process Environment Variables
-  let envRedisUrl = getEnv("LOCUTUS_REDIS_URL", getEnv("LOCUTUS_VALKEY_URL", getEnv("A2A_REDIS_URL", getEnv("VALKEY_URL", getEnv("REDIS_URL", "")))))
+  let envRedisUrl = getEnv("RHIZO_REDIS_URL", getEnv("LOCUTUS_REDIS_URL", getEnv("LOCUTUS_VALKEY_URL", getEnv("A2A_REDIS_URL", getEnv("VALKEY_URL", getEnv("REDIS_URL", ""))))))
   if envRedisUrl.len > 0:
     result.redisUrl = envRedisUrl
     result.provenance["redis_url"] = ProvenanceEntry(key: "redis_url", value: envRedisUrl, source: srcEnv, detail: "LOCUTUS_REDIS_URL / VALKEY_URL / REDIS_URL")
 
-  let envPrefix = getEnv("LOCUTUS_REDIS_PREFIX", getEnv("A2A_REDIS_PREFIX", ""))
+  let envPrefix = getEnv("RHIZO_REDIS_PREFIX", getEnv("LOCUTUS_REDIS_PREFIX", getEnv("A2A_REDIS_PREFIX", "")))
   if envPrefix.len > 0:
     result.prefix = envPrefix
     result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: envPrefix, source: srcEnv, detail: "LOCUTUS_REDIS_PREFIX")
 
-  let envProject = getEnv("LOCUTUS_PROJECT", getEnv("A2A_PROJECT", ""))
+  let envProject = getEnv("RHIZO_PROJECT", getEnv("LOCUTUS_PROJECT", getEnv("A2A_PROJECT", "")))
   if envProject.len > 0:
     result.project = envProject
     result.provenance["project"] = ProvenanceEntry(key: "project", value: envProject, source: srcEnv, detail: "LOCUTUS_PROJECT")
 
-  let envAgent = getEnv("LOCUTUS_AGENT_NAME", getEnv("MY_NAME", ""))
+  let envAgent = getEnv("RHIZO_AGENT_NAME", getEnv("LOCUTUS_AGENT_NAME", getEnv("MY_NAME", "")))
   if envAgent.len > 0:
     result.agentName = envAgent
     result.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: envAgent, source: srcEnv, detail: "LOCUTUS_AGENT_NAME")
 
-  let envSessionId = getEnv("LOCUTUS_SESSION_ID", "")
+  let envSessionId = getEnv("RHIZO_SESSION_ID", getEnv("LOCUTUS_SESSION_ID", ""))
   if envSessionId.len > 0:
     result.sessionId = envSessionId
     result.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: envSessionId, source: srcEnv, detail: "LOCUTUS_SESSION_ID=" & envSessionId)
 
-  let envSecret = getEnv("LOCUTUS_SECRET", "")
+  let envSecret = getEnv("RHIZO_SECRET", getEnv("LOCUTUS_SECRET", ""))
   if envSecret.len > 0:
     result.secret = envSecret
     result.provenance["secret"] = ProvenanceEntry(key: "secret", value: "[REDACTED]", source: srcEnv, detail: "LOCUTUS_SECRET")
 
-  let envSecretFile = getEnv("LOCUTUS_SECRET_FILE", "")
+  let envSecretFile = getEnv("RHIZO_SECRET_FILE", getEnv("LOCUTUS_SECRET_FILE", ""))
   if envSecretFile.len > 0:
     result.secretFile = expandPathSafe(envSecretFile)
     result.provenance["secret_file"] = ProvenanceEntry(key: "secret_file", value: result.secretFile, source: srcEnv, detail: "LOCUTUS_SECRET_FILE")
 
-  let envEnc = getEnv("LOCUTUS_ENCRYPT", "")
+  let envEnc = getEnv("RHIZO_ENCRYPT", getEnv("LOCUTUS_ENCRYPT", ""))
   if envEnc.len > 0:
     let b = envEnc in ["1", "true", "TRUE", "yes"]
     result.encrypt = b
     result.provenance["encrypt"] = ProvenanceEntry(key: "encrypt", value: $b, source: srcEnv, detail: "LOCUTUS_ENCRYPT=" & envEnc)
 
-  let envCluster = getEnv("LOCUTUS_CLUSTER", getEnv("LOCUTUS_REDIS_CLUSTER", ""))
+  let envCluster = getEnv("RHIZO_CLUSTER", getEnv("LOCUTUS_CLUSTER", getEnv("LOCUTUS_REDIS_CLUSTER", "")))
   if envCluster.len > 0:
     let b = envCluster in ["1", "true", "TRUE", "yes"]
     result.cluster = b

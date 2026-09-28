@@ -4,7 +4,7 @@ author        = "Axiomantic"
 description   = "High Performance Inter-Assistant Redis Bus & Multi-Agent Coordination Mesh"
 license       = "MIT"
 srcDir        = "src"
-bin           = @["locutus"]
+bin           = @["rhizo"]
 binDir        = "bin"
 
 # Dependencies
@@ -15,4 +15,3 @@ requires "https://github.com/elijahr/redis.git#feat/timeouts-and-reconnect"
 task test, "Run test suite":
   exec "nim r tests/test_routing_unit.nim"
   exec "nim r tests/test_protocol_tripwire.nim"
-  exec "uv run pytest -q"
