@@ -115,55 +115,28 @@ Locutus coordinates autonomous coding assistants across heterogeneous terminal, 
 - **Integration Mechanism**: Full skill installation in `~/.gemini/config/skills/locutus` and native agentic loop integration.
 - **Reactive Wakeups & Background Tasks**:
   - AGY features native reactive wakeups: commands launched via `run_command` run as asynchronous background tasks.
-  - When an AGY subagent or task runner executes `locutus listen <agent> 30` as a background task, the AGY runtime automatically awakens the assistant when the task exits or sends output—eliminating busy polling loops.
+  - When an AGY task runner executes `locu listen <agent>` as a background daemon task (`IsDaemon=true`), the AGY runtime automatically awakens the assistant when a message arrives—eliminating busy polling loops.
   - In-flight urgency is handled via subagent task cancellation (`manage_task kill`) and re-dispatch.
 
 #### 5. Pi Coding Agent (`pi.dev`)
 - **Integration Mechanism**: Native TypeScript extension API (`~/.pi/agent/extensions/*.ts`) loaded via `jiti` without compilation, plus native skill in `~/.pi/agent/skills/locutus`.
 - **Extension Architecture**:
   - Pi exposes runtime events (`pi.on("tool_call")`, `pi.on("session_start")`) and tool registration (`pi.registerTool`).
-  - An in-process extension streams `locutus listen` and dispatches prompts into the active turn via `deliverPiPrompt` (`pi.sendMessage` / `pi.session.prompt`).
+  - An in-process extension streams `locu listen` and dispatches prompts into the active turn via `deliverPiPrompt` (`pi.sendMessage` / `pi.session.prompt`).
   - In-flight preemption for `--immediate` triggers `pi.abort()`.
 
 #### 6. Cursor & GitHub Copilot
 - **Integration Mechanism**: Terminal integration via embedded shell terminals, task runners, and skill configurations (`.cursor/rules/locutus.mdc`, `.github/copilot-instructions.md`).
-- **Runtime Behavior**: Terminal sessions running inside Cursor or VS Code utilize the standard CLI and native `locutus listen --notify` desktop notifications to alert developers when an agent receives urgent coordination messages.
+- **Runtime Behavior**: Terminal sessions running inside Cursor or VS Code utilize the standard CLI and native `locu listen --notify` desktop notifications to alert developers when an agent receives urgent coordination messages.
 
 ---
 
-## The MCP Interruption Paradox: Why MCP Cannot Interrupt or Wake Idle Agents
+## Architecture: Direct CLI Execution vs External Protocols
 
-Contributors often ask: *"Can we expose Locutus as an MCP (Model Context Protocol) server to handle interruptions and wakeups?"*
-
-The short answer is **no: MCP is architecturally incapable of waking idle agents or interrupting in-flight turns.** Understanding why is essential for extending Locutus:
-
-### 1. MCP is a Client-Pull Protocol, Not an Autonomous Server-Push Execution Model
-MCP (Model Context Protocol) is designed on JSON-RPC 2.0 where the **LLM client is the sole initiator of action**:
-1. The client LLM generates a tool call request (`tools/call`).
-2. The MCP server executes the tool and returns a result payload.
-3. The LLM processes the result and continues its turn.
-
-When an AI assistant is **idle** (waiting for user input at the terminal or in the editor):
-- The LLM inference engine is paused.
-- No prompt is active, no tokens are being sampled, and no tool calls can be made.
-- An MCP server cannot force the client to begin a new inference cycle.
-
-### 2. Protocol Notifications Do Not Trigger Inference Turns
-The MCP specification defines server-to-client notifications (such as `notifications/resources/updated` or `notifications/roots/list_changed`). However:
-- In all mainstream MCP clients (Claude Desktop, Cursor, Copilot, LibreChat), notifications are treated strictly as **passive UI cache invalidations** (e.g. refreshing a file tree or updating a resource dropdown).
-- Clients **never** spawn a spontaneous turn or trigger LLM token generation in response to an MCP notification.
-- To wake an idle agent, something must stimulate the host application's input stream—which is why Locutus uses native harness extensions (OpenCode `promptAsync`, Pi `sendMessage`), lifecycle continuation hooks (`Stop` hooks), or native OS desktop notifications (`osascript` / `notify-send`).
-
-### 3. MCP Cannot Preempt In-Flight Execution
-If an agent is busy running a long compile job or executing a sequence of tool calls:
-- An MCP server has no protocol mechanism to abort the client's current turn.
-- Only harness abort APIs (`client.session.abort()` in OpenCode, `pi.abort()` in Pi) or process signals can interrupt an active turn to deliver high-priority context (`--immediate`).
-
-### 4. Why Wrapping the Locutus CLI in MCP is Redundant
-For terminal-capable coding assistants (Claude Code, OpenCode, Codex, Pi, AGY):
-- The assistant already has access to execute terminal commands (`Bash`, `run_command`, `exec`).
-- Wrapping `locutus` in an MCP tool simply creates an extra layer of JSON-RPC serialization, slower cold starts, and potential memory leaks—while providing **zero** autonomous wakeup or interruption capabilities.
-- The native `locutus` binary plus harness-specific ear plugins delivers zero-latency execution, unforgeable HMAC authentication, and true idle-stimulation.
+Locu operates strictly as a zero-dependency CLI executable communicating directly with Redis. It avoids wrapping coordination in external protocol layers (such as MCP or custom background daemons) because:
+1. **Direct Terminal & Shell Integration**: Modern AI coding assistants execute shell commands natively (`run_command`, `Task`, `bash`). A direct binary invocation provides zero-overhead execution without intermediate JSON-RPC layers.
+2. **True Background Autonomy & In-Flight Preemption**: Standard protocol wrappers cannot wake idle sessions or preempt busy compute turns without host integration. Locu pairs native binary listeners directly with in-process extensions (`opencode-ear.js`, `pi-ear.ts`) and reactive background tasks.
+*(For architectural background, see [ADR 0002: Daemonless Native CLI Architecture](docs/adr/0002-daemonless-cli-architecture.md).)*
 
 ---
 
@@ -174,14 +147,13 @@ When adding support for a new coding harness, follow this 12-question evaluation
 ### 1. What hooks are required for the coding harness integration?
 A complete integration requires up to three architectural tiers:
 - **Identity / Environment Injection Hook**: Injects `LOCUTUS_AGENT_NAME` and `LOCUTUS_SESSION_ID` into the harness's bash/tool execution environment (e.g., OpenCode's `shell.env`).
-- **Passive Post-Tool Drain Hook**: Drains queued inbox messages after tool executions when the agent is already in an active turn (e.g., Claude Code's `post-tool-execution` running `locutus drain 50 <agent> --hook`).
-- **Active Idle Wakeup / Extension**: Listens on Redis in the background and stimulates the harness when a message arrives while the agent is idle. Use **native in-process extensions** (e.g., OpenCode plugin `promptAsync`, Pi extension `deliverPiPrompt`), **continuation Stop hooks** (Claude, Codex, AGY), or **native desktop notifications** (`locutus listen --notify` for Cursor/Copilot). *Never simulate keystrokes or inject characters into terminal multiplexers (e.g., `tmux send-keys`).*
+- **Passive Post-Tool Drain Hook**: Drains queued inbox messages after tool executions when the agent is already in an active turn (e.g., Claude Code's `post-tool-execution` running `locu drain 50 <agent> --hook`).
+- **Active Idle Wakeup / Extension**: Listens on Redis in the background and stimulates the harness when a message arrives while the agent is idle. Use **native in-process extensions** (e.g., OpenCode plugin `promptAsync`, Pi extension `deliverPiPrompt`), **continuation Stop hooks** (Claude, Codex, AGY), or **native desktop notifications** (`locu listen --notify` for Cursor/Copilot). *Never simulate keystrokes or inject characters into terminal multiplexers (e.g., `tmux send-keys`).*
 
 ### 2. How should the harness handle backgrounding behavior?
-- The harness must **never** run a blocking wait on stdout during a foreground turn unless explicitly intended as an in-turn wait (`locutus listen <agent> 120`).
-- Background listening must operate via a native in-process fiber/thread, an asynchronous reactive task (e.g., AGY `run_command`), or a one-shot subagent.
+- The harness must **never** run a blocking wait on stdout during a foreground turn. Background listening must always be offloaded to a native in-process fiber/thread, an asynchronous reactive task (e.g., AGY `run_command(IsDaemon=true)`), or a one-shot subagent with no timeout.
 - Background processes must register clean shutdown handlers (`SIGINT`, `SIGTERM`, process exit) to remove listener locks (`DEL ${PREFIX}listener:<name>`) and prevent zombie PID records.
-- **Never allow the LLM to invent background scripts**: The harness instructions must provide strict, single-line commands. Forbid `while true; do locutus listen; done` loops and `&` detachments, which silently discard output.
+- **Never allow the LLM to invent background scripts**: The harness instructions must provide strict, single-line commands. Forbid `while true; do locu listen; done` loops and `&` detachments, which silently discard output.
 
 ### 3. Can it interrupt while working?
 Determine if the harness supports programmatic turn interruption:

@@ -93,7 +93,7 @@ class TestLocutusNimBinary(unittest.TestCase):
             "pub", "sub", "who", "sweep", "tag", "drain", "close", "get-secret", "config", "route"
         ]
         for subcmd in expected_subcommands:
-            self.assertIn(f"locutus {subcmd}", res.stdout, f"Subcommand '{subcmd}' missing from --help output")
+            self.assertTrue(f"locu {subcmd}" in res.stdout or f"locutus {subcmd}" in res.stdout, f"Subcommand '{subcmd}' missing from --help output")
 
         expected_global_options = [
             "--version", "--profile", "--config", "--redis-url", "--prefix", "--project", "--encrypt", "--cluster"

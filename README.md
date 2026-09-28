@@ -22,25 +22,26 @@
 
 - [What is Locu?](#what-is-locu)
 - [30-Second Quickstart](#30-second-quickstart)
-  - [1. Install (Engine + AI Agent Skills)](#1-install-engine--ai-agent-skills)
+  - [1. Install (Universal NPM Package)](#1-install-universal-npm-package)
   - [2. Try it in Your Terminals](#2-try-it-in-your-terminals)
-  - [3. Multi-Assistant Chat Coordination](#3-multi-assistant-chat-coordination-orchestrator--workers)
-  - [4. Advanced Coordination Patterns](#4-advanced-coordination-patterns)
+  - [3. Multi-Assistant Chat Coordination (Orchestrator & Workers)](#3-multi-assistant-chat-coordination-orchestrator--workers)
+  - [4. Coordination Primitives at a Glance](#4-coordination-primitives-at-a-glance)
+- [Multi-Agent Playbooks & Recipes](#multi-agent-playbooks--recipes)
 - [How it Works with Redis](#how-it-works-with-redis)
-- [Comparison](#comparison)
+  - [Comparison](#comparison)
 - [How Messages Flow](#how-messages-flow)
 - [Installation & Setup](#installation--setup)
   - [Option 1: Unified One-Line Installer (Recommended)](#option-1-unified-one-line-installer-recommended)
-  - [Option 2: Install AI Agent Skill (Using Skill Tools)](#option-2-install-the-ai-agent-skill-using-skill-tools)
-  - [Option 3: Install Native Engine (Binary / Package Managers)](#option-3-install-the-native-engine-binary--package-managers)
+  - [Option 2: Install the AI Agent Skill (Using Skill Tools)](#option-2-install-the-ai-agent-skill-using-skill-tools)
+  - [Option 3: Install via NPM (Universal Multi-Platform)](#option-3-install-via-npm-universal-multi-platform)
 - [Uninstallation](#uninstallation)
 - [CLI Reference](#cli-reference)
 - [Autonomous Agent Lifecycle: Hooks, Extensions & Recipes](#autonomous-agent-lifecycle-hooks-extensions--recipes)
 - [Configuration Architecture & Profiles](#configuration-architecture--profiles)
-- [Security & Prompt Firewall](#security--prompt-injection-firewall)
+- [Security & Prompt Injection Firewall](#security--prompt-injection-firewall)
 - [Cross-Host Multi-Machine Coordination](#cross-host-multi-machine-coordination)
-- [Redis Cluster Support](#redis-cluster-support-hash-tags)
-- [Assistant Integration](#assistant-integration-skill)
+- [Redis Cluster Support (Hash Tags)](#redis-cluster-support-hash-tags)
+- [Assistant Integration (Skill)](#assistant-integration-skill)
 - [Performance & Benchmarks](#performance--benchmarks)
 - [Testing & Verification](#testing--verification)
 - [License](#license)
@@ -546,40 +547,38 @@ npx skills remove locutus -g
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
-| Command | Description | Example |
-| :--- | :--- | :--- |
-| `locutus open [name] [tags] [--listen] [--session-id <key>]` | Registers identity, binds session ID, sets project tags, drains offline backlog, and optionally arms background listener. | `locutus open coder "qa,python" --listen` |
-| `locutus listen [name] [timeout]` | Blocks on inbox, refreshes heartbeat, drops tampered messages. | `locutus listen` |
-| `locutus send --to <target> ... [--immediate\|--soon]` | Sends direct (O2O) message with HMAC signature and delivery urgency. | `locutus send --to worker-1 --subject "Fix Bug" --body "src/api.py" --soon` |
-| `locutus reply --to <sender> ... [--immediate\|--soon]` | Direct reply tagged with `type=reply`, urgency, and optional `--listen` re-arm. | `locutus reply --to lead --subject "Re: Bug" --body "Fixed" --listen` |
-| `locutus broadcast [--tags <tags>] ... [--immediate\|--soon]` | Multicasts to all agents matching tags within project with urgency. | `locutus broadcast --tags "qa" --subject "New Release" --body "Verify"` |
-| `locutus request --to <target> ... [--immediate\|--soon]` | Synchronous RPC: dispatches task and blocks until reply received. | `locutus request --to solver --subject "Calc" --body "2+2"` |
-| `locutus scatter --targets <tgts> ... [--immediate\|--soon]` | Fan out task to agents/tags and gather responses until quorum. | `locutus scatter --targets @qa --subject "Tests" --body "run" --quorum 2` |
-| `locutus enqueue <queue> ...` | Pushes task to competing-consumers worker queue. | `locutus enqueue jobs --subject "Compile" --body "gcc -O2 main.c"` |
-| `locutus work <queue> [timeout]` | Pops task from competing-consumers worker queue (supports `--run-id`). | `locutus work jobs 30 --run-id run_01` |
-| `locutus claim <queue> [timeout]` | Non-destructively leases task from queue with DLQ escalation. | `locutus claim jobs 30 --lease 60 --run-id run_01` |
-| `locutus claim renew <queue> <id>` | Safely extends active worker lease deadline before task expires. | `locutus claim renew jobs "task_123" --lease 120` |
-| `locutus ack <queue> <task_id>` | Acknowledges task completion and releases active worker lease. | `locutus ack jobs "task_123"` |
-| `locutus blackboard <cmd> <room> ...` | Shared persistent scratchpad memory (`set`, `get`, `append`, `rev`, `snapshot`/`dump`, `load`/`restore`). | `locutus blackboard snapshot room1 state.json` |
-| `locutus floor <cmd> <room> ...` | Turn-taking floor control for roundtables (request, yield, pass, status). | `locutus floor request room1 30` |
-| `locutus cancel <run_id> ...` | Global run cancellation tokens (cancel, check, clear). | `locutus cancel run_042 --reason "Aborted"` |
-| `locutus ballot <cmd> <ballot_id> ...` | Blind voting and ballot consensus (open, cast, tally, status). | `locutus ballot open b1 --options "A,B"` |
-| `locutus leader <cmd> <role> ...` | Resilient leader election with failover (acquire, renew, resign, status). | `locutus leader acquire lead 30` |
-| `locutus workflow <cmd> <flow_id> ...` | Multi-stage DAG task pipelines (`define`, `next`, `resolve`, `fail`, `status`, `export`, `import`). | `locutus workflow export pipe pipe.json` |
-| `locutus sweep [--dry-run] [--raw]` | Cluster health watchdog: prunes dead agent heartbeats & stale PID locks. | `locutus sweep` |
-| `locutus status <state> [activity] [--listen]` | Updates agent state (`idle`, `busy`, `error`), activity text, and optionally re-arms listener. | `locutus status idle "Awaiting tasks" --listen` |
-| `locutus lock <lock_name> [ttl]` | Acquires atomic distributed mutex lease with optional `--fencing` counter. | `locutus lock deploy_lock 30 --fencing` |
-| `locutus unlock <lock_name>` | Releases distributed mutex lease if caller is owner. | `locutus unlock deploy_lock` |
-| `locutus pub <channel> <msg>` | Ephemeral pub/sub broadcast to subscribers. | `locutus pub alerts "Build finished"` |
-| `locutus sub <channel> [timeout]` | Listens for ephemeral pub/sub broadcasts without queue buildup. | `locutus sub alerts 10` |
-| `locutus who [-a\|--all] [--json] [filter]` | Formatted table or JSON of active cluster agents, states, and tags (auto-prunes dead agents). | `locutus who`, `locutus who -a`, or `locutus who --json` |
-| `locutus tag <add\|remove\|set> <tags>` | Dynamically adjusts tags without dropping queued messages. | `locutus tag add "lead"` |
-| `locutus session <set\|get\|remove\|list> [args...]` | Manages global `<runtime>:<sessionId>` to agent mappings. | `locutus session set opencode:ses_123 worker-1` |
-| `locutus check-inbox [name]` | High-speed inbox check (exits 0 with count if messages exist, exits 1 if empty). | `locutus check-inbox worker-1` |
-| `locutus drain [count] [name] [--format json\|hook\|raw] [--hook]` | Atomically pops, authenticates, and decrypts offline messages (FIFO). Supports prompt formatting for LLM hooks. | `locutus drain 10 worker-1 --hook` |
-| `locutus close [name] [--session-id <key>]` | Graceful deregistration, clears tags, heartbeat, and session mapping. | `locutus close` |
-| `locutus get-secret` | Prints or initializes 256-bit cluster secret. | `locutus get-secret` |
-| `locutus config <show\|get\|path\|init>` | Introspects resolved settings, provenance, and paths. | `locutus config show` or `locutus config get redis_url` |
+| `locu open [name] [tags] [--listen] [--session-id <key>]` | Registers identity, binds session ID, sets project tags, drains offline backlog, and optionally arms listener. | `locu open coder "qa,python"` |
+| `locu listen [name] [timeout_sec]` | Blocks on inbox, refreshes heartbeat, drops tampered messages (default: 0 / infinite wait). | `locu listen` |
+| `locu send --to <target> ... [--immediate\|--soon]` | Sends direct (O2O) message with HMAC signature and delivery urgency. | `locu send --to worker-1 --subject "Fix Bug" --body "src/api.py" --soon` |
+| `locu reply --to <sender> ... [--immediate\|--soon]` | Direct reply tagged with `type=reply`, urgency, and optional `--listen` re-arm. | `locu reply --to lead --subject "Re: Bug" --body "Fixed" --listen` |
+| `locu broadcast [--tags <tags>] ... [--immediate\|--soon]` | Multicasts to all agents matching tags within project with urgency. | `locu broadcast --tags "qa" --subject "New Release" --body "Verify"` |
+| `locu request --to <target> ... [--immediate\|--soon]` | Synchronous RPC: dispatches task and blocks until reply received. | `locu request --to solver --subject "Calc" --body "2+2"` |
+| `locu scatter --targets <tgts> ... [--immediate\|--soon]` | Fan out task to agents/tags and gather responses until quorum. | `locu scatter --targets @qa --subject "Tests" --body "run" --quorum 2` |
+| `locu enqueue <queue> ...` | Pushes task to competing-consumers worker queue. | `locu enqueue jobs --subject "Compile" --body "gcc -O2 main.c"` |
+| `locu work <queue> [timeout_sec]` | Pops task from competing-consumers worker queue (default: 0 / infinite wait; supports `--run-id`). | `locu work jobs --run-id run_01` |
+| `locu claim <queue> [timeout_sec]` | Non-destructively leases task from queue with DLQ escalation (default: 0 / infinite wait). | `locu claim jobs --lease 60 --run-id run_01` |
+| `locu claim renew <queue> <id>` | Safely extends active worker lease deadline before task expires. | `locu claim renew jobs "task_123" --lease 120` |
+| `locu ack <queue> <task_id>` | Acknowledges task completion and releases active worker lease. | `locu ack jobs "task_123"` |
+| `locu blackboard <cmd> <room> ...` | Shared persistent scratchpad memory (`set`, `get`, `append`, `rev`, `snapshot`/`dump`, `load`/`restore`). | `locu blackboard snapshot room1 state.json` |
+| `locu floor <cmd> <room> ...` | Turn-taking floor control for roundtables (`request`, `yield`, `pass`, `status`). | `locu floor request room1 30` |
+| `locu cancel <run_id> ...` | Global run cancellation tokens (`cancel`, `check`, `clear`). | `locu cancel run_042 --reason "Aborted"` |
+| `locu ballot <cmd> <ballot_id> ...` | Blind voting and ballot consensus (`open`, `cast`, `tally`, `status`). | `locu ballot open b1 --options "A,B"` |
+| `locu leader <cmd> <role> ...` | Resilient leader election with failover (`acquire`, `renew`, `resign`, `status`). | `locu leader acquire lead 30` |
+| `locu workflow <cmd> <flow_id> ...` | Multi-stage DAG task pipelines (`define`, `next`, `resolve`, `fail`, `status`, `export`, `import`). | `locu workflow export pipe pipe.json` |
+| `locu sweep [--dry-run] [--raw]` | Cluster health watchdog: prunes dead agent heartbeats & stale PID locks. | `locu sweep` |
+| `locu status <state> [activity] [--listen]` | Updates agent state (`idle`, `busy`, `error`), activity text, and optionally re-arms listener. | `locu status idle "Awaiting tasks"` |
+| `locu lock <lock_name> [ttl]` | Acquires atomic distributed mutex lease with optional `--fencing` counter. | `locu lock deploy_lock 30 --fencing` |
+| `locu unlock <lock_name>` | Releases distributed mutex lease if caller is owner. | `locu unlock deploy_lock` |
+| `locu pub <channel> <msg>` | Ephemeral pub/sub broadcast to subscribers. | `locu pub alerts "Build finished"` |
+| `locu sub <channel> [timeout_sec]` | Listens for ephemeral pub/sub broadcasts without queue buildup (default: 0 / infinite wait). | `locu sub alerts` |
+| `locu who [-a\|--all] [--json] [filter]` | Formatted table or JSON of active cluster agents, states, and tags (auto-prunes dead agents). | `locu who`, `locu who -a`, or `locu who --json` |
+| `locu tag <add\|remove\|set> <tags>` | Dynamically adjusts tags without dropping queued messages. | `locu tag add "lead"` |
+| `locu session <set\|get\|remove\|list> [args...]` | Manages global `<runtime>:<sessionId>` to agent mappings. | `locu session set opencode:ses_123 worker-1` |
+| `locu check-inbox [name]` | High-speed inbox check (exits 0 with count if messages exist, exits 1 if empty). | `locu check-inbox worker-1` |
+| `locu drain [count] [name] [--format json\|hook\|raw] [--hook]` | Atomically pops, authenticates, and decrypts offline messages (FIFO). Supports prompt formatting for LLM hooks. | `locu drain 10 worker-1 --hook` |
+| `locu close [name] [--session-id <key>]` | Graceful deregistration, clears tags, heartbeat, and session mapping. | `locu close` |
+| `locu get-secret` | Prints or initializes 256-bit cluster secret. | `locu get-secret` |
+| `locu config <show\|get\|path\|init>` | Introspects resolved settings, provenance, and paths. | `locu config show` or `locu config get redis_url` |
 
 ---
 
@@ -662,80 +661,94 @@ flowchart TD
 ```
 
 #### 1. Recipe 1: Default Startup ("Open and Listen")
-- **Claude Code, OpenAI Codex, Cursor, Copilot (Default Invocation)**:
-  ```bash
-  locutus open <my-name> "<tags>" --listen
-  ```
-  - **Why `--listen` is default**: Passing `--listen` (`-l`) registers identity in Redis, outputs the registration banner, drains any offline backlog, and *immediately transitions in-process into listening mode*. This prevents a "dead-air" gap between registration and first task reception.
-  - *(Only omit `--listen` if you have immediate, active work to perform before listening: `locutus open <my-name> "<tags>"`).*
-- **OpenCode & Pi (`pi.dev`)**: Run `locutus open <my-name> "<tags>"`. Do NOT pass `--listen`. The bundled in-process plugin (`opencode-ear.js` / `pi-ear.ts`) runs an unblocked background fiber that handles continuous listening automatically.
-- **Antigravity (AGY)**:
-  - Register: `run_command(CommandLine="locutus open <my-name> \"<tags>\"", WaitMsBeforeAsync=5000)`
-  - Arm background ear: `run_command(CommandLine="locutus listen <my-name>", WaitMsBeforeAsync=500, IsDaemon=true)` (Native reactive wakeup fires when a message arrives).
+1. **Register Identity**:
+   ```bash
+   locu open <my-name> "<tags>"
+   ```
+   *(Registers identity in Redis, sets project tags, binds session mapping, and drains any offline backlog).*
+
+2. **Arm the Listener Based on Harness Tool Capabilities (Zero Guesswork)**:
+   - **In-Process Harness Ear Extension (OpenCode `opencode-ear.js`, Pi `pi-ear.ts`)**:
+     Do NOT execute `locu listen`. The bundled in-process extension maintains a continuous background fiber delivering incoming turns with 0 LLM token overhead.
+   - **Main Chat Shell with Native Daemon / Background Parameter (Antigravity)**:
+     Launch the listener via the tool's native background execution parameter:
+     ```python
+     run_command(CommandLine="locu listen <my-name>", WaitMsBeforeAsync=500, IsDaemon=True)
+     ```
+     The platform's native reactive wakeup will resume your turn when an incoming message arrives.
+   - **Subagent / Background Task Support (Claude Code `Task(..., background=true)`, OpenAI Codex `spawn_agent`)**:
+     Dispatch a one-shot background subagent running synchronous blocking `locu listen <my-name>` (no daemon inside the subagent: avoid double-daemons!). When a message arrives, the subagent terminates and delivers the payload to the parent turn.
+   - **Dedicated Headless Shell / Human Worker Terminal**:
+     ```bash
+     locu open <my-name> "<tags>" --listen
+     ```
+     In a dedicated terminal window, passing `--listen` (`-l`) registers and immediately transitions in-process into waiting for work.
+   - **Synchronous-Only Harness (No Background Execution Available)**:
+     **DO NOT run `locu listen`** in the main conversation—a blocking listen call freezes the conversation turn and locks user input. Inform the user of this platform limitation, and check inbox explicitly via `locu check-inbox` during user turns.
 
 #### 2. Recipe 2: Post-Task Transition ("After Task Finishes: Do I Re-Open?")
-- **DO I NEED TO RUN `locutus open` AGAIN?**
-  **NO! Never re-run `locutus open` after completing a task.** Your registration, tags, and heartbeat remain active in Redis for the session duration. Re-running `open` unnecessarily resets registration state. Only re-run `locutus open` if the session crashed, reconnected after a long network disconnect, or heartbeat expired.
+- **DO I NEED TO RUN `locu open` AGAIN?**
+  **NO! Never re-run `locu open` after completing a task.** Your registration, tags, and heartbeat remain active in Redis for the session duration. Re-running `open` unnecessarily resets registration state. Only re-run `locu open` if the session crashed, reconnected after a long network disconnect, or heartbeat expired.
 - **HOW DO I SEND MY RESULT AND WAIT FOR THE NEXT TASK?**
-  Always use **Atomic Reply & Re-Arm**:
+  When running in a dedicated terminal, background daemon, or inside a listener subagent, use **Atomic Reply & Re-Arm**:
   ```bash
-  locutus reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
+  locu reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
   ```
-  - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`locutus request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
-  - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. This prevents the race condition where a peer sends a follow-up task before your next command can execute. When the next message arrives, it outputs the JSON payload and exits `0` directly into your next turn.
+  - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`locu request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
+  - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. In interactive main-chat sessions without daemon shell parameters, omit `--listen` (`locu reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"`) and re-arm the listener via your harness subagent or stop hook.
 - **WHAT IF NO REPLY IS NEEDED (JUST WAITING FOR WORK)?**
   Run with **NO TIMEOUT**:
   ```bash
-  locutus listen <my-name>
+  locu listen <my-name>
   ```
   - **Default Must Always Be Infinite Wait (`timeout = 0` / no timeout)**: Never specify an arbitrary bounded timeout (e.g. 30s or 120s). When a timeout expires, the command exits empty, forcing the assistant into an unnecessary LLM inference cycle (token thrashing) just to re-run the listener. A Redis `BLPOP` blocks indefinitely at the socket level with 0 CPU, 0 bandwidth, and 0 tokens burned until work actually arrives. Timeouts are optional and explicitly discouraged across the board.
 
 #### 3. Recipe 3: Subagent Ear Completion & Relaunch
-When running in an assistant that uses a one-shot subagent to listen (e.g. OpenAI Codex Pattern 2 or Claude Code `Task(background=true)`):
-1. The subagent runs `locutus listen <my-name>` (with NO timeout, NO `&`, NO output redirection), blocks until ONE message arrives, outputs the JSON, and terminates cleanly.
+When running in an assistant that uses a one-shot subagent to listen (e.g. Claude Code `Task(background=true)` or OpenAI Codex):
+1. The subagent runs `locu listen <my-name>` (with NO timeout, NO `&`, NO output redirection), blocks until ONE message arrives, outputs the JSON, and terminates cleanly.
 2. The parent assistant receives the message JSON.
-3. The parent assistant executes the requested work and sends the reply via `locutus reply --reply-to "<id>" ...`.
-4. **IMMEDIATE RELAUNCH**: Before or while concluding the turn, the parent assistant MUST spawn a fresh one-shot subagent running `locutus listen <my-name>` to catch the next message.
+3. The parent assistant executes the requested work and sends the reply via `locu reply --reply-to "<id>" ...`.
+4. **IMMEDIATE RELAUNCH**: Before or while concluding the turn, the parent assistant MUST spawn a fresh one-shot subagent running `locu listen <my-name>` to catch the next message.
 
 #### 4. Recipe 4: Autonomous Turn Relaunching via Stop Hooks (Zero Cognitive Overhead)
 If your harness supports lifecycle hooks (`claude_stop_hook.py`, `codex_stop_hook.py`, `agy_stop_hook.py`):
 - You NEVER need to write `while true` loops, detach processes with `&`, or remember to re-listen.
 - Whenever your turn finishes, the harness invokes the hook.
-- The hook checks `locutus check-inbox`. If a message is waiting, it returns `{"decision": "block", ...}`, preventing the session from going idle and immediately starting a continuation turn with the new message payload!
+- The hook checks `locu check-inbox`. If a message is waiting, it returns `{"decision": "block", ...}`, preventing the session from going idle and immediately starting a continuation turn with the new message payload!
 
 #### 5. Recipe 5: Clean Disconnect / Session End
 When your assigned work is completely finished and you will not take any further tasks:
 ```bash
-locutus close <my-name>
+locu close <my-name>
 ```
-- **Why `locutus close` is expected**: Removes your agent's heartbeat from Redis, unlinks the listener PID lock, and clears session mappings. This ensures peer agents do not see you as active online (`locutus who`) and prevents tasks from being queued to an abandoned session.
+- **Why `locu close` is expected**: Removes your agent's heartbeat from Redis, unlinks the listener PID lock, and clears session mappings. This ensures peer agents do not see you as active online (`locu who`) and prevents tasks from being queued to an abandoned session.
 
 ---
 
 ### Engine Lifecycle Post-Ambles & The Quiet Flag
 
-When `locutus listen` delivers a message and exits, the Nim engine automatically prints a **Harness-Aware Lifecycle Notice** to `stderr`:
+When `locu listen` delivers a message and exits, the Nim engine automatically prints a **Harness-Aware Lifecycle Notice** to `stderr`:
 ```text
-[LOCUTUS LIFECYCLE NOTICE] Listener for 'worker-1' delivered message 'msg_...' and EXITED.
-- Detected harness: <harness> (consult SKILL.md Step 2 for your harness playbook)
+[LOCU LIFECYCLE NOTICE] Listener for 'worker-1' delivered message 'msg_...' and EXITED.
+- Detected harness: <harness> (consult Capability Decision Tree in AGENTS.md / SKILL.md)
 - Expected follow-up action:
   1. When finished, reply and re-arm atomically in one command:
-     locutus reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
+     locu reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
   2. If no reply is needed, wait for next task (zero-timeout infinite wait):
-     locutus listen worker-1
-  3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.
+     locu listen worker-1
+  3. If using subagents: dispatch a fresh one-shot listener subagent before concluding turn.
   4. If disconnecting or finishing session work completely:
-     locutus close worker-1
+     locu close worker-1
 (To silence this notice: pass --quiet / -q, or set LOCUTUS_QUIET=1)
 ```
 
-- **Stdout remains pure JSON**: Shell scripts, pipelines (`locutus listen | jq .`), and automated test parsers continue reading clean JSON without parse errors.
+- **Stdout remains pure JSON**: Shell scripts, pipelines (`locu listen | jq .`), and automated test parsers continue reading clean JSON without parse errors.
 - **LLM tool runners capture stderr**: In Claude Code, Codex, Cursor, and AGY, tool execution captures stderr alongside stdout, providing the LLM with direct, unmistakable next-step guidance tailored to its runtime harness.
 - **Harness Detection**: The engine automatically detects the runtime harness (OpenCode, Pi, Codex, Antigravity, Claude, Cursor, Copilot) via session key prefixes (`opencode:`, `pi:`, `codex:`, `agy:`, `claude:`, `cursor:`) or environment variables (`OPENCODE_SESSION_ID`, `PI_SESSION_ID`, `CODEX_SESSION_ID`, `ANTIGRAVITY_APP_DIR`, `CLAUDE_CODE`, `CURSOR_APP`).
-  - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `locutus listen`.
-  - **OpenAI Codex**: The notice instructs the agent to dispatch a fresh one-shot listener subagent before concluding its turn (SKILL.md Step 2b).
-  - **Antigravity**: The notice instructs the agent to re-arm its reactive background listener via `run_command` or append `--listen` (SKILL.md Step 2d).
-  - **Claude / Cursor / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or zero-timeout wait.
+  - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `locu listen`.
+  - **OpenAI Codex / Claude Code**: The notice instructs the agent to dispatch a fresh one-shot listener subagent before concluding its turn.
+  - **Antigravity**: The notice instructs the agent to re-arm its reactive background listener via `run_command` or append `--listen`.
+  - **Dedicated Worker Terminal / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or zero-timeout wait.
 - **Suppression / Quiet Flag**: To suppress the lifecycle notice in automated scripts or extensions, pass `--quiet` / `-q`, or export `LOCUTUS_QUIET=1`.
 
 ---
@@ -937,7 +950,7 @@ encrypt = false
 cluster = false
 heartbeat_ttl = 150
 message_ttl = 604800
-listen_timeout = 90
+listen_timeout = 0 # 0 = infinite wait (recommended to prevent LLM token thrashing)
 
 # Shared secret file (avoids committing secrets into git)
 secret_file = "~/.config/locutus/secret"

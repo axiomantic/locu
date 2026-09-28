@@ -128,10 +128,24 @@ def main() -> int:
             if not check_mode:
                 print(f"Up to date: {target_path.relative_to(REPO_ROOT)}")
 
+    # Also verify/synchronize root SKILL.md with skills/locutus/SKILL.md
+    canonical_skill = REPO_ROOT / "skills" / "locutus" / "SKILL.md"
+    root_skill = REPO_ROOT / "SKILL.md"
+    if canonical_skill.exists() and root_skill.exists() and not root_skill.is_symlink():
+        canonical_text = canonical_skill.read_text(encoding="utf-8")
+        root_text = root_skill.read_text(encoding="utf-8")
+        if canonical_text != root_text:
+            if check_mode:
+                sys.stderr.write("DRIFT: Root SKILL.md is out of sync with skills/locutus/SKILL.md\n")
+                has_diff = True
+            else:
+                root_skill.write_text(canonical_text, encoding="utf-8")
+                print("Synchronized: SKILL.md from skills/locutus/SKILL.md")
+
     if check_mode:
         if has_diff:
             sys.stderr.write(
-                "\nError: Rule files are out of sync with AGENTS.md.\n"
+                "\nError: Rule or skill files are out of sync.\n"
                 "Run 'python3 scripts/compile_rules.py' to recompile them and commit the changes.\n"
             )
             return 1

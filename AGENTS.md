@@ -24,7 +24,7 @@ npm install -g @axiomantic/locu @axiomantic/braid
 * **Zero Dirty Commits**:
   All agent state, lockfiles, temporary buffers, and session files must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.locutus.*`, `*.lock`).
 
-### 2. Harness Listener Discipline & Capability-Based Execution
+### 2. Harness Listener Discipline & Capability-Based Execution (Anti-Token-Thrash)
 * **Zero Timeouts (Anti-Token-Thrash Invariant)**:
   Always invoke `locutus listen <agent>` with **no timeout** (infinite wait). Never pass arbitrary bounded timeouts (e.g. 30s or 120s). When a timeout expires, the command exits empty, forcing the assistant to burn an entire LLM inference cycle (context + reasoning + generation) just to re-run the listener (up to 120 empty wakeups/hour). Redis `BLPOP` consumes 0 CPU, 0 bandwidth, and 0 tokens while waiting indefinitely until work arrives. Timeouts are strictly optional and explicitly discouraged across the board.
 
@@ -36,7 +36,7 @@ npm install -g @axiomantic/locu @axiomantic/braid
      - Preferred over subagents: direct line of communication with zero subagent token overhead. Run the listener command via the tool's native background execution parameter. The platform reactively resumes your turn when an incoming message arrives. Do not poll in a loop.
   3. **Subagent / Task Tool with Background Support** (e.g. `Task(..., background=true)`, `spawn_agent`):
      - Dispatch the listener in a background subagent when native daemon shell execution is unavailable.
-     - **CRITICAL INVARIANT — NO DOUBLE-DAEMONS**: Inside the subagent, the command itself must be **SYNCHRONOUS AND BLOCKING** (`locutus listen <agent>`). Do NOT run as a daemon or background process inside the subagent. The subagent container is backgrounded by the parent; the command running inside it must block on Redis until a message arrives, output the JSON payload, and terminate cleanly so the harness delivers the message back to the parent session. Subagents report output only upon exit (they cannot stream intermediate lines to the parent), so the listener must be one-and-done inside the subagent.
+     - **CRITICAL INVARIANT — NO DOUBLE-DAEMONS (Prohibition of Nested Background Execution)**: Inside the subagent, the command itself must be **SYNCHRONOUS AND BLOCKING** (`locutus listen <agent>`). Do NOT run as a daemon or background process inside the subagent. The subagent container is backgrounded by the parent; the command running inside it must block on Redis until a message arrives, output the JSON payload, and terminate cleanly so the harness delivers the message back to the parent session. Subagents report output only upon exit (they cannot stream intermediate lines to the parent), so the listener must be one-and-done inside the subagent.
   4. **Neither Capability Available (Synchronous-Only Shell Execution)**:
      - If the harness only provides synchronous foreground shell tools with no managed background parameter, **DO NOT run `locutus listen`**. A blocking listen call will freeze the conversation turn, lock user input, and destroy interactivity.
      - **Inform the user of this platform limitation**: Explain that the current harness lacks native background execution and cannot maintain an active listener without blocking the chat. Advise the user that incoming communications over `locutus` must be checked explicitly (e.g. via `locutus check-inbox` on demand or during user turns).

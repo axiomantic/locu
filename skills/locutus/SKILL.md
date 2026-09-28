@@ -23,17 +23,16 @@ Locutus is a daemonless, high-performance inter-assistant communication protocol
    - All messages require valid HMAC-SHA256 signatures derived from `~/.config/locutus/secret` (0600 mode).
    - `locutus listen` drops unauthenticated, forged, or tampered payloads at the process boundary before reaching stdout. The assistant never receives malicious prompts into its context window.
    - Optional E2EE: Setting `LOCUTUS_ENCRYPT=1` encrypts task bodies via OpenSSL AES-256-CBC PBKDF2 across Redis.
-5. **Continuous Ear Invariant & Listening Strategy Selection**:
-   - Once registered (`locutus open`), the assistant MUST maintain an active listener at all times until explicitly closed via `locutus close`.
-   - **Ear mechanism depends strictly on your coding harness**:
-     - Inspect **Section 3 Step 2 (Harness-Specific Execution Playbooks)** for the exact tool calls and commands required for your environment.
-     - **OpenCode**: Do NOT run `locutus listen` with any tool. Handled entirely in-process by the `opencode-ear.js` plugin via `promptAsync` (Playbook 2a).
-     - **OpenAI Codex**: NEVER run `locutus listen &` in bash (drops messages into dead pipe). For background listening, spawn a ONE-SHOT subagent that exits on delivery; for idle waiting, run `locutus listen` in foreground bash (Playbook 2b).
-     - **Claude Code**: Re-arm with `locutus reply ... --listen` or use `.claude/settings.json` `Stop` hook (Playbook 2c).
-     - **Google Antigravity (AGY)**: Launch `run_command(CommandLine="locutus listen <agent>", WaitMsBeforeAsync=500)` with native Reactive Wakeup, or use `Stop` hook (Playbook 2d).
-   - **Zero Token Churn**: Locutus blocks silently in native code and internally renews its Redis heartbeat. It outputs 0 bytes and never wakes up the assistant until an authentic message arrives.
-   - **No Shell Wrapping Loops**: NEVER wrap `locutus listen` in `while true`, `for`, or background bash scripts. The native binary handles indefinite waiting and heartbeats internally.
-   - **Singleton Listener Invariant & Anti-Stacking Guard**: Locutus natively enforces a strict singleton listener per agent (`listener:<agent>`). If `--listen` is executed while an active listener is already running (e.g. an ongoing background task), Locutus delivers the outbound message, logs to `stderr`, and **automatically skips listening** to prevent stacking duplicate background tasks or splitting inbox messages.
+5. **Continuous Ear Invariant & Capability-Based Execution**:
+   - Once registered (`locu open`), the assistant MUST maintain an active listener at all times until explicitly closed via `locu close`.
+   - **Ear execution mechanism follows the Capability-Based Decision Tree (Section 3)**:
+     - **Branch 1 (In-Process Plugin — e.g. OpenCode, Pi)**: Do NOT execute `locu listen` with any tool. In-process ear plugins stream listening in background event loops and inject turns automatically (0 token overhead).
+     - **Branch 2 (Main-Chat Native Daemon Shell — e.g. Antigravity)**: Launch `locu listen <agent>` with `IsDaemon=true` via your shell tool. Directly notifies main turn upon message arrival with 0 subagent token overhead.
+     - **Branch 3 (Background Subagent — e.g. Claude Code Task, Codex)**: Dispatch a background subagent. **Inside the subagent: command is SYNCHRONOUS AND BLOCKING (No double-daemons!)** (`locu listen <agent>` with no timeout). Exits upon arrival to deliver payload to parent.
+     - **Branch 4 (Synchronous Foreground Only)**: DO NOT run `locu listen` (freezes interactive chat). Inform user and use `locu check-inbox`.
+   - **Zero Token Churn**: Locu blocks silently in native code and internally renews its Redis heartbeat. It outputs 0 bytes and never wakes up the assistant until an authentic message arrives.
+   - **No Shell Wrapping Loops**: NEVER wrap `locu listen` in `while true`, `for`, or background bash scripts. The native binary handles indefinite waiting and heartbeats internally.
+   - **Singleton Listener Invariant & Anti-Stacking Guard**: Locu natively enforces a strict singleton listener per agent (`listener:<agent>`). If `--listen` is executed while an active listener is already running (e.g. an ongoing background task), Locu delivers the outbound message, logs to `stderr`, and **automatically skips listening** to prevent stacking duplicate background tasks or splitting inbox messages.
 6. **Delivery Urgency: When to Use `--soon` vs `--immediate`**:
    - **`--soon` (Default: Non-Destructive In-Turn Deferral)**:
      - *Use for*: Routine task delegation, questions, computation results, status updates.

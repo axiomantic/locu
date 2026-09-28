@@ -1246,39 +1246,38 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
       if not quiet and getEnv("LOCUTUS_QUIET", "0") notin ["1", "true", "yes"]:
         let harness = detectHarness(cfg)
         let replySubj = if subject.toLowerAscii.startsWith("re:"): subject else: "Re: " & subject
-        stderr.writeLine("\n[LOCUTUS LIFECYCLE NOTICE] Listener for '" & name & "' delivered message '" & id & "' and EXITED.")
-        stderr.writeLine("- Detected harness: " & harness & " (consult SKILL.md Step 2 for your harness playbook)")
+        stderr.writeLine("\n[LOCU LIFECYCLE NOTICE] Listener for '" & name & "' delivered message '" & id & "' and EXITED.")
+        stderr.writeLine("- Detected harness: " & harness & " (consult SKILL.md for capability decision tree)")
         stderr.writeLine("- Expected follow-up action:")
         case harness
         of "opencode", "pi":
-          stderr.writeLine("  1. In-process extension fiber is active. DO NOT run a blocking 'locutus listen'.")
+          stderr.writeLine("  1. In-process extension fiber is active. DO NOT run a blocking 'locu listen'.")
           stderr.writeLine("  2. Reply when task completes:")
-          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locutus close " & name)
+          stderr.writeLine("     locu close " & name)
         of "codex":
           stderr.writeLine("  1. Reply to sender when finished:")
-          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
-          stderr.writeLine("  2. Codex subagents (SKILL.md Step 2b): Dispatch a fresh one-shot listener subagent before concluding your turn:")
-          stderr.writeLine("     locutus listen " & name)
+          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("  2. Subagent ear discipline: dispatch a fresh one-shot listener subagent before concluding your turn:")
+          stderr.writeLine("     locu listen " & name)
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locutus close " & name)
+          stderr.writeLine("     locu close " & name)
         of "antigravity":
           stderr.writeLine("  1. Reply to sender when finished:")
-          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
-          stderr.writeLine("  2. Antigravity reactive pattern (SKILL.md Step 2d): Launch background listener task via run_command:")
-          stderr.writeLine("     locutus listen " & name)
-          stderr.writeLine("     Or atomically append --listen: locutus reply ... --listen")
+          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("  2. Native daemon reactive pattern: launch background listener task via run_command(..., IsDaemon=true):")
+          stderr.writeLine("     locu listen " & name)
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locutus close " & name)
+          stderr.writeLine("     locu close " & name)
         else: # claude, cursor, copilot, unknown
           stderr.writeLine("  1. When finished, reply and re-arm atomically in one command:")
-          stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\" --listen")
+          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\" --listen")
           stderr.writeLine("  2. If no reply is needed, wait for next task (zero-timeout infinite wait):")
-          stderr.writeLine("     locutus listen " & name)
-          stderr.writeLine("  3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.")
+          stderr.writeLine("     locu listen " & name)
+          stderr.writeLine("  3. If running inside a background subagent (e.g. Claude Task(background=true)): exit now to deliver payload to parent.")
           stderr.writeLine("  4. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locutus close " & name)
+          stderr.writeLine("     locu close " & name)
         stderr.writeLine("(To silence this notice, pass --quiet / -q, or set LOCUTUS_QUIET=1)")
       return
   finally:
@@ -2661,43 +2660,45 @@ proc main() =
     return
 
   if args.len == 0 or args[0] in ["-h", "--help", "help"]:
-    echo "Locutus " & LocutusVersion & " - High Performance Inter-Assistant Redis Bus (Nim Native)"
+    echo "Locu (Locutus) " & LocutusVersion & " - High Performance Inter-Assistant Redis Bus (Nim Native)"
     echo "Usage:"
-    echo "  locutus version"
-    echo "  locutus open [name] [tags] [--listen/-l]"
-    echo "  locutus listen [name] [timeout_sec] [--force/-f] [--notify/-n] [--quiet/-q]"
-    echo "  locutus send --to <agent> [--type task|query|reply|status] --subject <subj> --body <body> [--listen/-l]"
-    echo "  locutus reply --to <agent> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l]"
-    echo "  locutus broadcast [--tags <tags>] --subject <subj> --body <body>"
-    echo "  locutus request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw]"
-    echo "  locutus scatter --targets <@tag|agents|*> --subject <subj> --body <body> [--quorum N] [--timeout 30] [--raw]"
-    echo "  locutus enqueue <queue_name> --subject <subj> --body <body>"
-    echo "  locutus enqueue --route <task_text> [--routes-file <file>] [--subject <subj>] [--body <body>]"
-    echo "  locutus route <task_text> [--routes-file <file>] [--laya-url <url>] [--route-timeout <sec>]"
-    echo "  locutus route <lint|check> [--routes-file <file>] [--check-service]"
-    echo "  locutus work <queue_name> [timeout_sec]"
-    echo "  locutus claim <queue_name> [timeout_sec] [--lease 120] [--raw]"
-    echo "  locutus ack <queue_name> <task_id>"
-    echo "  locutus blackboard <set|get|append|snapshot|load|delete|clear> <room> [key] [value]"
-    echo "  locutus floor <request|yield|pass|status> <room> [args...]"
-    echo "  locutus cancel <run_id> [--reason <reason>] | check <run_id> | clear <run_id>"
-    echo "  locutus ballot <open|cast|tally|status> <ballot_id> [args...]"
-    echo "  locutus leader <acquire|renew|resign|status> <role> [args...]"
-    echo "  locutus workflow <define|next|resolve|fail|status|export|import> <flow_id> [args...]"
-    echo "  locutus status <idle|busy|error> [activity_text] [name] [--listen/-l]"
-    echo "  locutus lock <lock_name> [ttl_sec] [--fencing] [--raw]"
-    echo "  locutus unlock <lock_name>"
-    echo "  locutus pub <channel> <message>"
-    echo "  locutus sub <channel> [timeout_sec]"
-    echo "  locutus who [filter_tag]"
-    echo "  locutus sweep [--dry-run] [--raw]"
-    echo "  locutus tag <add|remove|set> <tags> [name]"
-    echo "  locutus check-inbox [name]"
-    echo "  locutus drain [count] [name] [--format json|hook|raw] [--hook]"
-    echo "  locutus close [name]"
-    echo "  locutus get-secret"
-    echo "  locutus config <show|get|path|init>"
-    echo "  locutus guide <install|uninstall|check> [path]"
+    echo "  locu version"
+    echo "  locu open [name] [tags] [--listen/-l]"
+    echo "  locu listen [name] [--timeout <sec>] [--force/-f] [--notify/-n] [--quiet/-q] (default timeout: 0 / infinite)"
+    echo "  locu send --to <agent> [--type task|query|reply|status] --subject <subj> --body <body> [--listen/-l]"
+    echo "  locu reply --to <agent> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l]"
+    echo "  locu broadcast [--tags <tags>] --subject <subj> --body <body>"
+    echo "  locu request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw]"
+    echo "  locu scatter --targets <@tag|agents|*> --subject <subj> --body <body> [--quorum N] [--timeout 30] [--raw]"
+    echo "  locu enqueue <queue_name> --subject <subj> --body <body>"
+    echo "  locu enqueue --route <task_text> [--routes-file <file>] [--subject <subj>] [--body <body>]"
+    echo "  locu route <task_text> [--routes-file <file>] [--laya-url <url>] [--route-timeout <sec>]"
+    echo "  locu route <lint|check> [--routes-file <file>] [--check-service]"
+    echo "  locu work <queue_name> [--timeout <sec>] [--run-id <id>] (default timeout: 0 / infinite)"
+    echo "  locu claim <queue_name> [--timeout <sec>] [--lease 120] [--run-id <id>] [--raw]"
+    echo "  locu ack <queue_name> <task_id>"
+    echo "  locu blackboard <set|get|append|snapshot|load|delete|clear> <room> [key] [value]"
+    echo "  locu floor <request|yield|pass|status> <room> [args...]"
+    echo "  locu cancel <run_id> [--reason <reason>] | check <run_id> | clear <run_id>"
+    echo "  locu ballot <open|cast|tally|status> <ballot_id> [args...]"
+    echo "  locu leader <acquire|renew|resign|status> <role> [args...]"
+    echo "  locu workflow <define|next|resolve|fail|status|export|import> <flow_id> [args...]"
+    echo "  locu status <idle|busy|error> [activity_text] [name] [--listen/-l]"
+    echo "  locu lock <lock_name> [ttl_sec] [--fencing] [--raw]"
+    echo "  locu unlock <lock_name>"
+    echo "  locu pub <channel> <message>"
+    echo "  locu sub <channel> [timeout_sec]"
+    echo "  locu who [-a|--all] [--json] [filter_tag]"
+    echo "  locu sweep [--dry-run] [--raw]"
+    echo "  locu tag <add|remove|set> <tags> [name]"
+    echo "  locu check-inbox [name]"
+    echo "  locu drain [count] [name] [--format json|hook|raw] [--hook]"
+    echo "  locu close [name]"
+    echo "  locu get-secret"
+    echo "  locu config <show|get|path|init>"
+    echo "  locu guide <install|uninstall|check> [path]"
+    echo ""
+    echo "Command Aliases: locu, locuti, locutus"
     echo ""
     echo "Global Options:"
     echo "  --version, -v         Print version and exit"
