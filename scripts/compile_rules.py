@@ -16,24 +16,24 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_MD = REPO_ROOT / "AGENTS.md"
 
-BEGIN_MARKER = "<!-- BEGIN LOCUTUS GUIDE"
-END_MARKER = "<!-- END LOCUTUS GUIDE -->"
+BEGIN_MARKER = "<!-- BEGIN RHIZO GUIDE"
+END_MARKER = "<!-- END RHIZO GUIDE -->"
 
 CURSOR_HEADER = """---
-description: Locutus Multi-Agent Coordination Protocol & Harness Rules
+description: Rhizo Multi-Agent Coordination Protocol & Harness Rules
 globs: *
 alwaysApply: true
 ---
 
 <!-- AUTO-GENERATED FROM AGENTS.md BY scripts/compile_rules.py - DO NOT EDIT DIRECTLY -->
 
-# Locutus Multi-Agent Coordination Protocol for Cursor
+# Rhizo Multi-Agent Coordination Protocol for Cursor
 
 """
 
 COPILOT_HEADER = """<!-- AUTO-GENERATED FROM AGENTS.md BY scripts/compile_rules.py - DO NOT EDIT DIRECTLY -->
 
-# GitHub Copilot Instructions for Locutus Multi-Agent Coordination
+# GitHub Copilot Instructions for Rhizo Multi-Agent Coordination
 
 """
 
@@ -75,8 +75,8 @@ def get_target_files(guide_body: str) -> dict[Path, str]:
     copilot_content = COPILOT_HEADER + guide_body
 
     targets = {
-        REPO_ROOT / "skills" / "locutus" / "rules" / "cursor-rules.mdc": cursor_content,
-        REPO_ROOT / "skills" / "locutus" / "rules" / "copilot-instructions.md": copilot_content,
+        REPO_ROOT / "skills" / "rhizo" / "rules" / "cursor-rules.mdc": cursor_content,
+        REPO_ROOT / "skills" / "rhizo" / "rules" / "copilot-instructions.md": copilot_content,
     }
 
     # Also update repo-level .github / .cursor files if those directories exist
@@ -86,7 +86,7 @@ def get_target_files(guide_body: str) -> dict[Path, str]:
 
     cursor_dir = REPO_ROOT / ".cursor" / "rules"
     if cursor_dir.is_dir():
-        targets[cursor_dir / "locutus.mdc"] = cursor_content
+        targets[cursor_dir / "rhizo.mdc"] = cursor_content
 
     return targets
 
@@ -128,19 +128,19 @@ def main() -> int:
             if not check_mode:
                 print(f"Up to date: {target_path.relative_to(REPO_ROOT)}")
 
-    # Also verify/synchronize root SKILL.md with skills/locutus/SKILL.md
-    canonical_skill = REPO_ROOT / "skills" / "locutus" / "SKILL.md"
+    # Also verify/synchronize root SKILL.md with skills/rhizo/SKILL.md
+    canonical_skill = REPO_ROOT / "skills" / "rhizo" / "SKILL.md"
     root_skill = REPO_ROOT / "SKILL.md"
     if canonical_skill.exists() and root_skill.exists() and not root_skill.is_symlink():
         canonical_text = canonical_skill.read_text(encoding="utf-8")
         root_text = root_skill.read_text(encoding="utf-8")
         if canonical_text != root_text:
             if check_mode:
-                sys.stderr.write("DRIFT: Root SKILL.md is out of sync with skills/locutus/SKILL.md\n")
+                sys.stderr.write("DRIFT: Root SKILL.md is out of sync with skills/rhizo/SKILL.md\n")
                 has_diff = True
             else:
                 root_skill.write_text(canonical_text, encoding="utf-8")
-                print("Synchronized: SKILL.md from skills/locutus/SKILL.md")
+                print("Synchronized: SKILL.md from skills/rhizo/SKILL.md")
 
     if check_mode:
         if has_diff:

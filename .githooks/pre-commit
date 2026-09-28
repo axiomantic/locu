@@ -7,11 +7,11 @@ python3 scripts/compile_rules.py
 
 # Stage any freshly updated rule files if git is staging
 if git rev-parse --verify HEAD >/dev/null 2>&1; then
-    git add skills/locutus/rules/cursor-rules.mdc skills/locutus/rules/copilot-instructions.md
+    git add skills/rhizo/rules/cursor-rules.mdc skills/rhizo/rules/copilot-instructions.md
     if [ -f ".github/copilot-instructions.md" ]; then
         git add .github/copilot-instructions.md
     fi
-    if [ -f ".cursor/rules/locutus.mdc" ]; then
-        git add .cursor/rules/locutus.mdc
+    if [ -f ".cursor/rules/rhizo.mdc" ]; then
+        git add .cursor/rules/rhizo.mdc
     fi
 fi
