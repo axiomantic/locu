@@ -4,7 +4,7 @@
 import tripwire
 import ./plugins/redis_tripwire
 import std/[os, strutils, json, tables, unittest]
-import config, locutus
+import config, rhizo
 
 suite "Locutus Native Tripwire Redis Passthrough Suite":
 

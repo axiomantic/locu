@@ -4,15 +4,14 @@
   "description": "Inter-assistant communication bus, monotonic fencing locks, and work queues over Redis",
   "main": "bin/run.js",
   "bin": {
-    "rhizo": "bin/run.js",
-    "locu": "bin/run.js",
-    "locuti": "bin/run.js",
-    "locutus": "bin/run.js"
+    "rhizo": "bin/run.js"
   },
+  "skills": "./skills",
   "files": [
     "bin/",
     "scripts/",
     "skills/",
+    "SKILL.md",
     "README.md",
     "LICENSE"
   ],

@@ -1,6 +1,6 @@
 # src/routing.nim
 # Declarative, Fail-Fast Laya System 1 Task Routing Engine for Locutus.
-# Handles locu-routes.yaml parsing, question-level chunk aggregation,
+# Handles rhizo-routes.yaml parsing, question-level chunk aggregation,
 # fail-fast timeout/connectivity, and schema linting.
 
 import std/[os, strutils, json, tables, httpclient, uri, net]
@@ -139,13 +139,13 @@ proc findRoutesConfig*(customPath: string = ""): string =
     if fileExists(customPath): return customPath
     raise newException(IOError, "Custom routes file not found: " & customPath)
 
-  let envPath = getEnv("LOCUTUS_ROUTES_FILE", "")
+  let envPath = getEnv("RHIZO_ROUTES_FILE", "")
   if envPath.len > 0 and fileExists(envPath): return envPath
 
   var cur = getCurrentDir()
   while true:
-    for candidate in ["locu-routes.yaml", "locu-routes.yml", "locu-routes.json",
-                      ".locutus/routes.yaml", ".locutus/routes.yml", ".locutus/routes.json"]:
+    for candidate in ["rhizo-routes.yaml", "rhizo-routes.yml", "rhizo-routes.json",
+                      ".rhizo/routes.yaml", ".rhizo/routes.yml", ".rhizo/routes.json"]:
       let p = cur / candidate
       if fileExists(p): return p
 
@@ -316,7 +316,7 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
     var serviceUrl = "http://127.0.0.1:8000"
     if root.hasKey("service") and root["service"].hasKey("url"):
       serviceUrl = root["service"]["url"].getStr("http://127.0.0.1:8000")
-    serviceUrl = getEnv("LOCUTUS_SYSTEMONE_URL", getEnv("LOCUTUS_LAYA_URL", serviceUrl))
+    serviceUrl = getEnv("RHIZO_SYSTEMONE_URL", getEnv("RHIZO_LAYA_URL", serviceUrl))
 
     var client = newHttpClient(timeout = 3000)
     try:
@@ -376,13 +376,13 @@ proc parseRoutesConfig*(yamlContent: string, configPath: string = ""): RoutingCo
         result.service.timeoutSeconds = float(sNode["timeout_seconds"].getInt())
 
   # Env overrides
-  let envUrl = getEnv("LOCUTUS_SYSTEMONE_URL", getEnv("LOCUTUS_LAYA_URL", ""))
+  let envUrl = getEnv("RHIZO_SYSTEMONE_URL", getEnv("RHIZO_LAYA_URL", ""))
   if envUrl.len > 0: result.service.url = envUrl
-  let envModel = getEnv("LOCUTUS_SYSTEMONE_MODEL", "")
+  let envModel = getEnv("RHIZO_SYSTEMONE_MODEL", "")
   if envModel.len > 0: result.service.model = envModel
-  let envKey = getEnv("LOCUTUS_SYSTEMONE_API_KEY", "")
+  let envKey = getEnv("RHIZO_SYSTEMONE_API_KEY", "")
   if envKey.len > 0: result.service.apiKey = envKey
-  let envTimeout = getEnv("LOCUTUS_ROUTE_TIMEOUT", "")
+  let envTimeout = getEnv("RHIZO_ROUTE_TIMEOUT", "")
   if envTimeout.len > 0:
     try: result.service.timeoutSeconds = parseFloat(envTimeout)
     except ValueError: discard

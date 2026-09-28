@@ -8,7 +8,7 @@ function findBinary() {
   const arch = process.arch;
   const platform = process.platform;
 
-  for (const name of ['rhizo', 'locu', 'locutus']) {
+  for (const name of ['rhizo']) {
     const directBin = path.join(__dirname, `${name}${ext}`);
     if (fs.existsSync(directBin)) return directBin;
 

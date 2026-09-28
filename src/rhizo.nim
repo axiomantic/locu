@@ -1,4 +1,4 @@
-# src/locutus.nim
+# src/rhizo.nim
 # High-performance, single-binary inter-assistant communication bus over Redis.
 # Embeds Lua scripts at compile time and utilizes EVALSHA caching with automatic EVAL fallback.
 
@@ -141,19 +141,19 @@ proc getOpenSslExe*(): string =
         return candidate
   return "openssl"
 
-proc getSecret*(cfg: LocutusConfig = LocutusConfig()): string =
+proc getSecret*(cfg: RhizoConfig = RhizoConfig()): string =
   if cfg.secret.len > 0:
     return cfg.secret
-  let envSecret = getEnv("RHIZO_SECRET", getEnv("LOCUTUS_SECRET", ""))
+  let envSecret = getEnv("RHIZO_SECRET", getEnv("RHIZO_SECRET", ""))
   if envSecret.len > 0:
     return envSecret
   let secretFile = if cfg.secretFile.len > 0:
     cfg.secretFile
   else:
-    let secretFileEnv = getEnv("RHIZO_SECRET_FILE", getEnv("LOCUTUS_SECRET_FILE", ""))
+    let secretFileEnv = getEnv("RHIZO_SECRET_FILE", getEnv("RHIZO_SECRET_FILE", ""))
     let home = getHomeDir()
     let rhizoSecret = home / ".config" / "rhizo" / "secret"
-    let locSecret = home / ".config" / "locutus" / "secret"
+    let locSecret = home / ".config" / "rhizo" / "secret"
     let defSecret = if fileExists(rhizoSecret): rhizoSecret elif fileExists(locSecret): locSecret else: rhizoSecret
     if secretFileEnv.len > 0: secretFileEnv else: defSecret
   if fileExists(secretFile):
@@ -198,26 +198,26 @@ proc getOriginHostname*(): string =
     h = getEnv("HOSTNAME", "")
   return h
 
-proc getPassArg*(cfg: LocutusConfig = LocutusConfig()): string =
+proc getPassArg*(cfg: RhizoConfig = RhizoConfig()): string =
   if cfg.secret.len > 0:
-    putEnv("LOCUTUS_SECRET", cfg.secret)
-    return "env:LOCUTUS_SECRET"
-  let envSecret = getEnv("LOCUTUS_SECRET", "")
+    putEnv("RHIZO_SECRET", cfg.secret)
+    return "env:RHIZO_SECRET"
+  let envSecret = getEnv("RHIZO_SECRET", "")
   if envSecret.len > 0:
-    return "env:LOCUTUS_SECRET"
+    return "env:RHIZO_SECRET"
   let secretFile = if cfg.secretFile.len > 0:
     cfg.secretFile
   else:
-    let secretFileEnv = getEnv("LOCUTUS_SECRET_FILE", "")
+    let secretFileEnv = getEnv("RHIZO_SECRET_FILE", "")
     let home = getHomeDir()
-    let configDir = home / ".config" / "locutus"
+    let configDir = home / ".config" / "rhizo"
     if secretFileEnv.len > 0: secretFileEnv else: configDir / "secret"
   if fileExists(secretFile):
     return "file:" & secretFile
   discard getSecret(cfg)
   return "file:" & secretFile
 
-proc encryptAes*(plaintext, secret: string, cfg: LocutusConfig = LocutusConfig()): string =
+proc encryptAes*(plaintext, secret: string, cfg: RhizoConfig = RhizoConfig()): string =
   var salt: array[8, uint8]
   if RAND_bytes(salt[0].addr, 8) != 1:
     raise newException(ValueError, "Failed to generate cryptographically secure random salt")
@@ -256,7 +256,7 @@ proc encryptAes*(plaintext, secret: string, cfg: LocutusConfig = LocutusConfig()
   finally:
     EVP_CIPHER_CTX_free(ctx)
 
-proc decryptAes*(ciphertext, secret: string, cfg: LocutusConfig = LocutusConfig()): string =
+proc decryptAes*(ciphertext, secret: string, cfg: RhizoConfig = RhizoConfig()): string =
   var raw = ""
   try:
     raw = decode(ciphertext.strip())
@@ -301,7 +301,7 @@ proc decryptAes*(ciphertext, secret: string, cfg: LocutusConfig = LocutusConfig(
     EVP_CIPHER_CTX_free(ctx)
 
 # Configuration Resolution (implemented in src/config.nim)
-proc resolveConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
+proc resolveConfig*(cli: CliOverrides = CliOverrides()): RhizoConfig =
   resolveFullConfig(cli)
 
 proc formatRedisValue*(val: RedisValue, cmd: string = ""): string =
@@ -360,7 +360,7 @@ proc reconnectRedisClientMs*(redisUrl: string, client: var Redis, remainingMs: v
       if remainingMs <= 0:
         return false
 
-    stderr.writeLine("[LOCUTUS] Connection severed. Reconnecting (attempt " & $(attempt + 1) & ") in " & $sleepMs & "ms...")
+    stderr.writeLine("[RHIZO] Connection severed. Reconnecting (attempt " & $(attempt + 1) & ") in " & $sleepMs & "ms...")
     sleep(sleepMs)
 
     if not isForever:
@@ -371,7 +371,7 @@ proc reconnectRedisClientMs*(redisUrl: string, client: var Redis, remainingMs: v
 
     try:
       client = openRedisClient(redisUrl)
-      stderr.writeLine("[LOCUTUS] Connection re-established successfully.")
+      stderr.writeLine("[RHIZO] Connection re-established successfully.")
       return true
     except CatchableError:
       attempt += 1
@@ -468,7 +468,7 @@ proc sessionsFilePath*(): string =
   let rhizoFile = rhizoDir / "sessions.json"
   if fileExists(rhizoFile) or dirExists(rhizoDir):
     return rhizoFile
-  let locFile = getHomeDir() / ".config" / "locutus" / "sessions.json"
+  let locFile = getHomeDir() / ".config" / "rhizo" / "sessions.json"
   if fileExists(locFile):
     return locFile
   return rhizoFile
@@ -522,7 +522,7 @@ proc getLocalSessionAgent*(sessionKey: string): string =
   return ""
 
 # Redis Session Mapping
-proc getRedisSessionMapping*(cfg: LocutusConfig, sessionKey: string): string =
+proc getRedisSessionMapping*(cfg: RhizoConfig, sessionKey: string): string =
   var client: Redis
   try:
     client = openRedisClient(cfg.redisUrl)
@@ -545,7 +545,7 @@ proc getRedisSessionMapping*(cfg: LocutusConfig, sessionKey: string): string =
     discard
   return ""
 
-proc setRedisSessionMapping*(cfg: LocutusConfig, sessionKey, agentName: string) =
+proc setRedisSessionMapping*(cfg: RhizoConfig, sessionKey, agentName: string) =
   var client: Redis
   try:
     client = openRedisClient(cfg.redisUrl)
@@ -563,7 +563,7 @@ proc setRedisSessionMapping*(cfg: LocutusConfig, sessionKey, agentName: string) 
   except CatchableError:
     discard
 
-proc removeRedisSessionMapping*(cfg: LocutusConfig, sessionKey: string, agentName: string = "") =
+proc removeRedisSessionMapping*(cfg: RhizoConfig, sessionKey: string, agentName: string = "") =
   var client: Redis
   try:
     client = openRedisClient(cfg.redisUrl)
@@ -579,11 +579,11 @@ proc removeRedisSessionMapping*(cfg: LocutusConfig, sessionKey: string, agentNam
     discard
 
 # Agent Identity Persistence (User-level fallback for plain shell invocations)
-# Note: Workspace-scoped .locutus.agent is intentionally forbidden to prevent
+# Note: Workspace-scoped .rhizo.agent is intentionally forbidden to prevent
 # tying directories 1:1 to Locutus sessions. Identity is strictly scoped to the process
-# environment (LOCUTUS_AGENT_NAME), the harness session ID, or user fallback.
+# environment (RHIZO_AGENT_NAME), the harness session ID, or user fallback.
 proc currentAgentPath*(): string =
-  getHomeDir() / ".config" / "locutus" / "current_agent"
+  getHomeDir() / ".config" / "rhizo" / "current_agent"
 
 proc saveCurrentAgent*(name: string) =
   # User-scoped fallback file only
@@ -614,17 +614,17 @@ proc clearCurrentAgent*() =
     discard
 
 
-proc getActiveAgentName*(cfg: LocutusConfig, explicitName: string = "", fallbackDefault: bool = false, sessionId: string = ""): string =
+proc getActiveAgentName*(cfg: RhizoConfig, explicitName: string = "", fallbackDefault: bool = false, sessionId: string = ""): string =
   if explicitName.len > 0:
     return explicitName
   if cfg.provenance.hasKey("agent_name") and cfg.provenance["agent_name"].source in {srcCli, srcEnv, srcCustomFile, srcWorkspaceFile, srcUserFile, srcSystemFile}:
     return cfg.agentName
-  let envName = getEnv("LOCUTUS_AGENT_NAME", getEnv("A2A_NAME", getEnv("MY_NAME", "")))
+  let envName = getEnv("RHIZO_AGENT_NAME", getEnv("A2A_NAME", getEnv("MY_NAME", "")))
   if envName.len > 0:
     return envName
 
   # Session ID resolution
-  let sid = if sessionId.len > 0: sessionId elif cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  let sid = if sessionId.len > 0: sessionId elif cfg.sessionId.len > 0: cfg.sessionId else: getEnv("RHIZO_SESSION_ID", "")
   if sid.len > 0:
     let localAgent = getLocalSessionAgent(sid)
     if localAgent.len > 0:
@@ -647,7 +647,7 @@ proc getActiveAgentName*(cfg: LocutusConfig, explicitName: string = "", fallback
     return if cfg.project.len > 0: cfg.project & "-worker" else: "worker"
   return ""
 
-proc getActiveListenerInfo*(cfg: LocutusConfig, name: string): tuple[active: bool, pid: int, host: string] =
+proc getActiveListenerInfo*(cfg: RhizoConfig, name: string): tuple[active: bool, pid: int, host: string] =
   var client: Redis
   try:
     client = openRedisClient(cfg.redisUrl)
@@ -677,11 +677,11 @@ proc getActiveListenerInfo*(cfg: LocutusConfig, name: string): tuple[active: boo
     return (false, 0, "")
 
 # Core Operations
-proc doRegister*(cfg: LocutusConfig, name, tags: string, ttl: int = -1): string =
+proc doRegister*(cfg: RhizoConfig, name, tags: string, ttl: int = -1): string =
   let effectiveTtl = if ttl > 0: ttl elif cfg.heartbeatTtl > 0: cfg.heartbeatTtl else: 150
   return runLuaScript(cfg.redisUrl, registerLua, registerSha, [cfg.prefix, name, tags, $effectiveTtl])
 
-proc doCheckInbox*(cfg: LocutusConfig, name: string): int =
+proc doCheckInbox*(cfg: RhizoConfig, name: string): int =
   var client = connectRedis(cfg.redisUrl)
   defer:
     try: client.close() except CatchableError: discard
@@ -691,8 +691,8 @@ proc doCheckInbox*(cfg: LocutusConfig, name: string): int =
   except CatchableError:
     return 0
 
-proc detectHarness*(cfg: LocutusConfig): string =
-  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+proc detectHarness*(cfg: RhizoConfig): string =
+  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("RHIZO_SESSION_ID", "")
   if sid.startsWith("opencode:"): return "opencode"
   if sid.startsWith("pi:"): return "pi"
   if sid.startsWith("claude:"): return "claude"
@@ -711,7 +711,7 @@ proc detectHarness*(cfg: LocutusConfig): string =
 
   return "unknown"
 
-proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string = "json"): string =
+proc doDrain*(cfg: RhizoConfig, name: string, count: int = 50, format: string = "json"): string =
   var client = connectRedis(cfg.redisUrl)
   defer:
     try: client.close() except CatchableError: discard
@@ -756,7 +756,7 @@ proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string 
     try:
       parsed = parseJson(payloadStr.strip())
     except JsonParsingError:
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON payload from inbox")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping non-JSON payload from inbox")
       continue
 
     let id = parsed.getOrDefault("id").getStr("")
@@ -772,7 +772,7 @@ proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string 
     # Validate HMAC
     let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & body & "|" & ts
     if not verifyHmac(secret, canonical, sig):
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
       continue
 
     # Authenticated! Decrypt if required
@@ -782,7 +782,7 @@ proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string 
         parsed["body"] = %decryptedBody
         parsed["encrypted"] = %false
       except ValueError as e:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
         continue
 
     validMessages.add(parsed)
@@ -792,7 +792,7 @@ proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string 
       return ""
     var lines: seq[string] = @[]
     let plural = if validMessages.len == 1: "1 new message" else: $validMessages.len & " new messages"
-    lines.add("[LOCUTUS BUS] " & plural & " received on inbox for '" & name & "':")
+    lines.add("[RHIZO BUS] " & plural & " received on inbox for '" & name & "':")
     for m in validMessages:
       let fromA = m.getOrDefault("from").getStr("unknown")
       let subj = m.getOrDefault("subject").getStr("")
@@ -809,20 +809,20 @@ proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string 
     if validMessages.len > 0:
       let harness = detectHarness(cfg)
       lines.add("")
-      lines.add("[LOCUTUS NEXT-STEP ACTION]:")
+      lines.add("[RHIZO NEXT-STEP ACTION]:")
       lines.add("- After completing the task, reply using:")
-      lines.add("  locutus reply --to <sender> --subject \"Re: <subj>\" --body \"<result>\" --reply-to \"<id>\"")
+      lines.add("  rhizo reply --to <sender> --subject \"Re: <subj>\" --body \"<result>\" --reply-to \"<id>\"")
       if harness in ["opencode", "pi"]:
-        lines.add("- Note: Extension fiber automatically receives new tasks; DO NOT run a blocking 'locutus listen'.")
+        lines.add("- Note: Extension fiber automatically receives new tasks; DO NOT run a blocking 'rhizo listen'.")
       else:
         lines.add("- If you must immediately await the next task, append --listen:")
-        lines.add("  locutus reply ... --listen")
+        lines.add("  rhizo reply ... --listen")
         if harness == "codex":
           lines.add("- Codex subagents (SKILL.md Step 2b): Re-spawn one-shot listener subagent before concluding turn.")
         elif harness == "antigravity":
           lines.add("- Antigravity (SKILL.md Step 2d): Re-arm reactive listener via run_command or append --listen.")
       lines.add("- If disconnecting or shutting down, unregister cleanly:")
-      lines.add("  locutus close " & name)
+      lines.add("  rhizo close " & name)
       lines.add("- See SKILL.md Step 2 for complete harness-specific integration playbooks.")
     return lines.join("\n")
 
@@ -839,11 +839,11 @@ proc doDrain*(cfg: LocutusConfig, name: string, count: int = 50, format: string 
     arr.add(m)
   return $arr
 
-proc doUnregister*(cfg: LocutusConfig, name: string): string =
+proc doUnregister*(cfg: RhizoConfig, name: string): string =
   let saved = loadCurrentAgent()
   if saved == name or name.len == 0:
     clearCurrentAgent()
-  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("RHIZO_SESSION_ID", "")
   if sid.len > 0:
     removeLocalSessionMapping(sid)
     removeRedisSessionMapping(cfg, sid, name)
@@ -855,11 +855,11 @@ proc doUnregister*(cfg: LocutusConfig, name: string): string =
     discard
   return runLuaScript(cfg.redisUrl, unregisterLua, unregisterSha, [cfg.prefix, name])
 
-proc doTag*(cfg: LocutusConfig, name, action, tags: string): string =
+proc doTag*(cfg: RhizoConfig, name, action, tags: string): string =
   return runLuaScript(cfg.redisUrl, tagLua, tagSha, [cfg.prefix, name, action, tags])
 
 proc cleanupOldTmpFiles*() =
-  let tmpDir = getHomeDir() / ".config" / "locutus" / "tmp"
+  let tmpDir = getHomeDir() / ".config" / "rhizo" / "tmp"
   if dirExists(tmpDir):
     let nowUnix = getTime().toUnix()
     for kind, path in walkDir(tmpDir):
@@ -917,15 +917,15 @@ proc formatDirectoryJson*(raw: string): string =
         list.add(obj)
   return $list
 
-proc doDirectory*(cfg: LocutusConfig, filterTag: string = "", asJson: bool = false): string =
+proc doDirectory*(cfg: RhizoConfig, filterTag: string = "", asJson: bool = false): string =
   let raw = runLuaScript(cfg.redisUrl, directoryLua, directorySha, [cfg.prefix, filterTag])
   if asJson:
     return formatDirectoryJson(raw)
   return formatDirectory(raw)
 
-proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false)
+proc doListen*(cfg: RhizoConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false)
 
-proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = false, listenTimeoutSec: int = -1) =
+proc doOpen*(cfg: RhizoConfig, optName, optTags: string, rearmListen: bool = false, listenTimeoutSec: int = -1) =
   cleanupOldTmpFiles()
   randomize()
   var client = connectRedis(cfg.redisUrl)
@@ -956,7 +956,7 @@ proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = f
     cfg.project
 
   saveCurrentAgent(name)
-  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+  let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("RHIZO_SESSION_ID", "")
   if sid.len > 0:
     saveLocalSessionMapping(sid, name)
     setRedisSessionMapping(cfg, sid, name)
@@ -965,7 +965,7 @@ proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = f
   let backlog = doDrain(cfg, name, 50)
 
   echo "===================================================="
-  echo "[LOCUTUS BUS] Registered Successfully"
+  echo "[RHIZO BUS] Registered Successfully"
   echo "- Agent Name : ", name
   if sid.len > 0:
     echo "- Session ID : ", sid
@@ -984,12 +984,12 @@ proc doOpen*(cfg: LocutusConfig, optName, optTags: string, rearmListen: bool = f
   if rearmListen:
     let (alreadyListening, existingPid, existingHost) = getActiveListenerInfo(cfg, name)
     if alreadyListening:
-      stderr.writeLine("[LOCUTUS LISTENER] Listener already active for agent '" & name & "' (PID " & $existingPid & " on " & existingHost & "). Skipping duplicate listener.")
+      stderr.writeLine("[RHIZO LISTENER] Listener already active for agent '" & name & "' (PID " & $existingPid & " on " & existingHost & "). Skipping duplicate listener.")
     else:
-      stderr.writeLine("[LOCUTUS LISTENER] Entering listening mode for agent '" & name & "'...")
+      stderr.writeLine("[RHIZO LISTENER] Entering listening mode for agent '" & name & "'...")
       doListen(cfg, name, listenTimeoutSec)
 
-proc doSend*(cfg: LocutusConfig, toAgent, msgType, fromAgent, subject, body: string,
+proc doSend*(cfg: RhizoConfig, toAgent, msgType, fromAgent, subject, body: string,
             tags: seq[string] = @[], replyTo: string = "", msgId: string = "", isBroadcast: bool = false,
             customTs: string = "", echoResult: bool = true, rearmListen: bool = false, listenTimeoutSec: int = -1,
             urgency: string = "soon"): string =
@@ -1073,9 +1073,9 @@ proc doSend*(cfg: LocutusConfig, toAgent, msgType, fromAgent, subject, body: str
       quit(1)
     let (alreadyListening, existingPid, existingHost) = getActiveListenerInfo(cfg, listenerAgent)
     if alreadyListening:
-      stderr.writeLine("[LOCUTUS BUS] Message sent to " & toAgent & ". Active listener already running for " & listenerAgent & " (PID " & $existingPid & " on " & existingHost & "); skipping duplicate listener.")
+      stderr.writeLine("[RHIZO BUS] Message sent to " & toAgent & ". Active listener already running for " & listenerAgent & " (PID " & $existingPid & " on " & existingHost & "); skipping duplicate listener.")
       return res
-    stderr.writeLine("[LOCUTUS BUS] Message sent to " & toAgent & ". Now listening on inbox for " & listenerAgent & "...")
+    stderr.writeLine("[RHIZO BUS] Message sent to " & toAgent & ". Now listening on inbox for " & listenerAgent & "...")
     doListen(cfg, listenerAgent, listenTimeoutSec)
 
   return res
@@ -1107,7 +1107,7 @@ proc sendDesktopNotification*(msgNode: JsonNode) =
   except Exception:
     discard
 
-proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false) =
+proc doListen*(cfg: RhizoConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false) =
   let secret = getSecret(cfg)
   let inboxKey = cfg.prefix & "inbox:" & name
   let isForever = (timeoutSec <= 0 and (timeoutSec == 0 or cfg.listenTimeout <= 0))
@@ -1211,7 +1211,7 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
       try:
         parsed = parseJson(payloadStr)
       except JsonParsingError:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON payload from inbox")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping non-JSON payload from inbox")
         if not isForever:
           let elapsed = int(getTime().toUnix() - startTime)
           remaining = max(0, effectiveTimeout - elapsed)
@@ -1230,7 +1230,7 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
       # Validate HMAC
       let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & body & "|" & ts
       if not verifyHmac(secret, canonical, sig):
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
         if not isForever:
           let elapsed = int(getTime().toUnix() - startTime)
           remaining = max(0, effectiveTimeout - elapsed)
@@ -1243,7 +1243,7 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
           parsed["body"] = %decryptedBody
           parsed["encrypted"] = %false
         except ValueError as e:
-          stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
+          stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
           if not isForever:
             let elapsed = int(getTime().toUnix() - startTime)
             remaining = max(0, effectiveTimeout - elapsed)
@@ -1252,7 +1252,7 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
       if notify:
         sendDesktopNotification(parsed)
       echo $parsed
-      if not quiet and getEnv("LOCUTUS_QUIET", "0") notin ["1", "true", "yes"]:
+      if not quiet and getEnv("RHIZO_QUIET", "0") notin ["1", "true", "yes"]:
         let harness = detectHarness(cfg)
         let replySubj = if subject.toLowerAscii.startsWith("re:"): subject else: "Re: " & subject
         stderr.writeLine("\n[LOCU LIFECYCLE NOTICE] Listener for '" & name & "' delivered message '" & id & "' and EXITED.")
@@ -1260,34 +1260,34 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
         stderr.writeLine("- Expected follow-up action:")
         case harness
         of "opencode", "pi":
-          stderr.writeLine("  1. In-process extension fiber is active. DO NOT run a blocking 'locu listen'.")
+          stderr.writeLine("  1. In-process extension fiber is active. DO NOT run a blocking 'rhizo listen'.")
           stderr.writeLine("  2. Reply when task completes:")
-          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("     rhizo reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locu close " & name)
+          stderr.writeLine("     rhizo close " & name)
         of "codex":
           stderr.writeLine("  1. Reply to sender when finished:")
-          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("     rhizo reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
           stderr.writeLine("  2. Subagent ear discipline: dispatch a fresh one-shot listener subagent before concluding your turn:")
-          stderr.writeLine("     locu listen " & name)
+          stderr.writeLine("     rhizo listen " & name)
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locu close " & name)
+          stderr.writeLine("     rhizo close " & name)
         of "antigravity":
           stderr.writeLine("  1. Reply to sender when finished:")
-          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
+          stderr.writeLine("     rhizo reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
           stderr.writeLine("  2. Native daemon reactive pattern: launch background listener task via run_command(..., IsDaemon=true):")
-          stderr.writeLine("     locu listen " & name)
+          stderr.writeLine("     rhizo listen " & name)
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locu close " & name)
+          stderr.writeLine("     rhizo close " & name)
         else: # claude, cursor, copilot, unknown
           stderr.writeLine("  1. When finished, reply and re-arm atomically in one command:")
-          stderr.writeLine("     locu reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\" --listen")
+          stderr.writeLine("     rhizo reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\" --listen")
           stderr.writeLine("  2. If no reply is needed, wait for next task (zero-timeout infinite wait):")
-          stderr.writeLine("     locu listen " & name)
+          stderr.writeLine("     rhizo listen " & name)
           stderr.writeLine("  3. If running inside a background subagent (e.g. Claude Task(background=true)): exit now to deliver payload to parent.")
           stderr.writeLine("  4. If disconnecting or finishing session work completely:")
-          stderr.writeLine("     locu close " & name)
-        stderr.writeLine("(To silence this notice, pass --quiet / -q, or set LOCUTUS_QUIET=1)")
+          stderr.writeLine("     rhizo close " & name)
+        stderr.writeLine("(To silence this notice, pass --quiet / -q, or set RHIZO_QUIET=1)")
       return
   finally:
     unregisterCleanup(listenerKey)
@@ -1300,11 +1300,11 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
     except Exception:
       discard
 
-proc doStatus*(cfg: LocutusConfig, name, state: string, activity: string = ""): string =
+proc doStatus*(cfg: RhizoConfig, name, state: string, activity: string = ""): string =
   let effectiveTtl = if cfg.heartbeatTtl > 0: cfg.heartbeatTtl else: 150
   return runLuaScript(cfg.redisUrl, statusLua, statusSha, [cfg.prefix, name, state.toLowerAscii, activity, $effectiveTtl])
 
-proc doLock*(cfg: LocutusConfig, lockName: string, ttlSec: int = 30, withFencing: bool = false, rawOutput: bool = false): (string, int) =
+proc doLock*(cfg: RhizoConfig, lockName: string, ttlSec: int = 30, withFencing: bool = false, rawOutput: bool = false): (string, int) =
   let owner = getActiveAgentName(cfg, "")
   let fencingArg = if withFencing: "1" else: "0"
   let res = runLuaScript(cfg.redisUrl, lockLua, lockSha, [cfg.prefix, lockName, owner, $ttlSec, fencingArg])
@@ -1320,7 +1320,7 @@ proc doLock*(cfg: LocutusConfig, lockName: string, ttlSec: int = 30, withFencing
   else:
     return ("Error: Lock '" & lockName & "' is already held.", 1)
 
-proc doUnlock*(cfg: LocutusConfig, lockName: string): (string, int) =
+proc doUnlock*(cfg: RhizoConfig, lockName: string): (string, int) =
   let owner = getActiveAgentName(cfg, "")
   let res = runLuaScript(cfg.redisUrl, unlockLua, unlockSha, [cfg.prefix, lockName, owner])
   if res == "1":
@@ -1328,7 +1328,7 @@ proc doUnlock*(cfg: LocutusConfig, lockName: string): (string, int) =
   else:
     return ("Error: Cannot unlock '" & lockName & "': not owner or lock not found.", 1)
 
-proc doEnqueue*(cfg: LocutusConfig, queueName, msgType, fromAgent, subject, body: string,
+proc doEnqueue*(cfg: RhizoConfig, queueName, msgType, fromAgent, subject, body: string,
                 tags: seq[string] = @[], replyTo: string = "", msgId: string = "", customTs: string = ""): string =
   randomize()
   let secret = getSecret(cfg)
@@ -1370,7 +1370,7 @@ proc doEnqueue*(cfg: LocutusConfig, queueName, msgType, fromAgent, subject, body
   discard runLuaScript(cfg.redisUrl, enqueueLua, enqueueSha, [cfg.prefix, queueName, msgJson, $effectiveTtl])
   return id
 
-proc isRunCancelled*(client: Redis, cfg: LocutusConfig, runId: string): bool =
+proc isRunCancelled*(client: Redis, cfg: RhizoConfig, runId: string): bool =
   if runId.len == 0 or client == nil: return false
   try:
     let res = client.get(cfg.prefix & "cancel:" & runId)
@@ -1388,7 +1388,7 @@ proc isRunCancelled*(client: Redis, cfg: LocutusConfig, runId: string): bool =
     discard
   return false
 
-proc isRunCancelled*(cfg: LocutusConfig, runId: string): bool =
+proc isRunCancelled*(cfg: RhizoConfig, runId: string): bool =
   if runId.len == 0: return false
   var client: Redis
   try:
@@ -1399,7 +1399,7 @@ proc isRunCancelled*(cfg: LocutusConfig, runId: string): bool =
     try: client.close() except CatchableError: discard
   return isRunCancelled(client, cfg, runId)
 
-proc doWork*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, runId: string = "") =
+proc doWork*(cfg: RhizoConfig, queueName: string, timeoutSec: int = -1, runId: string = "") =
   let secret = getSecret(cfg)
   let queueKey = if queueName.startsWith("dlq:"):
                    cfg.prefix & "queue:dlq:{" & queueName[4..^1] & "}"
@@ -1467,7 +1467,7 @@ proc doWork*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, runId:
     try:
       parsed = parseJson(payloadStr)
     except JsonParsingError:
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON payload from queue")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping non-JSON payload from queue")
       if not isForever:
         let elapsed = int(getTime().toUnix() - startTime)
         remaining = max(0, effectiveTimeout - elapsed)
@@ -1486,7 +1486,7 @@ proc doWork*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, runId:
     # Validate HMAC
     let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & body & "|" & ts
     if not verifyHmac(secret, canonical, sig):
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered message (ID: " & id & ")")
       if not isForever:
         let elapsed = int(getTime().toUnix() - startTime)
         remaining = max(0, effectiveTimeout - elapsed)
@@ -1499,7 +1499,7 @@ proc doWork*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, runId:
         parsed["body"] = %decryptedBody
         parsed["encrypted"] = %false
       except ValueError as e:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted/undecryptable message: " & e.msg & " (ID: " & id & ")")
         if not isForever:
           let elapsed = int(getTime().toUnix() - startTime)
           remaining = max(0, effectiveTimeout - elapsed)
@@ -1508,9 +1508,9 @@ proc doWork*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, runId:
     echo $parsed
     return
 
-proc doAck*(cfg: LocutusConfig, queueName, taskId: string): int
+proc doAck*(cfg: RhizoConfig, queueName, taskId: string): int
 
-proc doClaim*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, leaseSec: int = 120, rawOutput: bool = false, runId: string = "") =
+proc doClaim*(cfg: RhizoConfig, queueName: string, timeoutSec: int = -1, leaseSec: int = 120, rawOutput: bool = false, runId: string = "") =
   let secret = getSecret(cfg)
   let workerName = getActiveAgentName(cfg, "")
   let isForever = (timeoutSec <= 0 and (timeoutSec == 0 or cfg.listenTimeout <= 0))
@@ -1584,7 +1584,7 @@ proc doClaim*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, lease
       try:
         parsed = parseJson(res.strip())
       except JsonParsingError:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON claimed task")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping non-JSON claimed task")
         quit(1)
 
       let id = parsed.getOrDefault("id").getStr("")
@@ -1605,7 +1605,7 @@ proc doClaim*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, lease
 
       let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & body & "|" & ts
       if not verifyHmac(secret, canonical, sig):
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered task (ID: " & id & ")")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered task (ID: " & id & ")")
         quit(1)
 
       if isEncrypted:
@@ -1614,7 +1614,7 @@ proc doClaim*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, lease
           parsed["body"] = %decryptedBody
           parsed["encrypted"] = %false
         except ValueError as e:
-          stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted task: " & e.msg)
+          stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted task: " & e.msg)
           quit(1)
 
       if rawOutput:
@@ -1642,7 +1642,7 @@ proc doClaim*(cfg: LocutusConfig, queueName: string, timeoutSec: int = -1, lease
     sleep(sleepTime)
     backoffMs = min(2000, backoffMs * 2)
 
-proc doAck*(cfg: LocutusConfig, queueName, taskId: string): int =
+proc doAck*(cfg: RhizoConfig, queueName, taskId: string): int =
   let resStr = runLuaScript(cfg.redisUrl, ackLua, ackSha, [cfg.prefix, queueName, taskId])
   var res = 0
   try:
@@ -1656,7 +1656,7 @@ proc doAck*(cfg: LocutusConfig, queueName, taskId: string): int =
     stderr.writeLine("Warning: Task " & taskId & " not found or already acknowledged.")
   return res
 
-proc doClaimRenew*(cfg: LocutusConfig, queueName, taskId: string, leaseSec: int = 120) =
+proc doClaimRenew*(cfg: RhizoConfig, queueName, taskId: string, leaseSec: int = 120) =
   let res = runLuaScript(cfg.redisUrl, claimRenewLua, claimRenewSha, [cfg.prefix, queueName, taskId, $leaseSec])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
@@ -1664,7 +1664,7 @@ proc doClaimRenew*(cfg: LocutusConfig, queueName, taskId: string, leaseSec: int 
   echo res
 
 
-proc decryptBlackboardValue(raw: string, secret: string, cfg: LocutusConfig, contextMsg: string): string =
+proc decryptBlackboardValue(raw: string, secret: string, cfg: RhizoConfig, contextMsg: string): string =
   if not raw.startsWith("aes256:"):
     return raw
   let parts = raw.split(":")
@@ -1672,22 +1672,22 @@ proc decryptBlackboardValue(raw: string, secret: string, cfg: LocutusConfig, con
     let sig = parts[1]
     let cipher = parts[2..^1].join(":")
     if not verifyHmac(secret, cipher, sig):
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered blackboard entry: " & contextMsg)
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered blackboard entry: " & contextMsg)
       quit(1)
     try:
       return decryptAes(cipher, secret, cfg)
     except ValueError as e:
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted blackboard entry: " & e.msg)
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted blackboard entry: " & e.msg)
       quit(1)
   elif parts.len == 2:
     try:
       return decryptAes(parts[1], secret, cfg)
     except ValueError as e:
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted blackboard entry: " & e.msg)
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted blackboard entry: " & e.msg)
       quit(1)
   return raw
 
-proc doBlackboard*(cfg: LocutusConfig, action, room: string, key: string = "", val: string = "", ttlSec: int = -1): string =
+proc doBlackboard*(cfg: RhizoConfig, action, room: string, key: string = "", val: string = "", ttlSec: int = -1): string =
   let effectiveTtl = if ttlSec >= 0: ttlSec else: (if cfg.messageTtl > 0: cfg.messageTtl else: 604800)
   let secret = getSecret(cfg)
   var finalVal = val
@@ -1754,7 +1754,7 @@ proc doBlackboard*(cfg: LocutusConfig, action, room: string, key: string = "", v
 
   return trimmed
 
-proc doBlackboardLoad*(cfg: LocutusConfig, room, snapshotJson: string, ttlSec: int = 0): string =
+proc doBlackboardLoad*(cfg: RhizoConfig, room, snapshotJson: string, ttlSec: int = 0): string =
   var parsed: JsonNode
   try:
     parsed = parseJson(snapshotJson)
@@ -1801,7 +1801,7 @@ proc doBlackboardLoad*(cfg: LocutusConfig, room, snapshotJson: string, ttlSec: i
     quit(1)
   return res
 
-proc doFloorRequest*(cfg: LocutusConfig, room, agentName: string, waitSec: int = 0, leaseSec: int = 60) =
+proc doFloorRequest*(cfg: RhizoConfig, room, agentName: string, waitSec: int = 0, leaseSec: int = 60) =
   let startTime = getTime().toUnix()
   var remaining = waitSec
 
@@ -1838,7 +1838,7 @@ proc doFloorRequest*(cfg: LocutusConfig, room, agentName: string, waitSec: int =
   stderr.writeLine("Timeout waiting for floor in " & room & ". Currently held by " & holder)
   quit(1)
 
-proc doFloorYield*(cfg: LocutusConfig, room, agentName: string, force: bool = false, leaseSec: int = 60) =
+proc doFloorYield*(cfg: RhizoConfig, room, agentName: string, force: bool = false, leaseSec: int = 60) =
   let forceArg = if force: "force" else: ""
   let res = runLuaScript(cfg.redisUrl, floorLua, floorSha, [cfg.prefix, "yield", room, agentName, forceArg, $leaseSec])
   if res.startsWith("ERR:"):
@@ -1846,7 +1846,7 @@ proc doFloorYield*(cfg: LocutusConfig, room, agentName: string, force: bool = fa
     quit(1)
   echo res
 
-proc doFloorPass*(cfg: LocutusConfig, room, agentName, targetAgent: string, force: bool = false, leaseSec: int = 60) =
+proc doFloorPass*(cfg: RhizoConfig, room, agentName, targetAgent: string, force: bool = false, leaseSec: int = 60) =
   let forceArg = if force: "force" else: ""
   let res = runLuaScript(cfg.redisUrl, floorLua, floorSha, [cfg.prefix, "pass", room, agentName, targetAgent, $leaseSec, forceArg])
   if res.startsWith("ERR:"):
@@ -1854,11 +1854,11 @@ proc doFloorPass*(cfg: LocutusConfig, room, agentName, targetAgent: string, forc
     quit(1)
   echo res
 
-proc doFloorStatus*(cfg: LocutusConfig, room: string) =
+proc doFloorStatus*(cfg: RhizoConfig, room: string) =
   let res = runLuaScript(cfg.redisUrl, floorLua, floorSha, [cfg.prefix, "status", room])
   echo res
 
-proc doCancelSet*(cfg: LocutusConfig, runId, reason, byAgent: string, ttlSec: int = 3600) =
+proc doCancelSet*(cfg: RhizoConfig, runId, reason, byAgent: string, ttlSec: int = 3600) =
   let secret = getSecret(cfg)
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let canonical = runId & "|" & reason & "|" & byAgent & "|" & ts
@@ -1877,7 +1877,7 @@ proc doCancelSet*(cfg: LocutusConfig, runId, reason, byAgent: string, ttlSec: in
   n["cancelled"] = %true
   echo $n
 
-proc doCancelCheck*(cfg: LocutusConfig, runId: string, rawOutput: bool = false, exitCodeOnUncancelled: bool = false) =
+proc doCancelCheck*(cfg: RhizoConfig, runId: string, rawOutput: bool = false, exitCodeOnUncancelled: bool = false) =
   let res = runLuaScript(cfg.redisUrl, cancelLua, cancelSha, [cfg.prefix, "check", runId])
   if res.len == 0 or res == "(nil)":
     if exitCodeOnUncancelled:
@@ -1894,7 +1894,7 @@ proc doCancelCheck*(cfg: LocutusConfig, runId: string, rawOutput: bool = false, 
     let canonical = runId & "|" & reason & "|" & byAgent & "|" & ts
 
     if sig.len == 0 or not verifyHmac(secret, canonical, sig):
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered cancellation token (run_id: " & runId & ")")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered cancellation token (run_id: " & runId & ")")
       if exitCodeOnUncancelled:
         quit(1)
       return
@@ -1908,14 +1908,14 @@ proc doCancelCheck*(cfg: LocutusConfig, runId: string, rawOutput: bool = false, 
       quit(1)
     return
 
-proc doCancelClear*(cfg: LocutusConfig, runId: string) =
+proc doCancelClear*(cfg: RhizoConfig, runId: string) =
   let res = runLuaScript(cfg.redisUrl, cancelLua, cancelSha, [cfg.prefix, "clear", runId])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
     quit(1)
   echo res
 
-proc doBallotOpen*(cfg: LocutusConfig, ballotId, options, voters: string, ttlSec: int = 3600) =
+proc doBallotOpen*(cfg: RhizoConfig, ballotId, options, voters: string, ttlSec: int = 3600) =
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let res = runLuaScript(cfg.redisUrl, ballotLua, ballotSha, [cfg.prefix, "open", ballotId, options, voters, $ttlSec, ts])
   if res.startsWith("ERR:"):
@@ -1923,7 +1923,7 @@ proc doBallotOpen*(cfg: LocutusConfig, ballotId, options, voters: string, ttlSec
     quit(1)
   echo res
 
-proc doBallotCast*(cfg: LocutusConfig, ballotId, voter, choice: string) =
+proc doBallotCast*(cfg: RhizoConfig, ballotId, voter, choice: string) =
   let secret = getSecret(cfg)
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let canonical = voter & "|" & ballotId & "|" & choice & "|" & ts
@@ -1934,7 +1934,7 @@ proc doBallotCast*(cfg: LocutusConfig, ballotId, voter, choice: string) =
     quit(1)
   echo res
 
-proc doBallotTally*(cfg: LocutusConfig, ballotId: string, closeBallot: bool = false, rawOutput: bool = false) =
+proc doBallotTally*(cfg: RhizoConfig, ballotId: string, closeBallot: bool = false, rawOutput: bool = false) =
   let closeArg = if closeBallot: "close" else: ""
   let res = runLuaScript(cfg.redisUrl, ballotLua, ballotSha, [cfg.prefix, "tally", ballotId, closeArg])
   if res.startsWith("ERR:"):
@@ -1975,7 +1975,7 @@ proc doBallotTally*(cfg: LocutusConfig, ballotId: string, closeBallot: bool = fa
         let curr = verifiedTally.getOrDefault(choice).getInt(0)
         verifiedTally[choice] = %(curr + 1)
       else:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Discarding unauthenticated/tampered vote from voter: " & voter)
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Discarding unauthenticated/tampered vote from voter: " & voter)
 
     parsed["total_votes"] = %verifiedTotal
     parsed["tally"] = verifiedTally
@@ -1995,14 +1995,14 @@ proc doBallotTally*(cfg: LocutusConfig, ballotId: string, closeBallot: bool = fa
   else:
     echo $parsed
 
-proc doBallotStatus*(cfg: LocutusConfig, ballotId: string) =
+proc doBallotStatus*(cfg: RhizoConfig, ballotId: string) =
   let res = runLuaScript(cfg.redisUrl, ballotLua, ballotSha, [cfg.prefix, "status", ballotId])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
     quit(1)
   echo res
 
-proc doLeaderAcquire*(cfg: LocutusConfig, role, agentName: string, leaseSec: int = 30) =
+proc doLeaderAcquire*(cfg: RhizoConfig, role, agentName: string, leaseSec: int = 30) =
   let secret = getSecret(cfg)
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let canonical = role & "|" & agentName & "|" & ts & "|" & $leaseSec
@@ -2027,10 +2027,10 @@ proc doLeaderAcquire*(cfg: LocutusConfig, role, agentName: string, leaseSec: int
         let exSig = parsed.getOrDefault("sig").getStr("")
         let exCanonical = role & "|" & exLeader & "|" & exTs & "|" & $exLease
         if exSig.len == 0 or not verifyHmac(secret, exCanonical, exSig):
-          stderr.writeLine("[LOCUTUS SECURITY] WARNING: Preempting unauthenticated/forged leader key for role: " & role)
+          stderr.writeLine("[RHIZO SECURITY] WARNING: Preempting unauthenticated/forged leader key for role: " & role)
           res = runLuaScript(cfg.redisUrl, leaderLua, leaderSha, [cfg.prefix, "acquire", role, agentName, $leaseSec, ts, sig, "force"])
       except JsonParsingError:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Preempting corrupt leader key for role: " & role)
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Preempting corrupt leader key for role: " & role)
         res = runLuaScript(cfg.redisUrl, leaderLua, leaderSha, [cfg.prefix, "acquire", role, agentName, $leaseSec, ts, sig, "force"])
 
   if res.startsWith("HELD:") or res.startsWith("ERR:"):
@@ -2038,7 +2038,7 @@ proc doLeaderAcquire*(cfg: LocutusConfig, role, agentName: string, leaseSec: int
     quit(1)
   echo res
 
-proc doLeaderRenew*(cfg: LocutusConfig, role, agentName: string, leaseSec: int = 30) =
+proc doLeaderRenew*(cfg: RhizoConfig, role, agentName: string, leaseSec: int = 30) =
   let secret = getSecret(cfg)
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let canonical = role & "|" & agentName & "|" & ts & "|" & $leaseSec
@@ -2049,14 +2049,14 @@ proc doLeaderRenew*(cfg: LocutusConfig, role, agentName: string, leaseSec: int =
     quit(1)
   echo res
 
-proc doLeaderResign*(cfg: LocutusConfig, role, agentName: string) =
+proc doLeaderResign*(cfg: RhizoConfig, role, agentName: string) =
   let res = runLuaScript(cfg.redisUrl, leaderLua, leaderSha, [cfg.prefix, "resign", role, agentName])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
     quit(1)
   echo res
 
-proc doLeaderStatus*(cfg: LocutusConfig, role: string) =
+proc doLeaderStatus*(cfg: RhizoConfig, role: string) =
   let res = runLuaScript(cfg.redisUrl, leaderLua, leaderSha, [cfg.prefix, "status", role])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
@@ -2073,7 +2073,7 @@ proc doLeaderStatus*(cfg: LocutusConfig, role: string) =
       let exSig = parsed.getOrDefault("sig").getStr("")
       let canonical = role & "|" & leader & "|" & exTs & "|" & $exLease
       if exSig.len == 0 or not verifyHmac(secret, canonical, exSig):
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered leader key for role: " & role)
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered leader key for role: " & role)
         var vacant = newJObject()
         vacant["role"] = %role
         vacant["leader"] = %""
@@ -2085,7 +2085,7 @@ proc doLeaderStatus*(cfg: LocutusConfig, role: string) =
   except JsonParsingError:
     echo res
 
-proc doWorkflowDefine*(cfg: LocutusConfig, flowId, steps, deps: string, ttlSec: int = 86400) =
+proc doWorkflowDefine*(cfg: RhizoConfig, flowId, steps, deps: string, ttlSec: int = 86400) =
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let res = runLuaScript(cfg.redisUrl, workflowLua, workflowSha, [cfg.prefix, "define", flowId, steps, deps, $ttlSec, ts])
   if res.startsWith("ERR:"):
@@ -2093,7 +2093,7 @@ proc doWorkflowDefine*(cfg: LocutusConfig, flowId, steps, deps: string, ttlSec: 
     quit(1)
   echo res
 
-proc doWorkflowNext*(cfg: LocutusConfig, flowId: string, rawOutput: bool = false) =
+proc doWorkflowNext*(cfg: RhizoConfig, flowId: string, rawOutput: bool = false) =
   let res = runLuaScript(cfg.redisUrl, workflowLua, workflowSha, [cfg.prefix, "next", flowId])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
@@ -2109,7 +2109,7 @@ proc doWorkflowNext*(cfg: LocutusConfig, flowId: string, rawOutput: bool = false
   else:
     echo res
 
-proc doWorkflowResolve*(cfg: LocutusConfig, flowId, step, output: string, rawOutput: bool = false) =
+proc doWorkflowResolve*(cfg: RhizoConfig, flowId, step, output: string, rawOutput: bool = false) =
   let ts = now().utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
   let secret = getSecret(cfg)
   var finalOutput = output
@@ -2130,14 +2130,14 @@ proc doWorkflowResolve*(cfg: LocutusConfig, flowId, step, output: string, rawOut
   else:
     echo res
 
-proc doWorkflowFail*(cfg: LocutusConfig, flowId, step, reason: string) =
+proc doWorkflowFail*(cfg: RhizoConfig, flowId, step, reason: string) =
   let res = runLuaScript(cfg.redisUrl, workflowLua, workflowSha, [cfg.prefix, "fail", flowId, step, reason])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
     quit(1)
   echo res
 
-proc doWorkflowStatus*(cfg: LocutusConfig, flowId: string, rawOutput: bool = false) =
+proc doWorkflowStatus*(cfg: RhizoConfig, flowId: string, rawOutput: bool = false) =
   let res = runLuaScript(cfg.redisUrl, workflowLua, workflowSha, [cfg.prefix, "status", flowId])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
@@ -2174,7 +2174,7 @@ proc doWorkflowStatus*(cfg: LocutusConfig, flowId: string, rawOutput: bool = fal
   else:
     echo $parsed
 
-proc doWorkflowExport*(cfg: LocutusConfig, flowId: string, outputFile: string = "") =
+proc doWorkflowExport*(cfg: RhizoConfig, flowId: string, outputFile: string = "") =
   let res = runLuaScript(cfg.redisUrl, workflowLua, workflowSha, [cfg.prefix, "status", flowId])
   if res.startsWith("ERR:"):
     stderr.writeLine(res)
@@ -2208,7 +2208,7 @@ proc doWorkflowExport*(cfg: LocutusConfig, flowId: string, outputFile: string = 
   else:
     echo formatted
 
-proc doWorkflowImport*(cfg: LocutusConfig, flowId, fileOrJson: string, ttlSec: int = 0) =
+proc doWorkflowImport*(cfg: RhizoConfig, flowId, fileOrJson: string, ttlSec: int = 0) =
   var rawJson = fileOrJson
   if fileExists(fileOrJson):
     try:
@@ -2249,7 +2249,7 @@ proc doWorkflowImport*(cfg: LocutusConfig, flowId, fileOrJson: string, ttlSec: i
     quit(1)
   echo res
 
-proc doSweep*(cfg: LocutusConfig, dryRun: bool = false, rawOutput: bool = false) =
+proc doSweep*(cfg: RhizoConfig, dryRun: bool = false, rawOutput: bool = false) =
   let action = if dryRun: "audit" else: "prune"
   let dryRunArg = if dryRun: "1" else: "0"
   let res = runLuaScript(cfg.redisUrl, sweepLua, sweepSha, [cfg.prefix, action, dryRunArg])
@@ -2317,7 +2317,7 @@ proc doSweep*(cfg: LocutusConfig, dryRun: bool = false, rawOutput: bool = false)
     }
     echo $outObj
 
-proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, timeoutSec: int = 30, rawOutput: bool = false, urgency: string = "soon") =
+proc doRequest*(cfg: RhizoConfig, toAgent, fromAgent, subject, body: string, timeoutSec: int = 30, rawOutput: bool = false, urgency: string = "soon") =
   randomize()
   let secret = getSecret(cfg)
   let reqId = "req_" & $getTime().toUnix() & "_" & fromAgent & "_" & $rand(1000..9999)
@@ -2351,7 +2351,7 @@ proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, t
     try:
       parsed = parseJson(payloadStr)
     except JsonParsingError:
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON payload from reply inbox")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping non-JSON payload from reply inbox")
       let elapsed = int(getTime().toUnix() - startTime)
       remaining = max(0, timeoutSec - elapsed)
       continue
@@ -2369,7 +2369,7 @@ proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, t
     # Validate HMAC
     let canonical = id & "|" & sender & "|" & toTarget & "|" & msgType & "|" & subj & "|" & bdy & "|" & ts
     if not verifyHmac(secret, canonical, sig):
-      stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered reply (ID: " & id & ")")
+      stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered reply (ID: " & id & ")")
       let elapsed = int(getTime().toUnix() - startTime)
       remaining = max(0, timeoutSec - elapsed)
       continue
@@ -2381,7 +2381,7 @@ proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, t
         parsed["body"] = %decryptedBody
         parsed["encrypted"] = %false
       except ValueError as e:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted/undecryptable reply: " & e.msg & " (ID: " & id & ")")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted/undecryptable reply: " & e.msg & " (ID: " & id & ")")
         let elapsed = int(getTime().toUnix() - startTime)
         remaining = max(0, timeoutSec - elapsed)
         continue
@@ -2395,7 +2395,7 @@ proc doRequest*(cfg: LocutusConfig, toAgent, fromAgent, subject, body: string, t
   stderr.writeLine("Error: Request timed out waiting for reply from " & toAgent)
   quit(1)
 
-proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
+proc doScatter*(cfg: RhizoConfig, targets, fromAgent, subject, body: string,
                quorum: int = -1, timeoutSec: int = 30, rawOutput: bool = false, urgency: string = "soon") =
   randomize()
   let secret = getSecret(cfg)
@@ -2474,7 +2474,7 @@ proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
       try:
         parsed = parseJson(payloadStr)
       except JsonParsingError:
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping non-JSON payload from scatter inbox")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping non-JSON payload from scatter inbox")
         let elapsed = int(getTime().toUnix() - startTime)
         remaining = max(0, timeoutSec - elapsed)
         continue
@@ -2492,7 +2492,7 @@ proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
       # Validate HMAC
       let rCanonical = id & "|" & sender & "|" & toTarget & "|" & msgType & "|" & subj & "|" & bdy & "|" & rts
       if not verifyHmac(secret, rCanonical, rsig):
-        stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered reply (ID: " & id & ")")
+        stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered reply (ID: " & id & ")")
         let elapsed = int(getTime().toUnix() - startTime)
         remaining = max(0, timeoutSec - elapsed)
         continue
@@ -2503,7 +2503,7 @@ proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
           parsed["body"] = %decryptedBody
           parsed["encrypted"] = %false
         except ValueError as e:
-          stderr.writeLine("[LOCUTUS SECURITY] WARNING: Dropping corrupted/undecryptable reply: " & e.msg & " (ID: " & id & ")")
+          stderr.writeLine("[RHIZO SECURITY] WARNING: Dropping corrupted/undecryptable reply: " & e.msg & " (ID: " & id & ")")
           let elapsed = int(getTime().toUnix() - startTime)
           remaining = max(0, timeoutSec - elapsed)
           continue
@@ -2529,7 +2529,7 @@ proc doScatter*(cfg: LocutusConfig, targets, fromAgent, subject, body: string,
       resArr.add(r)
     echo $resArr
 
-proc doPub*(cfg: LocutusConfig, channel, message: string): string =
+proc doPub*(cfg: RhizoConfig, channel, message: string): string =
   let fullChan = cfg.prefix & "channel:" & channel
   var client = connectRedis(cfg.redisUrl)
   defer:
@@ -2541,7 +2541,7 @@ proc doPub*(cfg: LocutusConfig, channel, message: string): string =
     stderr.writeLine("Redis error: " & e.msg)
     quit(1)
 
-proc doSub*(cfg: LocutusConfig, channel: string, timeoutSec: int = -1) =
+proc doSub*(cfg: RhizoConfig, channel: string, timeoutSec: int = -1) =
   let fullChan = cfg.prefix & "channel:" & channel
   proc asyncSub(): Future[string] {.async.} =
     let parsed = parseRedisUrl(cfg.redisUrl)
@@ -2707,8 +2707,6 @@ proc main() =
     echo "  rhizo config <show|get|path|init>"
     echo "  rhizo guide <install|uninstall|check> [path]"
     echo ""
-    echo "Command Aliases: rhizo, locu, locuti, locutus"
-    echo ""
     echo "Global Options:"
     echo "  --version, -v         Print version and exit"
     echo "  --profile <name>      Select configuration profile from config file"
@@ -2738,7 +2736,7 @@ proc main() =
         echo formatConfigTable(cfg)
     of "get":
       if args.len < 3:
-        stderr.writeLine("Usage: locutus config get <key>")
+        stderr.writeLine("Usage: rhizo config get <key>")
         quit(1)
       let key = args[2].toLowerAscii.replace("-", "_")
       case key
@@ -2782,7 +2780,7 @@ proc main() =
       echo res
     else:
       stderr.writeLine("Unknown config action: " & action)
-      stderr.writeLine("Usage: locutus config <show|get|path|init>")
+      stderr.writeLine("Usage: rhizo config <show|get|path|init>")
       quit(1)
 
   of "open", "register":
@@ -2844,7 +2842,7 @@ proc main() =
 
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
     if name.len == 0:
-      stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name ('locutus listen <name>'), or export LOCUTUS_AGENT_NAME=<name>.")
+      stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name ('rhizo listen <name>'), or export RHIZO_AGENT_NAME=<name>.")
       quit(1)
 
     if not forceListen:
@@ -2936,17 +2934,17 @@ proc main() =
       if not isBroadcast and toAgent.len == 0:
         stderr.writeLine("Error: Missing required argument '--to <recipient>'.")
         if isReply:
-          stderr.writeLine("Usage: locutus reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l] [--immediate|--soon]")
+          stderr.writeLine("Usage: rhizo reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l] [--immediate|--soon]")
         else:
-          stderr.writeLine("Usage: locutus send --to <recipient> --subject <subj> --body <body> [--listen/-l] [--immediate|--soon]")
+          stderr.writeLine("Usage: rhizo send --to <recipient> --subject <subj> --body <body> [--listen/-l] [--immediate|--soon]")
       else:
         stderr.writeLine("Error: Missing required arguments. --subject and --body are required.")
         if isReply:
-          stderr.writeLine("Usage: locutus reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l] [--immediate|--soon]")
+          stderr.writeLine("Usage: rhizo reply --to <recipient> --subject <subj> --body <body> [--reply-to <id>] [--listen/-l] [--immediate|--soon]")
         elif not isBroadcast:
-          stderr.writeLine("Usage: locutus send --to <recipient> --subject <subj> --body <body> [--listen/-l] [--immediate|--soon]")
+          stderr.writeLine("Usage: rhizo send --to <recipient> --subject <subj> --body <body> [--listen/-l] [--immediate|--soon]")
         else:
-          stderr.writeLine("Usage: locutus broadcast [--tags <tags>] --subject <subj> --body <body> [--immediate|--soon]")
+          stderr.writeLine("Usage: rhizo broadcast [--tags <tags>] --subject <subj> --body <body> [--immediate|--soon]")
       quit(1)
 
     discard doSend(cfg, toAgent, msgType, fromAgent, subject, body, tags, replyTo, msgId, isBroadcast, customTs, echoResult = true, rearmListen = rearmListen, listenTimeoutSec = listenTimeout, urgency = urgency)
@@ -2974,18 +2972,18 @@ proc main() =
   of "tag":
     if args.len < 3:
       stderr.writeLine("Error: Missing arguments for tag command.")
-      stderr.writeLine("Usage: locutus tag <add|remove|set> <tags> [name]")
+      stderr.writeLine("Usage: rhizo tag <add|remove|set> <tags> [name]")
       quit(1)
     let action = args[1].toLowerAscii
     if action notin ["add", "remove", "set"]:
       stderr.writeLine("Error: Invalid tag action '" & args[1] & "'. Expected add, remove, or set.")
-      stderr.writeLine("Usage: locutus tag <add|remove|set> <tags> [name]")
+      stderr.writeLine("Usage: rhizo tag <add|remove|set> <tags> [name]")
       quit(1)
     let tags = args[2]
     let explicitName = if args.len > 3: args[3] else: ""
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
     if name.len == 0:
-      stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+      stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
       quit(1)
     echo doTag(cfg, name, action, tags)
 
@@ -2993,7 +2991,7 @@ proc main() =
     let explicitName = if args.len > 1: args[1] else: ""
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
     if name.len == 0:
-      stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+      stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
       quit(1)
     let count = doCheckInbox(cfg, name)
     echo count
@@ -3025,7 +3023,7 @@ proc main() =
             count = parseInt(a)
           except ValueError:
             stderr.writeLine("Error: Invalid count '" & a & "' for drain command. Expected an integer.")
-            stderr.writeLine("Usage: locutus drain [count] [name]")
+            stderr.writeLine("Usage: rhizo drain [count] [name]")
             quit(1)
         elif positionalIdx == 2:
           explicitName = a
@@ -3033,7 +3031,7 @@ proc main() =
 
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
     if name.len == 0:
-      stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+      stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
       quit(1)
     let output = doDrain(cfg, name, count, format)
     if format == "hook" and output.len == 0:
@@ -3044,7 +3042,7 @@ proc main() =
   of "close", "unregister":
     let explicitName = if args.len > 1: args[1] else: ""
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
-    let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("LOCUTUS_SESSION_ID", "")
+    let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("RHIZO_SESSION_ID", "")
     if sid.len > 0:
       removeLocalSessionMapping(sid)
       removeRedisSessionMapping(cfg, sid, name)
@@ -3055,19 +3053,19 @@ proc main() =
 
   of "session":
     if args.len < 2:
-      stderr.writeLine("Usage: locutus session <set|get|remove|list> [args...]")
-      stderr.writeLine("  locutus session set <prefix:session_id> <agent_name>")
-      stderr.writeLine("  locutus session get <prefix:session_id>")
-      stderr.writeLine("  locutus session remove <prefix:session_id>")
-      stderr.writeLine("  locutus session list [--json]")
+      stderr.writeLine("Usage: rhizo session <set|get|remove|list> [args...]")
+      stderr.writeLine("  rhizo session set <prefix:session_id> <agent_name>")
+      stderr.writeLine("  rhizo session get <prefix:session_id>")
+      stderr.writeLine("  rhizo session remove <prefix:session_id>")
+      stderr.writeLine("  rhizo session list [--json]")
       quit(1)
 
     let action = args[1].toLowerAscii
     case action
     of "set":
       if args.len < 4:
-        stderr.writeLine("Error: 'locutus session set' requires <session_key> and <agent_name>")
-        stderr.writeLine("Example: locutus session set opencode:ses_123 worker-agent")
+        stderr.writeLine("Error: 'rhizo session set' requires <session_key> and <agent_name>")
+        stderr.writeLine("Example: rhizo session set opencode:ses_123 worker-agent")
         quit(1)
       let key = args[2]
       let agent = args[3]
@@ -3077,7 +3075,7 @@ proc main() =
 
     of "get":
       if args.len < 3:
-        stderr.writeLine("Error: 'locutus session get' requires <session_key>")
+        stderr.writeLine("Error: 'rhizo session get' requires <session_key>")
         quit(1)
       let key = args[2]
       var agent = getLocalSessionAgent(key)
@@ -3090,7 +3088,7 @@ proc main() =
 
     of "remove", "rm", "del", "clear":
       if args.len < 3:
-        stderr.writeLine("Error: 'locutus session remove' requires <session_key>")
+        stderr.writeLine("Error: 'rhizo session remove' requires <session_key>")
         quit(1)
       let key = args[2]
       let agent = getLocalSessionAgent(key)
@@ -3183,7 +3181,7 @@ proc main() =
 
     if toAgent.len == 0 or subject.len == 0 or body.len == 0:
       stderr.writeLine("Error: Missing required arguments. --to, --subject, and --body are required.")
-      stderr.writeLine("Usage: locutus request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw] [--immediate|--soon]")
+      stderr.writeLine("Usage: rhizo request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw] [--immediate|--soon]")
       quit(1)
 
     doRequest(cfg, toAgent, fromAgent, subject, body, timeout, rawOutput, urgency = urgency)
@@ -3236,7 +3234,7 @@ proc main() =
 
     if targets.len == 0 or subject.len == 0 or body.len == 0:
       stderr.writeLine("Error: Missing required arguments for scatter.")
-      stderr.writeLine("Usage: locutus scatter --targets <@tag|agent1,agent2|*> --subject <subj> --body <body> [--quorum N] [--timeout sec] [--raw] [--immediate|--soon]")
+      stderr.writeLine("Usage: rhizo scatter --targets <@tag|agent1,agent2|*> --subject <subj> --body <body> [--quorum N] [--timeout sec] [--raw] [--immediate|--soon]")
       quit(1)
 
     doScatter(cfg, targets, fromAgent, subject, body, quorum, timeout, rawOutput, urgency = urgency)
@@ -3258,7 +3256,7 @@ proc main() =
     if isRoute:
       let rPath = findRoutesConfig(routesFilePath)
       if rPath.len == 0:
-        stderr.writeLine("Error: Route configuration not found (checked ./locu-routes.yaml, .locutus/routes.yaml). Specify --routes-file or initialize locu-routes.yaml.")
+        stderr.writeLine("Error: Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml). Specify --routes-file or initialize rhizo-routes.yaml.")
         quit(1)
 
       var routesCfg: RoutingConfig
@@ -3348,7 +3346,7 @@ proc main() =
     else:
       if args.len < 2:
         stderr.writeLine("Error: Missing queue name.")
-        stderr.writeLine("Usage: locutus enqueue <queue_name> --subject <subj> --body <body>")
+        stderr.writeLine("Usage: rhizo enqueue <queue_name> --subject <subj> --body <body>")
         quit(1)
       let queueName = args[1]
       var msgType = "task"
@@ -3391,7 +3389,7 @@ proc main() =
 
       if subject.len == 0 or body.len == 0:
         stderr.writeLine("Error: Missing required arguments. --subject and --body are required.")
-        stderr.writeLine("Usage: locutus enqueue <queue_name> --subject <subj> --body <body>")
+        stderr.writeLine("Usage: rhizo enqueue <queue_name> --subject <subj> --body <body>")
         quit(1)
 
       let id = doEnqueue(cfg, queueName, msgType, fromAgent, subject, body, tags, replyTo, msgId, customTs)
@@ -3401,8 +3399,8 @@ proc main() =
     if args.len < 2:
       stderr.writeLine("Error: Missing task text or sub-command (lint / check).")
       stderr.writeLine("Usage:")
-      stderr.writeLine("  locutus route <task_text> [--routes-file <file>] [--laya-url <url>]")
-      stderr.writeLine("  locutus route lint [--routes-file <file>] [--check-service]")
+      stderr.writeLine("  rhizo route <task_text> [--routes-file <file>] [--laya-url <url>]")
+      stderr.writeLine("  rhizo route lint [--routes-file <file>] [--check-service]")
       quit(1)
 
     var routesFilePath = ""
@@ -3438,7 +3436,7 @@ proc main() =
 
     let rPath = findRoutesConfig(routesFilePath)
     if rPath.len == 0:
-      stderr.writeLine("Error: Route configuration not found (checked ./locu-routes.yaml, .locutus/routes.yaml). Specify --routes-file or initialize locu-routes.yaml.")
+      stderr.writeLine("Error: Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml). Specify --routes-file or initialize rhizo-routes.yaml.")
       quit(1)
 
     if isLint:
@@ -3482,7 +3480,7 @@ proc main() =
     # Dry-run task routing
     if taskText.len == 0:
       stderr.writeLine("Error: Missing task text to route.")
-      stderr.writeLine("Usage: locutus route <task_text> [--routes-file <file>] [--laya-url <url>]")
+      stderr.writeLine("Usage: rhizo route <task_text> [--routes-file <file>] [--laya-url <url>]")
       quit(1)
 
     var routesCfg: RoutingConfig
@@ -3523,7 +3521,7 @@ proc main() =
   of "work":
     if args.len < 2:
       stderr.writeLine("Error: Missing queue name.")
-      stderr.writeLine("Usage: locutus work <queue_name> [timeout_sec] [--run-id <run_id>]")
+      stderr.writeLine("Usage: rhizo work <queue_name> [timeout_sec] [--run-id <run_id>]")
       quit(1)
     let queueName = args[1]
     var timeout = -1
@@ -3544,14 +3542,14 @@ proc main() =
   of "claim":
     if args.len < 2:
       stderr.writeLine("Error: Missing queue name.")
-      stderr.writeLine("Usage: locutus claim <queue_name> [timeout_sec] [--lease 120] [--raw] [--run-id <run_id>]")
-      stderr.writeLine("       locutus claim renew <queue_name> <task_id> [--lease 120]")
+      stderr.writeLine("Usage: rhizo claim <queue_name> [timeout_sec] [--lease 120] [--raw] [--run-id <run_id>]")
+      stderr.writeLine("       rhizo claim renew <queue_name> <task_id> [--lease 120]")
       quit(1)
 
     if args[1] == "renew":
       if args.len < 4:
         stderr.writeLine("Error: Missing queue name or task ID for claim renew.")
-        stderr.writeLine("Usage: locutus claim renew <queue_name> <task_id> [--lease 120]")
+        stderr.writeLine("Usage: rhizo claim renew <queue_name> <task_id> [--lease 120]")
         quit(1)
       let queueName = args[2]
       let taskId = args[3]
@@ -3602,7 +3600,7 @@ proc main() =
   of "ack":
     if args.len < 3:
       stderr.writeLine("Error: Missing queue name or task ID.")
-      stderr.writeLine("Usage: locutus ack <queue_name> <task_id>")
+      stderr.writeLine("Usage: rhizo ack <queue_name> <task_id>")
       quit(1)
     let queueName = args[1]
     let taskId = args[2]
@@ -3610,7 +3608,7 @@ proc main() =
 
   of "blackboard":
     if args.len < 3:
-      stderr.writeLine("Usage: locutus blackboard <set|get|rev|append|snapshot|load|delete|clear> <room> [args...]")
+      stderr.writeLine("Usage: rhizo blackboard <set|get|rev|append|snapshot|load|delete|clear> <room> [args...]")
       quit(1)
     let action = args[1].toLowerAscii
     let room = args[2]
@@ -3636,26 +3634,26 @@ proc main() =
     case action
     of "set":
       if key.len == 0 or val.len == 0:
-        stderr.writeLine("Usage: locutus blackboard set <room> <key> <json_value> [--ttl <sec>]")
+        stderr.writeLine("Usage: rhizo blackboard set <room> <key> <json_value> [--ttl <sec>]")
         quit(1)
       let res = doBlackboard(cfg, "set", room, key, resolveVal(val), ttlSec)
       echo res
     of "get":
       if key.len == 0:
-        stderr.writeLine("Usage: locutus blackboard get <room> <key>")
+        stderr.writeLine("Usage: rhizo blackboard get <room> <key>")
         quit(1)
       let res = doBlackboard(cfg, "get", room, key)
       if res.len > 0:
         echo res
     of "rev":
       if key.len == 0:
-        stderr.writeLine("Usage: locutus blackboard rev <room> <key>")
+        stderr.writeLine("Usage: rhizo blackboard rev <room> <key>")
         quit(1)
       let res = doBlackboard(cfg, "rev", room, key)
       echo res
     of "append":
       if key.len == 0 or val.len == 0:
-        stderr.writeLine("Usage: locutus blackboard append <room> <list_key> <entry> [--ttl <sec>]")
+        stderr.writeLine("Usage: rhizo blackboard append <room> <list_key> <entry> [--ttl <sec>]")
         quit(1)
       let res = doBlackboard(cfg, "append", room, key, resolveVal(val), ttlSec)
       echo res
@@ -3672,7 +3670,7 @@ proc main() =
         echo res
     of "load", "restore":
       if key.len == 0:
-        stderr.writeLine("Usage: locutus blackboard load <room> <file_or_json> [--ttl <sec>]")
+        stderr.writeLine("Usage: rhizo blackboard load <room> <file_or_json> [--ttl <sec>]")
         quit(1)
       var snapshotJson = key
       if fileExists(key):
@@ -3691,7 +3689,7 @@ proc main() =
       echo res
     of "delete", "del":
       if key.len == 0:
-        stderr.writeLine("Usage: locutus blackboard delete <room> <key>")
+        stderr.writeLine("Usage: rhizo blackboard delete <room> <key>")
         quit(1)
       let res = doBlackboard(cfg, "delete", room, key)
       echo res
@@ -3700,12 +3698,12 @@ proc main() =
       echo res
     else:
       stderr.writeLine("Unknown blackboard action: " & action)
-      stderr.writeLine("Usage: locutus blackboard <set|get|rev|append|snapshot|load|delete|clear> <room> [args...]")
+      stderr.writeLine("Usage: rhizo blackboard <set|get|rev|append|snapshot|load|delete|clear> <room> [args...]")
       quit(1)
 
   of "floor":
     if args.len < 3:
-      stderr.writeLine("Usage: locutus floor <request|yield|pass|status> <room> [args...]")
+      stderr.writeLine("Usage: rhizo floor <request|yield|pass|status> <room> [args...]")
       quit(1)
     let action = args[1].toLowerAscii
     let room = args[2]
@@ -3734,7 +3732,7 @@ proc main() =
       if agentName.len == 0:
         agentName = getActiveAgentName(cfg, "", fallbackDefault = false)
       if agentName.len == 0:
-        stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+        stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
         quit(1)
       doFloorRequest(cfg, room, agentName, waitSec, leaseSec)
 
@@ -3751,7 +3749,7 @@ proc main() =
       if agentName.len == 0:
         agentName = getActiveAgentName(cfg, "", fallbackDefault = false)
       if agentName.len == 0:
-        stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+        stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
         quit(1)
       doFloorYield(cfg, room, agentName, force, leaseSec)
 
@@ -3776,7 +3774,7 @@ proc main() =
       if agentName.len == 0:
         agentName = getActiveAgentName(cfg, "", fallbackDefault = false)
       if agentName.len == 0:
-        stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+        stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
         quit(1)
       doFloorPass(cfg, room, agentName, targetAgent, force, leaseSec)
 
@@ -3785,16 +3783,16 @@ proc main() =
 
     else:
       stderr.writeLine("Unknown floor action: " & action)
-      stderr.writeLine("Usage: locutus floor <request|yield|pass|status> <room> [args...]")
+      stderr.writeLine("Usage: rhizo floor <request|yield|pass|status> <room> [args...]")
       quit(1)
 
   of "cancel":
     if args.len < 2:
       stderr.writeLine("Error: Missing run_id or cancel subcommand.")
       stderr.writeLine("Usage:")
-      stderr.writeLine("  locutus cancel <run_id> [--reason <reason>] [--by <agent>] [--ttl <sec>]")
-      stderr.writeLine("  locutus cancel check <run_id> [--raw] [--exit-code]")
-      stderr.writeLine("  locutus cancel clear <run_id>")
+      stderr.writeLine("  rhizo cancel <run_id> [--reason <reason>] [--by <agent>] [--ttl <sec>]")
+      stderr.writeLine("  rhizo cancel check <run_id> [--raw] [--exit-code]")
+      stderr.writeLine("  rhizo cancel clear <run_id>")
       quit(1)
 
     var action = ""
@@ -3860,10 +3858,10 @@ proc main() =
     if args.len < 3:
       stderr.writeLine("Error: Missing ballot subcommand or ballot_id.")
       stderr.writeLine("Usage:")
-      stderr.writeLine("  locutus ballot open <ballot_id> --options <opt1,opt2> [--voters <v1,v2>] [--ttl sec]")
-      stderr.writeLine("  locutus ballot cast <ballot_id> --vote <choice> [--voter <agent>]")
-      stderr.writeLine("  locutus ballot tally <ballot_id> [--close] [--raw]")
-      stderr.writeLine("  locutus ballot status <ballot_id>")
+      stderr.writeLine("  rhizo ballot open <ballot_id> --options <opt1,opt2> [--voters <v1,v2>] [--ttl sec]")
+      stderr.writeLine("  rhizo ballot cast <ballot_id> --vote <choice> [--voter <agent>]")
+      stderr.writeLine("  rhizo ballot tally <ballot_id> [--close] [--raw]")
+      stderr.writeLine("  rhizo ballot status <ballot_id>")
       quit(1)
 
     let action = args[1].toLowerAscii
@@ -3914,7 +3912,7 @@ proc main() =
       if voter.len == 0:
         voter = getActiveAgentName(cfg, "", fallbackDefault = false)
       if voter.len == 0:
-        stderr.writeLine("Error: No voter name specified. Pass --voter <name>, run 'locutus open <name>', or export LOCUTUS_AGENT_NAME=<name>.")
+        stderr.writeLine("Error: No voter name specified. Pass --voter <name>, run 'rhizo open <name>', or export RHIZO_AGENT_NAME=<name>.")
         quit(1)
       doBallotCast(cfg, ballotId, voter, choice)
 
@@ -3934,17 +3932,17 @@ proc main() =
 
     else:
       stderr.writeLine("Unknown ballot action: " & action)
-      stderr.writeLine("Usage: locutus ballot <open|cast|tally|status> <ballot_id> [args...]")
+      stderr.writeLine("Usage: rhizo ballot <open|cast|tally|status> <ballot_id> [args...]")
       quit(1)
 
   of "leader":
     if args.len < 3:
       stderr.writeLine("Error: Missing leader action or role name.")
       stderr.writeLine("Usage:")
-      stderr.writeLine("  locutus leader acquire <role> [--lease <sec>] [--agent <name>]")
-      stderr.writeLine("  locutus leader renew <role> [--lease <sec>] [--agent <name>]")
-      stderr.writeLine("  locutus leader resign <role> [--agent <name>]")
-      stderr.writeLine("  locutus leader status <role>")
+      stderr.writeLine("  rhizo leader acquire <role> [--lease <sec>] [--agent <name>]")
+      stderr.writeLine("  rhizo leader renew <role> [--lease <sec>] [--agent <name>]")
+      stderr.writeLine("  rhizo leader resign <role> [--agent <name>]")
+      stderr.writeLine("  rhizo leader status <role>")
       quit(1)
 
     let action = args[1].toLowerAscii
@@ -3969,7 +3967,7 @@ proc main() =
     if agentName.len == 0:
       agentName = getActiveAgentName(cfg, "", fallbackDefault = false)
     if agentName.len == 0 and action in ["acquire", "elect", "renew", "heartbeat", "resign", "release", "yield"]:
-      stderr.writeLine("Error: No agent name specified. Pass --agent <name>, run 'locutus open <name>', or export LOCUTUS_AGENT_NAME=<name>.")
+      stderr.writeLine("Error: No agent name specified. Pass --agent <name>, run 'rhizo open <name>', or export RHIZO_AGENT_NAME=<name>.")
       quit(1)
 
     case action
@@ -3983,20 +3981,20 @@ proc main() =
       doLeaderStatus(cfg, role)
     else:
       stderr.writeLine("Unknown leader action: " & action)
-      stderr.writeLine("Usage: locutus leader <acquire|renew|resign|status> <role> [args...]")
+      stderr.writeLine("Usage: rhizo leader <acquire|renew|resign|status> <role> [args...]")
       quit(1)
 
   of "workflow", "dag":
     if args.len < 3:
       stderr.writeLine("Error: Missing workflow action or flow ID.")
       stderr.writeLine("Usage:")
-      stderr.writeLine("  locutus workflow define <flow_id> --steps <s1,s2,...> [--deps <c:p1,p2;...>] [--ttl <sec>]")
-      stderr.writeLine("  locutus workflow next <flow_id> [--raw]")
-      stderr.writeLine("  locutus workflow resolve <flow_id> <step> [--output <msg>] [--raw]")
-      stderr.writeLine("  locutus workflow fail <flow_id> <step> [--reason <msg>]")
-      stderr.writeLine("  locutus workflow status <flow_id> [--raw]")
-      stderr.writeLine("  locutus workflow export <flow_id> [output_file]")
-      stderr.writeLine("  locutus workflow import <flow_id> <file_or_json> [--ttl <sec>]")
+      stderr.writeLine("  rhizo workflow define <flow_id> --steps <s1,s2,...> [--deps <c:p1,p2;...>] [--ttl <sec>]")
+      stderr.writeLine("  rhizo workflow next <flow_id> [--raw]")
+      stderr.writeLine("  rhizo workflow resolve <flow_id> <step> [--output <msg>] [--raw]")
+      stderr.writeLine("  rhizo workflow fail <flow_id> <step> [--reason <msg>]")
+      stderr.writeLine("  rhizo workflow status <flow_id> [--raw]")
+      stderr.writeLine("  rhizo workflow export <flow_id> [output_file]")
+      stderr.writeLine("  rhizo workflow import <flow_id> <file_or_json> [--ttl <sec>]")
       quit(1)
 
     let action = args[1].toLowerAscii
@@ -4057,12 +4055,12 @@ proc main() =
       let inPayload = if posArgs.len > 0: posArgs[0] else: ""
       if inPayload.len == 0:
         stderr.writeLine("Error: Missing workflow payload or file to import.")
-        stderr.writeLine("Usage: locutus workflow import <flow_id> <file_or_json> [--ttl <sec>]")
+        stderr.writeLine("Usage: rhizo workflow import <flow_id> <file_or_json> [--ttl <sec>]")
         quit(1)
       doWorkflowImport(cfg, flowId, inPayload, ttlSec)
     else:
       stderr.writeLine("Unknown workflow action: " & action)
-      stderr.writeLine("Usage: locutus workflow <define|next|resolve|fail|status|export|import> <flow_id> [args...]")
+      stderr.writeLine("Usage: rhizo workflow <define|next|resolve|fail|status|export|import> <flow_id> [args...]")
       quit(1)
 
   of "sweep":
@@ -4114,30 +4112,30 @@ proc main() =
 
     if state.len == 0:
       stderr.writeLine("Error: Missing state argument for status command.")
-      stderr.writeLine("Usage: locutus status <idle|busy|error> [activity_text] [name] [--listen/-l]")
+      stderr.writeLine("Usage: rhizo status <idle|busy|error> [activity_text] [name] [--listen/-l]")
       quit(1)
 
     let name = getActiveAgentName(cfg, explicitName, fallbackDefault = false)
     if name.len == 0:
-      stderr.writeLine("Error: No agent name specified. Run 'locutus open <name>', pass the agent name, or export LOCUTUS_AGENT_NAME=<name>.")
+      stderr.writeLine("Error: No agent name specified. Run 'rhizo open <name>', pass the agent name, or export RHIZO_AGENT_NAME=<name>.")
       quit(1)
 
     let res = doStatus(cfg, name, state, activity)
     if not rearmListen:
       echo res
     else:
-      stderr.writeLine("[LOCUTUS STATUS] " & res)
+      stderr.writeLine("[RHIZO STATUS] " & res)
       let (alreadyListening, existingPid, existingHost) = getActiveListenerInfo(cfg, name)
       if alreadyListening:
-        stderr.writeLine("[LOCUTUS LISTENER] Listener already active for agent '" & name & "' (PID " & $existingPid & " on " & existingHost & "). Skipping duplicate listener.")
+        stderr.writeLine("[RHIZO LISTENER] Listener already active for agent '" & name & "' (PID " & $existingPid & " on " & existingHost & "). Skipping duplicate listener.")
       else:
-        stderr.writeLine("[LOCUTUS LISTENER] Entering listening mode for agent '" & name & "'...")
+        stderr.writeLine("[RHIZO LISTENER] Entering listening mode for agent '" & name & "'...")
         doListen(cfg, name, listenTimeout)
 
   of "lock":
     if args.len < 2:
       stderr.writeLine("Error: Missing lock name.")
-      stderr.writeLine("Usage: locutus lock <lock_name> [ttl_sec] [--fencing] [--raw]")
+      stderr.writeLine("Usage: rhizo lock <lock_name> [ttl_sec] [--fencing] [--raw]")
       quit(1)
     let lockName = args[1]
     var ttl = 30
@@ -4160,7 +4158,7 @@ proc main() =
   of "unlock":
     if args.len < 2:
       stderr.writeLine("Error: Missing lock name.")
-      stderr.writeLine("Usage: locutus unlock <lock_name>")
+      stderr.writeLine("Usage: rhizo unlock <lock_name>")
       quit(1)
     let lockName = args[1]
     let (msg, code) = doUnlock(cfg, lockName)
@@ -4172,7 +4170,7 @@ proc main() =
   of "pub", "publish":
     if args.len < 3:
       stderr.writeLine("Error: Missing arguments for pub command.")
-      stderr.writeLine("Usage: locutus pub <channel> <message>")
+      stderr.writeLine("Usage: rhizo pub <channel> <message>")
       quit(1)
     let channel = args[1]
     let message = args[2]
@@ -4181,7 +4179,7 @@ proc main() =
   of "sub", "subscribe":
     if args.len < 2:
       stderr.writeLine("Error: Missing channel name for sub command.")
-      stderr.writeLine("Usage: locutus sub <channel> [timeout_sec]")
+      stderr.writeLine("Usage: rhizo sub <channel> [timeout_sec]")
       quit(1)
     let channel = args[1]
     var timeout = -1
@@ -4192,7 +4190,7 @@ proc main() =
   of "guide":
     if args.len < 2:
       stderr.writeLine("Error: Missing guide action.")
-      stderr.writeLine("Usage: locutus guide <install|uninstall|check> [path]")
+      stderr.writeLine("Usage: rhizo guide <install|uninstall|check> [path]")
       quit(1)
     let action = args[1].toLowerAscii
     let target = if args.len > 2: args[2] else: "AGENTS.md"
@@ -4225,7 +4223,7 @@ proc main() =
         echo "[MISSING] Target file does not exist: " & target
     else:
       stderr.writeLine("Error: Unknown guide action: '" & action & "'")
-      stderr.writeLine("Usage: locutus guide <install|uninstall|check> [path]")
+      stderr.writeLine("Usage: rhizo guide <install|uninstall|check> [path]")
       quit(1)
 
   else:

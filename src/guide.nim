@@ -28,12 +28,12 @@ npm install -g @axiomantic/rhizo @axiomantic/vine
 
 ### 1. Invariants & Identity
 * **No Workspace-Scoped Identity Files**:
-  Agent identity is strictly decoupled from directory paths. **Never create or read `.rhizo.agent` or `.locutus.agent` in any project or workspace directory.** Agent identity is resolved exclusively through:
-  1. `RHIZO_AGENT_NAME` (or legacy `LOCUTUS_AGENT_NAME`) environment variable.
+  Agent identity is strictly decoupled from directory paths. **Never create or read `.rhizo.agent` in any project or workspace directory.** Agent identity is resolved exclusively through:
+  1. `RHIZO_AGENT_NAME` environment variable.
   2. Harness session ID mapping (`RHIZO_SESSION_ID=<runtime>:<sessionId>` via `~/.config/rhizo/sessions.json` or Redis).
   3. Explicit CLI flag: `rhizo open <name> "<tags>"`.
 * **Zero Dirty Commits**:
-  All agent state, lockfiles, temporary buffers, and session files must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.rhizo.*`, `.locutus.*`, `*.lock`).
+  All agent state, lockfiles, temporary buffers, and session files must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.rhizo.*`, `*.lock`).
 
 ### 2. Harness Listener Discipline & Capability-Based Execution (Anti-Token-Thrash)
 * **Zero Timeouts (Anti-Token-Thrash Invariant)**:

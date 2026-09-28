@@ -65,7 +65,7 @@ type
     source*: SettingSource
     detail*: string
 
-  LocutusConfig* = object
+  RhizoConfig* = object
     redisUrl*: string
     prefix*: string
     project*: string
@@ -81,6 +81,8 @@ type
     profile*: string
     activeConfigFile*: string
     provenance*: Table[string, ProvenanceEntry]
+
+  LocutusConfig* = RhizoConfig
 
 proc sourceLabel*(s: SettingSource): string =
   case s
@@ -113,35 +115,27 @@ proc expandPathSafe*(p: string): string =
 # Standard configuration paths
 proc getSystemConfigPath*(): string =
   when defined(windows):
-    return getEnv("ProgramData", r"C:\ProgramData") / "locutus" / "config.toml"
+    return getEnv("ProgramData", r"C:\ProgramData") / "rhizo" / "config.toml"
   elif defined(macosx):
-    return "/Library/Application Support/locutus/config.toml"
+    return "/Library/Application Support/rhizo/config.toml"
   else:
-    return "/etc/locutus/config.toml"
+    return "/etc/rhizo/config.toml"
 
 proc getUserConfigPath*(): string =
   when defined(windows):
-    let r = getEnv("APPDATA", getHomeDir() / "AppData" / "Roaming") / "rhizo" / "config.toml"
-    if fileExists(r): return r
-    return getEnv("APPDATA", getHomeDir() / "AppData" / "Roaming") / "locutus" / "config.toml"
+    return getEnv("APPDATA", getHomeDir() / "AppData" / "Roaming") / "rhizo" / "config.toml"
   elif defined(macosx):
     let rApp = getHomeDir() / "Library" / "Application Support" / "rhizo" / "config.toml"
     if fileExists(rApp): return rApp
-    let rXdg = getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "rhizo" / "config.toml"
-    if fileExists(rXdg): return rXdg
-    let appSupp = getHomeDir() / "Library" / "Application Support" / "locutus" / "config.toml"
-    if fileExists(appSupp): return appSupp
-    return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "locutus" / "config.toml"
+    return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "rhizo" / "config.toml"
   else:
-    let r = getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "rhizo" / "config.toml"
-    if fileExists(r): return r
-    return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "locutus" / "config.toml"
+    return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "rhizo" / "config.toml"
 
 # Walk up from current directory to find workspace configuration or git root
 proc findWorkspaceConfigPath*(startDir: string = getCurrentDir()): string =
   var cur = startDir
   while true:
-    for candidate in [".rhizo.toml", "rhizo.toml", ".rhizo.json", ".locutus.toml", "locutus.toml", ".locutus.json", ".env", "AGENTS.md"]:
+    for candidate in [".rhizo.toml", "rhizo.toml", ".rhizo.json", ".env", "AGENTS.md"]:
       let p = cur / candidate
       if fileExists(p):
         return p
@@ -208,7 +202,7 @@ proc parseAgentsMd*(content: string): Table[string, string] =
   result = initTable[string, string]()
   for line in content.splitLines():
     let low = line.toLowerAscii.strip()
-    for prefix in ["locutus_redis_url", "locutus_redis_prefix", "locutus_project", "locutus_agent_name"]:
+    for prefix in ["rhizo_redis_url", "rhizo_redis_prefix", "rhizo_project", "rhizo_agent_name"]:
       if low.startsWith(prefix & ":") or low.startsWith(prefix & "="):
         let parts = line.split({':', '='}, maxsplit = 1)
         if parts.len >= 2:
@@ -216,7 +210,7 @@ proc parseAgentsMd*(content: string): Table[string, string] =
 
 # Populate config from a dictionary with provenance
 proc applyDict(
-  cfg: var LocutusConfig,
+  cfg: var RhizoConfig,
   dict: Table[string, string],
   source: SettingSource,
   detail: string
@@ -224,39 +218,39 @@ proc applyDict(
   for k, v in dict:
     let lowKey = k.toLowerAscii.replace("-", "_")
     case lowKey
-    of "redis_url", "redisurl", "locutus_redis_url", "valkey_url", "valkeyurl", "locutus_valkey_url":
+    of "redis_url", "redisurl", "rhizo_redis_url", "valkey_url", "valkeyurl":
       if v.len > 0:
         cfg.redisUrl = v
         cfg.provenance["redis_url"] = ProvenanceEntry(key: "redis_url", value: v, source: source, detail: detail)
-    of "prefix", "redis_prefix", "locutus_redis_prefix":
+    of "prefix", "redis_prefix", "rhizo_redis_prefix":
       if v.len > 0:
         cfg.prefix = v
         cfg.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: v, source: source, detail: detail)
-    of "project", "locutus_project":
+    of "project", "rhizo_project":
       if v.len > 0:
         cfg.project = v
         cfg.provenance["project"] = ProvenanceEntry(key: "project", value: v, source: source, detail: detail)
-    of "agent_name", "agentname", "locutus_agent_name":
+    of "agent_name", "agentname", "rhizo_agent_name":
       if v.len > 0:
         cfg.agentName = v
         cfg.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: v, source: source, detail: detail)
-    of "session_id", "sessionid", "locutus_session_id":
+    of "session_id", "sessionid", "rhizo_session_id":
       if v.len > 0:
         cfg.sessionId = v
         cfg.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: v, source: source, detail: detail)
-    of "secret", "locutus_secret":
+    of "secret", "rhizo_secret":
       if v.len > 0:
         cfg.secret = v
         cfg.provenance["secret"] = ProvenanceEntry(key: "secret", value: "[REDACTED]", source: source, detail: detail)
-    of "secret_file", "secretfile", "locutus_secret_file":
+    of "secret_file", "secretfile", "rhizo_secret_file":
       if v.len > 0:
         cfg.secretFile = expandPathSafe(v)
         cfg.provenance["secret_file"] = ProvenanceEntry(key: "secret_file", value: cfg.secretFile, source: source, detail: detail)
-    of "encrypt", "locutus_encrypt":
+    of "encrypt", "rhizo_encrypt":
       let b = v.toLowerAscii in ["1", "true", "yes", "on"]
       cfg.encrypt = b
       cfg.provenance["encrypt"] = ProvenanceEntry(key: "encrypt", value: $b, source: source, detail: detail)
-    of "cluster", "locutus_cluster", "locutus_redis_cluster":
+    of "cluster", "rhizo_cluster", "rhizo_redis_cluster":
       let b = v.toLowerAscii in ["1", "true", "yes", "on"]
       cfg.cluster = b
       cfg.provenance["cluster"] = ProvenanceEntry(key: "cluster", value: $b, source: source, detail: detail)
@@ -283,7 +277,7 @@ proc applyDict(
 
 # Load file into config with profile support
 proc loadConfigFile(
-  cfg: var LocutusConfig,
+  cfg: var RhizoConfig,
   path: string,
   source: SettingSource,
   targetProfile: string = ""
@@ -350,12 +344,12 @@ type CliOverrides* = object
   profile*: string
   configFile*: string
 
-proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
+proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): RhizoConfig =
   # Step 1: Initialize with default values
   let defProject = getCurrentDir().splitPath.tail
-  result = LocutusConfig(
+  result = RhizoConfig(
     redisUrl: "redis://127.0.0.1:6379",
-    prefix: "locutus:",
+    prefix: "rhizo:",
     project: defProject,
     agentName: defProject & "-worker",
     sessionId: "",
@@ -385,7 +379,7 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
   # Resolve profile selector
   var targetProfile = cli.profile
   if targetProfile.len == 0:
-    targetProfile = getEnv("RHIZO_PROFILE", getEnv("LOCUTUS_PROFILE", ""))
+    targetProfile = getEnv("RHIZO_PROFILE", "")
   if targetProfile.len > 0:
     result.profile = targetProfile
 
@@ -404,10 +398,10 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
   if wsPath.len > 0 and fileExists(wsPath):
     loadConfigFile(result, wsPath, srcWorkspaceFile, targetProfile)
 
-  # Step 5: Custom Config File Override (if provided via CLI or LOCUTUS_CONFIG)
+  # Step 5: Custom Config File Override (if provided via CLI or RHIZO_CONFIG)
   var customPath = cli.configFile
   if customPath.len == 0:
-    customPath = getEnv("RHIZO_CONFIG", getEnv("LOCUTUS_CONFIG", ""))
+    customPath = getEnv("RHIZO_CONFIG", "")
   if customPath.len > 0:
     customPath = expandPathSafe(customPath)
     if fileExists(customPath):
@@ -416,52 +410,52 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
       stderr.writeLine("Warning: Specified configuration file does not exist: " & customPath)
 
   # Step 6: Process Environment Variables
-  let envRedisUrl = getEnv("RHIZO_REDIS_URL", getEnv("LOCUTUS_REDIS_URL", getEnv("LOCUTUS_VALKEY_URL", getEnv("A2A_REDIS_URL", getEnv("VALKEY_URL", getEnv("REDIS_URL", ""))))))
+  let envRedisUrl = getEnv("RHIZO_REDIS_URL", getEnv("VALKEY_URL", getEnv("REDIS_URL", "")))
   if envRedisUrl.len > 0:
     result.redisUrl = envRedisUrl
-    result.provenance["redis_url"] = ProvenanceEntry(key: "redis_url", value: envRedisUrl, source: srcEnv, detail: "LOCUTUS_REDIS_URL / VALKEY_URL / REDIS_URL")
+    result.provenance["redis_url"] = ProvenanceEntry(key: "redis_url", value: envRedisUrl, source: srcEnv, detail: "RHIZO_REDIS_URL / VALKEY_URL / REDIS_URL")
 
-  let envPrefix = getEnv("RHIZO_REDIS_PREFIX", getEnv("LOCUTUS_REDIS_PREFIX", getEnv("A2A_REDIS_PREFIX", "")))
+  let envPrefix = getEnv("RHIZO_REDIS_PREFIX", "")
   if envPrefix.len > 0:
     result.prefix = envPrefix
-    result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: envPrefix, source: srcEnv, detail: "LOCUTUS_REDIS_PREFIX")
+    result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: envPrefix, source: srcEnv, detail: "RHIZO_REDIS_PREFIX")
 
-  let envProject = getEnv("RHIZO_PROJECT", getEnv("LOCUTUS_PROJECT", getEnv("A2A_PROJECT", "")))
+  let envProject = getEnv("RHIZO_PROJECT", "")
   if envProject.len > 0:
     result.project = envProject
-    result.provenance["project"] = ProvenanceEntry(key: "project", value: envProject, source: srcEnv, detail: "LOCUTUS_PROJECT")
+    result.provenance["project"] = ProvenanceEntry(key: "project", value: envProject, source: srcEnv, detail: "RHIZO_PROJECT")
 
-  let envAgent = getEnv("RHIZO_AGENT_NAME", getEnv("LOCUTUS_AGENT_NAME", getEnv("MY_NAME", "")))
+  let envAgent = getEnv("RHIZO_AGENT_NAME", "")
   if envAgent.len > 0:
     result.agentName = envAgent
-    result.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: envAgent, source: srcEnv, detail: "LOCUTUS_AGENT_NAME")
+    result.provenance["agent_name"] = ProvenanceEntry(key: "agent_name", value: envAgent, source: srcEnv, detail: "RHIZO_AGENT_NAME")
 
-  let envSessionId = getEnv("RHIZO_SESSION_ID", getEnv("LOCUTUS_SESSION_ID", ""))
+  let envSessionId = getEnv("RHIZO_SESSION_ID", "")
   if envSessionId.len > 0:
     result.sessionId = envSessionId
-    result.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: envSessionId, source: srcEnv, detail: "LOCUTUS_SESSION_ID=" & envSessionId)
+    result.provenance["session_id"] = ProvenanceEntry(key: "session_id", value: envSessionId, source: srcEnv, detail: "RHIZO_SESSION_ID=" & envSessionId)
 
-  let envSecret = getEnv("RHIZO_SECRET", getEnv("LOCUTUS_SECRET", ""))
+  let envSecret = getEnv("RHIZO_SECRET", "")
   if envSecret.len > 0:
     result.secret = envSecret
-    result.provenance["secret"] = ProvenanceEntry(key: "secret", value: "[REDACTED]", source: srcEnv, detail: "LOCUTUS_SECRET")
+    result.provenance["secret"] = ProvenanceEntry(key: "secret", value: "[REDACTED]", source: srcEnv, detail: "RHIZO_SECRET")
 
-  let envSecretFile = getEnv("RHIZO_SECRET_FILE", getEnv("LOCUTUS_SECRET_FILE", ""))
+  let envSecretFile = getEnv("RHIZO_SECRET_FILE", "")
   if envSecretFile.len > 0:
     result.secretFile = expandPathSafe(envSecretFile)
-    result.provenance["secret_file"] = ProvenanceEntry(key: "secret_file", value: result.secretFile, source: srcEnv, detail: "LOCUTUS_SECRET_FILE")
+    result.provenance["secret_file"] = ProvenanceEntry(key: "secret_file", value: result.secretFile, source: srcEnv, detail: "RHIZO_SECRET_FILE")
 
-  let envEnc = getEnv("RHIZO_ENCRYPT", getEnv("LOCUTUS_ENCRYPT", ""))
+  let envEnc = getEnv("RHIZO_ENCRYPT", "")
   if envEnc.len > 0:
     let b = envEnc in ["1", "true", "TRUE", "yes"]
     result.encrypt = b
-    result.provenance["encrypt"] = ProvenanceEntry(key: "encrypt", value: $b, source: srcEnv, detail: "LOCUTUS_ENCRYPT=" & envEnc)
+    result.provenance["encrypt"] = ProvenanceEntry(key: "encrypt", value: $b, source: srcEnv, detail: "RHIZO_ENCRYPT=" & envEnc)
 
-  let envCluster = getEnv("RHIZO_CLUSTER", getEnv("LOCUTUS_CLUSTER", getEnv("LOCUTUS_REDIS_CLUSTER", "")))
+  let envCluster = getEnv("RHIZO_CLUSTER", "")
   if envCluster.len > 0:
     let b = envCluster in ["1", "true", "TRUE", "yes"]
     result.cluster = b
-    result.provenance["cluster"] = ProvenanceEntry(key: "cluster", value: $b, source: srcEnv, detail: "LOCUTUS_CLUSTER=" & envCluster)
+    result.provenance["cluster"] = ProvenanceEntry(key: "cluster", value: $b, source: srcEnv, detail: "RHIZO_CLUSTER=" & envCluster)
 
   # Step 7: Explicit CLI Arguments
   if cli.redisUrl.len > 0:
@@ -514,14 +508,14 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): LocutusConfig =
     result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: result.prefix, source: srcDefault, detail: "Cluster hash tag auto-applied")
 
 # Starter TOML template
-const starterTomlContent* = """# Locutus Configuration File (.locutus.toml)
+const starterTomlContent* = """# Rhizo Configuration File (.rhizo.toml)
 # Tiered inter-assistant communication bus over Redis
 
 # Redis connection endpoint
 redis_url = "redis://127.0.0.1:6379"
 
 # Key namespace prefix
-prefix = "locutus:"
+prefix = "rhizo:"
 
 # Project isolation group
 # project = "my-project"
@@ -542,11 +536,11 @@ message_ttl = 604800
 listen_timeout = 0
 
 # Optional path to shared secret file (kept out of version control)
-# secret_file = "~/.config/locutus/secret"
+# secret_file = "~/.config/rhizo/secret"
 
 # [profiles.staging]
 # redis_url = "rediss://staging.internal:6380"
-# prefix = "stg:locutus:"
+# prefix = "stg:rhizo:"
 # encrypt = true
 
 # [profiles.prod]
@@ -555,7 +549,7 @@ listen_timeout = 0
 # encrypt = true
 """
 
-proc formatConfigTable*(cfg: LocutusConfig): string =
+proc formatConfigTable*(cfg: RhizoConfig): string =
   var lines: seq[string] = @[]
   lines.add("SETTING              VALUE                         SOURCE             DETAIL")
   lines.add("------------------------------------------------------------------------------------------------------------------------")
@@ -575,7 +569,7 @@ proc formatConfigTable*(cfg: LocutusConfig): string =
   lines.add("active_profile".alignLeft(21) & cfg.profile.alignLeft(30) & "profile".alignLeft(19) & "-")
   return lines.join("\n")
 
-proc formatConfigJson*(cfg: LocutusConfig): string =
+proc formatConfigJson*(cfg: RhizoConfig): string =
   var root = newJObject()
   for k, v in cfg.provenance:
     var entryObj = newJObject()
@@ -615,7 +609,7 @@ proc initConfigFile*(target: string = "workspace", force: bool = false): string 
   let path = if norm in ["user", "global", "home", "u"]:
     getUserConfigPath()
   else:
-    getCurrentDir() / ".locutus.toml"
+    getCurrentDir() / ".rhizo.toml"
 
   if fileExists(path) and not force:
     return "Error: Config file already exists at " & path & " (use --force to overwrite)"
@@ -623,4 +617,4 @@ proc initConfigFile*(target: string = "workspace", force: bool = false): string 
   createDir(path.splitPath.head)
   writeFile(path, starterTomlContent)
   secureFilePermissions(path)
-  return "Initialized Locutus configuration at: " & path
+  return "Initialized Rhizo configuration at: " & path
