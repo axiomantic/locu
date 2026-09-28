@@ -8,7 +8,7 @@ import std/[
 ]
 when defined(posix):
   import posix
-import config, redis, guide, std/[net, asyncdispatch]
+import config, redis, guide, routing, std/[net, asyncdispatch]
 
 proc isPidAlive*(pid: int): bool =
   if pid <= 0: return false
@@ -1260,22 +1260,22 @@ proc doListen*(cfg: LocutusConfig, name: string, timeoutSec: int = -1, notify: b
           stderr.writeLine("  1. Reply to sender when finished:")
           stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
           stderr.writeLine("  2. Codex subagents (SKILL.md Step 2b): Dispatch a fresh one-shot listener subagent before concluding your turn:")
-          stderr.writeLine("     locutus listen " & name & " 120")
+          stderr.writeLine("     locutus listen " & name)
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
           stderr.writeLine("     locutus close " & name)
         of "antigravity":
           stderr.writeLine("  1. Reply to sender when finished:")
           stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\"")
           stderr.writeLine("  2. Antigravity reactive pattern (SKILL.md Step 2d): Launch background listener task via run_command:")
-          stderr.writeLine("     locutus listen " & name & " 300")
+          stderr.writeLine("     locutus listen " & name)
           stderr.writeLine("     Or atomically append --listen: locutus reply ... --listen")
           stderr.writeLine("  3. If disconnecting or finishing session work completely:")
           stderr.writeLine("     locutus close " & name)
         else: # claude, cursor, copilot, unknown
           stderr.writeLine("  1. When finished, reply and re-arm atomically in one command:")
           stderr.writeLine("     locutus reply --to " & fromAgent & " --reply-to \"" & id & "\" --subject \"" & replySubj & "\" --body \"<results>\" --listen")
-          stderr.writeLine("  2. If no reply is needed, wait for next task:")
-          stderr.writeLine("     locutus listen " & name & " 120")
+          stderr.writeLine("  2. If no reply is needed, wait for next task (zero-timeout infinite wait):")
+          stderr.writeLine("     locutus listen " & name)
           stderr.writeLine("  3. If this ran inside a subagent: dispatch a fresh one-shot listener subagent before concluding your turn.")
           stderr.writeLine("  4. If disconnecting or finishing session work completely:")
           stderr.writeLine("     locutus close " & name)
@@ -2672,6 +2672,9 @@ proc main() =
     echo "  locutus request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw]"
     echo "  locutus scatter --targets <@tag|agents|*> --subject <subj> --body <body> [--quorum N] [--timeout 30] [--raw]"
     echo "  locutus enqueue <queue_name> --subject <subj> --body <body>"
+    echo "  locutus enqueue --route <task_text> [--routes-file <file>] [--subject <subj>] [--body <body>]"
+    echo "  locutus route <task_text> [--routes-file <file>] [--laya-url <url>] [--route-timeout <sec>]"
+    echo "  locutus route <lint|check> [--routes-file <file>] [--check-service]"
     echo "  locutus work <queue_name> [timeout_sec]"
     echo "  locutus claim <queue_name> [timeout_sec] [--lease 120] [--raw]"
     echo "  locutus ack <queue_name> <task_id>"
@@ -3229,56 +3232,283 @@ proc main() =
     doScatter(cfg, targets, fromAgent, subject, body, quorum, timeout, rawOutput, urgency = urgency)
 
   of "enqueue":
-    if args.len < 2:
-      stderr.writeLine("Error: Missing queue name.")
-      stderr.writeLine("Usage: locutus enqueue <queue_name> --subject <subj> --body <body>")
-      quit(1)
-    let queueName = args[1]
-    var msgType = "task"
-    var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
-    var subject = ""
-    var body = ""
-    var tags: seq[string] = @[]
-    var replyTo = ""
-    var msgId = ""
-    var customTs = ""
+    var isRoute = false
+    var routesFilePath = ""
+    var layaUrl = ""
+    var routeTimeout = ""
+    for a in args:
+      if a == "--route": isRoute = true
+      elif a.startsWith("--routes-file="): routesFilePath = a[14..^1]
+      elif a.startsWith("--routes_file="): routesFilePath = a[14..^1]
+      elif a.startsWith("--laya-url="): layaUrl = a[11..^1]
+      elif a.startsWith("--laya_url="): layaUrl = a[11..^1]
+      elif a.startsWith("--route-timeout="): routeTimeout = a[16..^1]
+      elif a.startsWith("--route_timeout="): routeTimeout = a[16..^1]
 
-    var i = 2
+    if isRoute:
+      let rPath = findRoutesConfig(routesFilePath)
+      if rPath.len == 0:
+        stderr.writeLine("Error: Route configuration not found (checked ./locu-routes.yaml, .locutus/routes.yaml). Specify --routes-file or initialize locu-routes.yaml.")
+        quit(1)
+
+      var routesCfg: RoutingConfig
+      try:
+        routesCfg = parseRoutesConfig(readFile(rPath), rPath)
+      except CatchableError as e:
+        stderr.writeLine("Error: Failed to parse route configuration: " & e.msg)
+        quit(1)
+
+      if layaUrl.len > 0: routesCfg.service.url = layaUrl
+      if routeTimeout.len > 0:
+        try: routesCfg.service.timeoutSeconds = parseFloat(routeTimeout)
+        except ValueError: discard
+
+      var msgType = "task"
+      var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
+      var subject = ""
+      var body = ""
+      var tags: seq[string] = @[]
+      var replyTo = ""
+      var msgId = ""
+      var customTs = ""
+      var positionalText = ""
+
+      var i = 1
+      while i < args.len:
+        let a = args[i]
+        if a == "--route": discard
+        elif a.startsWith("--routes-file=") or a.startsWith("--routes_file="): discard
+        elif (a == "--routes-file" or a == "--routes_file") and i + 1 < args.len: inc i
+        elif a.startsWith("--laya-url=") or a.startsWith("--laya_url="): discard
+        elif (a == "--laya-url" or a == "--laya_url") and i + 1 < args.len: inc i
+        elif a.startsWith("--route-timeout=") or a.startsWith("--route_timeout="): discard
+        elif (a == "--route-timeout" or a == "--route_timeout") and i + 1 < args.len: inc i
+        elif a.startsWith("--type="): msgType = a[7..^1]
+        elif a == "--type" and i + 1 < args.len: msgType = args[i+1]; inc i
+        elif a.startsWith("--from="): fromAgent = a[7..^1]
+        elif a == "--from" and i + 1 < args.len: fromAgent = args[i+1]; inc i
+        elif a.startsWith("--subject="): subject = a[10..^1]
+        elif a == "--subject" and i + 1 < args.len: subject = args[i+1]; inc i
+        elif a.startsWith("--body="): body = resolveVal(a[7..^1])
+        elif a == "--body" and i + 1 < args.len: body = resolveVal(args[i+1]); inc i
+        elif a.startsWith("--tags="):
+          for t in a[7..^1].split(','):
+            if t.strip().len > 0: tags.add(t.strip())
+        elif a == "--tags" and i + 1 < args.len:
+          for t in args[i+1].split(','):
+            if t.strip().len > 0: tags.add(t.strip())
+          inc i
+        elif a.startsWith("--reply-to=") or a.startsWith("--reply_to="): replyTo = a[11..^1]
+        elif (a == "--reply-to" or a == "--reply_to") and i + 1 < args.len: replyTo = args[i+1]; inc i
+        elif a.startsWith("--id="): msgId = a[5..^1]
+        elif a == "--id" and i + 1 < args.len: msgId = args[i+1]; inc i
+        elif a.startsWith("--timestamp="): customTs = a[12..^1]
+        elif a == "--timestamp" and i + 1 < args.len: customTs = args[i+1]; inc i
+        elif not a.startsWith("-"):
+          if positionalText.len == 0: positionalText = a
+          else: positionalText.add(" " & a)
+        inc i
+
+      if body.len == 0 and positionalText.len > 0:
+        body = positionalText
+
+      if body.len == 0:
+        stderr.writeLine("Error: Missing task description to route. Provide task text or --body <body>.")
+        quit(1)
+
+      if subject.len == 0:
+        let lines = body.strip().splitLines()
+        if lines.len > 0: subject = lines[0].strip()
+        if subject.len > 80: subject = subject[0 .. 79] & "..."
+        if subject.len == 0: subject = "Routed Task"
+
+      var decision: RoutingDecision
+      try:
+        decision = routeTask(routesCfg, body)
+      except CatchableError as e:
+        stderr.writeLine("Error: Routing failed: " & e.msg)
+        quit(2)
+
+      var finalTags = tags
+      for t in decision.tags:
+        if t notin finalTags: finalTags.add(t)
+
+      let id = doEnqueue(cfg, decision.targetQueue, msgType, fromAgent, subject, body, finalTags, replyTo, msgId, customTs)
+      echo id
+    else:
+      if args.len < 2:
+        stderr.writeLine("Error: Missing queue name.")
+        stderr.writeLine("Usage: locutus enqueue <queue_name> --subject <subj> --body <body>")
+        quit(1)
+      let queueName = args[1]
+      var msgType = "task"
+      var fromAgent = getActiveAgentName(cfg, "", fallbackDefault = true)
+      var subject = ""
+      var body = ""
+      var tags: seq[string] = @[]
+      var replyTo = ""
+      var msgId = ""
+      var customTs = ""
+
+      var i = 2
+      while i < args.len:
+        let a = args[i]
+        if a.startsWith("--type="): msgType = a[7..^1]
+        elif a == "--type" and i + 1 < args.len: msgType = args[i+1]; inc i
+        elif a.startsWith("--from="): fromAgent = a[7..^1]
+        elif a == "--from" and i + 1 < args.len: fromAgent = args[i+1]; inc i
+        elif a.startsWith("--subject="): subject = a[10..^1]
+        elif a == "--subject" and i + 1 < args.len: subject = args[i+1]; inc i
+        elif a.startsWith("--body="): body = resolveVal(a[7..^1])
+        elif a == "--body" and i + 1 < args.len: body = resolveVal(args[i+1]); inc i
+        elif a.startsWith("--tags="):
+          for t in a[7..^1].split(','):
+            if t.strip().len > 0: tags.add(t.strip())
+        elif a == "--tags" and i + 1 < args.len:
+          for t in args[i+1].split(','):
+            if t.strip().len > 0: tags.add(t.strip())
+          inc i
+        elif a.startsWith("--reply-to=") or a.startsWith("--reply_to="): replyTo = a[11..^1]
+        elif (a == "--reply-to" or a == "--reply_to") and i + 1 < args.len: replyTo = args[i+1]; inc i
+        elif a.startsWith("--id="): msgId = a[5..^1]
+        elif a == "--id" and i + 1 < args.len: msgId = args[i+1]; inc i
+        elif a.startsWith("--timestamp="): customTs = a[12..^1]
+        elif a == "--timestamp" and i + 1 < args.len: customTs = args[i+1]; inc i
+        elif not a.startsWith("-"):
+          if subject == "": subject = a
+          elif body == "": body = a
+        inc i
+
+      if subject.len == 0 or body.len == 0:
+        stderr.writeLine("Error: Missing required arguments. --subject and --body are required.")
+        stderr.writeLine("Usage: locutus enqueue <queue_name> --subject <subj> --body <body>")
+        quit(1)
+
+      let id = doEnqueue(cfg, queueName, msgType, fromAgent, subject, body, tags, replyTo, msgId, customTs)
+      echo id
+
+  of "route":
+    if args.len < 2:
+      stderr.writeLine("Error: Missing task text or sub-command (lint / check).")
+      stderr.writeLine("Usage:")
+      stderr.writeLine("  locutus route <task_text> [--routes-file <file>] [--laya-url <url>]")
+      stderr.writeLine("  locutus route lint [--routes-file <file>] [--check-service]")
+      quit(1)
+
+    var routesFilePath = ""
+    var layaUrl = ""
+    var routeTimeout = ""
+    var checkService = false
+    var isLint = false
+    var taskText = ""
+
+    var i = 1
     while i < args.len:
       let a = args[i]
-      if a.startsWith("--type="): msgType = a[7..^1]
-      elif a == "--type" and i + 1 < args.len: msgType = args[i+1]; inc i
-      elif a.startsWith("--from="): fromAgent = a[7..^1]
-      elif a == "--from" and i + 1 < args.len: fromAgent = args[i+1]; inc i
-      elif a.startsWith("--subject="): subject = a[10..^1]
-      elif a == "--subject" and i + 1 < args.len: subject = args[i+1]; inc i
-      elif a.startsWith("--body="): body = resolveVal(a[7..^1])
-      elif a == "--body" and i + 1 < args.len: body = resolveVal(args[i+1]); inc i
-      elif a.startsWith("--tags="):
-        for t in a[7..^1].split(','):
-          if t.strip().len > 0: tags.add(t.strip())
-      elif a == "--tags" and i + 1 < args.len:
-        for t in args[i+1].split(','):
-          if t.strip().len > 0: tags.add(t.strip())
-        inc i
-      elif a.startsWith("--reply-to=") or a.startsWith("--reply_to="): replyTo = a[11..^1]
-      elif (a == "--reply-to" or a == "--reply_to") and i + 1 < args.len: replyTo = args[i+1]; inc i
-      elif a.startsWith("--id="): msgId = a[5..^1]
-      elif a == "--id" and i + 1 < args.len: msgId = args[i+1]; inc i
-      elif a.startsWith("--timestamp="): customTs = a[12..^1]
-      elif a == "--timestamp" and i + 1 < args.len: customTs = args[i+1]; inc i
+      if a in ["lint", "check"]:
+        isLint = true
+      elif a in ["--check-service", "--check_service", "--ping"]:
+        checkService = true
+      elif a.startsWith("--routes-file="): routesFilePath = a[14..^1]
+      elif a.startsWith("--routes_file="): routesFilePath = a[14..^1]
+      elif (a == "--routes-file" or a == "--routes_file") and i + 1 < args.len:
+        routesFilePath = args[i+1]; inc i
+      elif a.startsWith("--laya-url="): layaUrl = a[11..^1]
+      elif a.startsWith("--laya_url="): layaUrl = a[11..^1]
+      elif (a == "--laya-url" or a == "--laya_url") and i + 1 < args.len:
+        layaUrl = args[i+1]; inc i
+      elif a.startsWith("--route-timeout="): routeTimeout = a[16..^1]
+      elif a.startsWith("--route_timeout="): routeTimeout = a[16..^1]
+      elif (a == "--route-timeout" or a == "--route_timeout") and i + 1 < args.len:
+        routeTimeout = args[i+1]; inc i
       elif not a.startsWith("-"):
-        if subject == "": subject = a
-        elif body == "": body = a
+        if taskText.len == 0: taskText = a
+        else: taskText.add(" " & a)
       inc i
 
-    if subject.len == 0 or body.len == 0:
-      stderr.writeLine("Error: Missing required arguments. --subject and --body are required.")
-      stderr.writeLine("Usage: locutus enqueue <queue_name> --subject <subj> --body <body>")
+    let rPath = findRoutesConfig(routesFilePath)
+    if rPath.len == 0:
+      stderr.writeLine("Error: Route configuration not found (checked ./locu-routes.yaml, .locutus/routes.yaml). Specify --routes-file or initialize locu-routes.yaml.")
       quit(1)
 
-    let id = doEnqueue(cfg, queueName, msgType, fromAgent, subject, body, tags, replyTo, msgId, customTs)
-    echo id
+    if isLint:
+      let (valid, errors, warnings) = lintRoutesConfigFile(rPath, checkService = checkService)
+      if valid:
+        var routesCfg: RoutingConfig
+        try:
+          routesCfg = parseRoutesConfig(readFile(rPath), rPath)
+        except CatchableError: discard
+
+        var qList: seq[string] = @[]
+        for qid, qc in routesCfg.questions:
+          qList.add(qid & " [" & qc.qType & "]")
+        var rList: seq[string] = @[]
+        for r in routesCfg.routes:
+          rList.add(r.name)
+
+        echo "✓ Route configuration is valid: " & rPath
+        echo "  Questions (" & $qList.len & "): " & qList.join(", ")
+        echo "  Routes (" & $rList.len & "): " & rList.join(", ")
+        echo "  Service: " & routesCfg.service.url & " (timeout: " & $routesCfg.service.timeoutSeconds & "s)"
+        echo "  Limits: " & $routesCfg.limits.overflowStrategy & " (chunk: " & $routesCfg.limits.chunkSize &
+             ", overlap: " & $routesCfg.limits.chunkOverlap & ", max_chunks: " & $routesCfg.limits.maxChunks & ")"
+        if checkService:
+          echo "  ✓ Laya System 1 service check passed"
+        if warnings.len > 0:
+          echo "Warnings:"
+          for w in warnings: echo "  ! " & w
+        quit(0)
+      else:
+        stderr.writeLine("✗ Route configuration failed validation: " & rPath)
+        stderr.writeLine("Errors:")
+        for e in errors:
+          stderr.writeLine("  - " & e)
+        if warnings.len > 0:
+          stderr.writeLine("Warnings:")
+          for w in warnings:
+            stderr.writeLine("  ! " & w)
+        quit(1)
+
+    # Dry-run task routing
+    if taskText.len == 0:
+      stderr.writeLine("Error: Missing task text to route.")
+      stderr.writeLine("Usage: locutus route <task_text> [--routes-file <file>] [--laya-url <url>]")
+      quit(1)
+
+    var routesCfg: RoutingConfig
+    try:
+      routesCfg = parseRoutesConfig(readFile(rPath), rPath)
+    except CatchableError as e:
+      stderr.writeLine("Error: Failed to parse route configuration: " & e.msg)
+      quit(1)
+
+    if layaUrl.len > 0: routesCfg.service.url = layaUrl
+    if routeTimeout.len > 0:
+      try: routesCfg.service.timeoutSeconds = parseFloat(routeTimeout)
+      except ValueError: discard
+
+    var decision: RoutingDecision
+    try:
+      decision = routeTask(routesCfg, taskText)
+    except CatchableError as e:
+      stderr.writeLine("Error: Routing failed: " & e.msg)
+      quit(2)
+
+    var tagsArr = newJArray()
+    for t in decision.tags: tagsArr.add(%t)
+
+    var outObj = %*{
+      "matched_rule": decision.matchedRule,
+      "target": {
+        "queue": decision.targetQueue,
+        "tags": tagsArr,
+        "lease_seconds": decision.leaseSeconds
+      },
+      "answers": decision.rawAnswers,
+      "aggregation": decision.aggregationMetadata
+    }
+    echo pretty(outObj)
+    quit(0)
 
   of "work":
     if args.len < 2:

@@ -1,60 +1,63 @@
 ---
-description: Locutus Inter-Agent Communication Bus Protocol & Terminal Coordination
+description: Locutus Multi-Agent Coordination Protocol & Harness Rules
 globs: *
 alwaysApply: true
 ---
 
+<!-- AUTO-GENERATED FROM AGENTS.md BY scripts/compile_rules.py - DO NOT EDIT DIRECTLY -->
+
 # Locutus Multi-Agent Coordination Protocol for Cursor
 
-You are connected to **Locutus**, a high-speed, daemonless inter-agent communication bus running over Redis. You coordinate with peer AI assistants across terminals, editors, and remote machines using the `locutus` CLI.
+## Locutus Multi-Agent Coordination Guide
 
-## Tool Invocation Rules for Cursor
-- **Tool to use**: `terminal` / `run_terminal_cmd` (bash commands).
-- **Prohibitions**:
-  - ❌ NEVER run `locutus listen &` in a detached shell; detached processes drop stdout.
-  - ❌ NEVER poll or loop on `locutus check-inbox` in a tight loop.
+This repository utilizes **Locutus / Locu** for inter-assistant communication, distributed locking, and synchronized task queues over Redis/Valkey.
 
-## Core Commands & Execution Patterns
-
-### 1. Register Identity at Session Bootstrap
-When starting work, register your agent name and project tags:
+### 0. Self-Bootstrapping Prerequisite
+This project requires `locu` and `braid`. If `command -v locu` or `command -v braid` fails, install them via npm:
 ```bash
-locutus open <my-name> "<tags>"
-```
-*(Sets your identity, binds your session, drains any offline message backlog, and registers active heartbeat).*
-
-### 2. Send a Routine Task to a Peer (`--soon`, Default)
-```bash
-locutus send --to <recipient> --subject "<subject>" --body "<body>" --soon
-```
-*(Delivers cleanly to the peer's next response turn without interrupting running tool executions).*
-
-### 3. Send an Urgent Interruption or Task Cancellation (`--immediate`)
-Use `--immediate` when cancelling an in-flight operation or injecting vital context before damage occurs:
-```bash
-# Cancel an in-flight task:
-locutus send --to <recipient> --subject "ABORT: Cancel build" --body "Retract build #104 immediately" --immediate
-
-# Inject vital context to an operation in flight:
-locutus send --to <recipient> --subject "URGENT CONTEXT: Re: <prev_subj>" --body "STOP: Credentials expired, switch to staging" --reply-to "<id>" --immediate
+npm install -g @axiomantic/locu @axiomantic/braid
 ```
 
-### 4. Reply to a Received Task
-```bash
-locutus reply --to <sender> --subject "Re: <subject>" --body "<result>" --reply-to "<msg_id>"
-```
-*(If you need to wait for the next task immediately after replying, pass `--listen`: `locutus reply ... --listen`).*
+### 1. Invariants & Identity
+* **No Workspace-Scoped Identity Files**:
+  Agent identity is strictly decoupled from directory paths. **Never create or read `.locutus.agent` in any project or workspace directory.** Agent identity is resolved exclusively through:
+  1. `LOCUTUS_AGENT_NAME` environment variable.
+  2. Harness session ID mapping (`LOCUTUS_SESSION_ID=<runtime>:<sessionId>` via `~/.config/locutus/sessions.json` or Redis).
+  3. Explicit CLI flag: `locutus open <name> "<tags>"`.
+* **Zero Dirty Commits**:
+  All agent state, lockfiles, temporary buffers, and session files must be ignored in `~/.gitignore_global` or `.git/info/exclude`. Never stage or commit coordination metadata (`.locutus.*`, `*.lock`).
 
-### 5. Waiting for Peer Tasks (When Idle)
-When your tasks are complete and you are awaiting peer responses or instructions:
-```bash
-locutus listen <my-name> 120
-```
-*(Blocks silently up to 120 seconds. Emits JSON payload to stdout and exits 0 when a message arrives).*
+### 2. Harness Listener Discipline & Capability-Based Execution
+* **Zero Timeouts (Anti-Token-Thrash Invariant)**:
+  Always invoke `locutus listen <agent>` with **no timeout** (infinite wait). Never pass arbitrary bounded timeouts (e.g. 30s or 120s). When a timeout expires, the command exits empty, forcing the assistant to burn an entire LLM inference cycle (context + reasoning + generation) just to re-run the listener (up to 120 empty wakeups/hour). Redis `BLPOP` consumes 0 CPU, 0 bandwidth, and 0 tokens while waiting indefinitely until work arrives. Timeouts are strictly optional and explicitly discouraged across the board.
 
-### 6. Desktop Notifications for Background Listening
-In multi-window or multitasking workflows, run the notification listener in a background terminal:
-```bash
-locutus listen <my-name> --notify
-```
-*(Triggers native desktop notifications whenever a peer sends a task or reply).*
+* **Tool Capability Decision Tree (Introspect Your Runtime Tools)**:
+  Agents must never block their primary conversation turn. Evaluate your harness tools in this exact priority order (always prefer direct background execution in the main chat over subagents to minimize token overhead):
+  1. **In-Process Harness Ear Extension** (e.g. OpenCode `opencode-ear.js`, Pi `pi-ear.ts`):
+     - Do NOT execute `locutus listen` with any tool. Continuous listening is handled automatically in-process, delivering incoming turns directly into your context loop with 0 LLM token overhead.
+  2. **Shell Tool with Native Daemon / Background Support in Main Chat** (e.g. `run_command(..., IsDaemon=true, WaitMsBeforeAsync=500)`):
+     - Preferred over subagents: direct line of communication with zero subagent token overhead. Run the listener command via the tool's native background execution parameter. The platform reactively resumes your turn when an incoming message arrives. Do not poll in a loop.
+  3. **Subagent / Task Tool with Background Support** (e.g. `Task(..., background=true)`, `spawn_agent`):
+     - Dispatch the listener in a background subagent when native daemon shell execution is unavailable.
+     - **CRITICAL INVARIANT — NO DOUBLE-DAEMONS**: Inside the subagent, the command itself must be **SYNCHRONOUS AND BLOCKING** (`locutus listen <agent>`). Do NOT run as a daemon or background process inside the subagent. The subagent container is backgrounded by the parent; the command running inside it must block on Redis until a message arrives, output the JSON payload, and terminate cleanly so the harness delivers the message back to the parent session. Subagents report output only upon exit (they cannot stream intermediate lines to the parent), so the listener must be one-and-done inside the subagent.
+  4. **Neither Capability Available (Synchronous-Only Shell Execution)**:
+     - If the harness only provides synchronous foreground shell tools with no managed background parameter, **DO NOT run `locutus listen`**. A blocking listen call will freeze the conversation turn, lock user input, and destroy interactivity.
+     - **Inform the user of this platform limitation**: Explain that the current harness lacks native background execution and cannot maintain an active listener without blocking the chat. Advise the user that incoming communications over `locutus` must be checked explicitly (e.g. via `locutus check-inbox` on demand or during user turns).
+
+* **STRICT PROHIBITION: Never Use Shell `&` or Output Redirects**:
+  ❌ **NEVER run `locutus listen &`, `nohup locutus listen &`, or redirect stdout/stderr (`> /dev/null 2>&1 &` or `> file.log &`)**.
+  - Detaching with `&` creates an unmanaged shell process that severs process tracking.
+  - Redirecting stdout/stderr **swallows the notification stream**! The agent's event loop will never see the incoming message and the agent will remain permanently deaf to incoming tasks and in-flight preemption interrupts.
+
+### 3. Task Claiming & Fencing Protocol
+* **Claiming Work**: When claiming tasks from queues, always negotiate leases:
+  ```bash
+  locutus claim queue:<project>:tasks --lease 1800
+  ```
+* **Fencing Tokens**: Every claimed task yields a monotonic `fencing_token`. Record this token in your task execution manifest. If your lease expires, never write back with an outdated token.
+* **Completion & Ack**:
+  Once task work is verified:
+  ```bash
+  locutus ack queue:<project>:tasks <task_id>
+  locutus reply --to <sender> '{"status": "completed", "task_id": "<task_id>"}'
+  ```

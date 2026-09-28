@@ -1,0 +1,84 @@
+version: "1.0"
+
+service:
+  url: "http://127.0.0.1:8000"
+  timeout_seconds: 5.0
+
+limits:
+  overflow_strategy: "split_aggregate"
+  chunk_size: 8000
+  chunk_overlap: 800
+  split_delimiter: "\n"
+  max_chunks: 10
+  defaults:
+    choice: "max_confidence"
+    score: "max"
+    noul: "any"
+
+questions:
+  domain:
+    type: choice
+    instructions: "Which technical domain or subsystem does this task belong to?"
+    options:
+      - database
+      - frontend
+      - api
+      - firmware
+      - ops
+    aggregate: max_confidence
+
+  urgency:
+    type: score
+    instructions: "How urgent is this issue or request?"
+    criteria:
+      - "low priority backlog chore"
+      - "standard feature or bug fix"
+      - "urgent blocker or production issue"
+    aggregate: max
+
+  needs_migration:
+    type: noul
+    instructions: "Does this task require modifying database schemas or running data migrations?"
+    aggregate: any
+
+routes:
+  - name: "critical-ops-incidents"
+    match:
+      domain.choice: "ops"
+      urgency.score: { gte: 1.5 }
+    target:
+      queue: "queue:swarm:ops-urgent"
+      tags: ["ops", "urgent", "incident"]
+      lease_seconds: 3600
+
+  - name: "firmware-worker-dedicated"
+    match:
+      domain.choice: "firmware"
+    target:
+      queue: "queue:worker:worker-claude"
+      tags: ["firmware", "c", "arm"]
+      lease_seconds: 2400
+
+  - name: "database-tasks"
+    match:
+      domain.choice: "database"
+    target:
+      queue: "queue:swarm:database"
+      tags: ["database", "sql"]
+      lease_seconds: 1800
+
+  - name: "api-tasks"
+    match:
+      domain.choice: "api"
+    target:
+      queue: "queue:swarm:api"
+      tags: ["api", "backend"]
+      lease_seconds: 1800
+
+  - name: "frontend-tasks"
+    match:
+      domain.choice: "frontend"
+    target:
+      queue: "queue:swarm:frontend"
+      tags: ["frontend", "ui"]
+      lease_seconds: 1800

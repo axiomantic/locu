@@ -90,7 +90,7 @@ class TestLocutusNimBinary(unittest.TestCase):
             "version", "open", "listen", "send", "reply", "broadcast", "request",
             "scatter", "enqueue", "work", "claim", "ack", "blackboard", "floor",
             "cancel", "ballot", "leader", "workflow", "status", "lock", "unlock",
-            "pub", "sub", "who", "sweep", "tag", "drain", "close", "get-secret", "config"
+            "pub", "sub", "who", "sweep", "tag", "drain", "close", "get-secret", "config", "route"
         ]
         for subcmd in expected_subcommands:
             self.assertIn(f"locutus {subcmd}", res.stdout, f"Subcommand '{subcmd}' missing from --help output")
