@@ -20,7 +20,7 @@
 
 ## Table of Contents
 
-- [What is Locu?](#what-is-locu)
+- [What is Rhizo?](#what-is-rhizo)
 - [30-Second Quickstart](#30-second-quickstart)
   - [1. Install (Universal NPM Package)](#1-install-universal-npm-package)
   - [2. Try it in Your Terminals](#2-try-it-in-your-terminals)
@@ -48,61 +48,58 @@
 
 ---
 
-## What is Locu?
+## What is Rhizo?
 
-**Locu** (formerly *Locutus*; CLI aliases: `locu`, `locuti`, `locutus`) is an inter-agent communication bus that lets AI coding assistants (such as Claude Code, OpenCode, Cursor, Windsurf, Antigravity, and Ollama) exchange tasks and messages across terminals, editors, and machines.
+**Rhizo** is an inter-agent communication bus that lets AI coding assistants (such as Claude Code, OpenCode, Cursor, Windsurf, Antigravity, and Codex) exchange tasks and messages across terminals, editors, and machines.
 
-Instead of running a complex background server, Locu routes and queues messages directly through **Redis** or **Valkey**.
-
-> [!NOTE]
-> **Command Naming**: `locu` is the primary executable command. `locuti` and `locutus` are included as 100% backward-compatible aliases across npm, pre-compiled binaries, and package managers.
+Instead of running a complex background server, Rhizo routes and queues messages directly through **Redis** or **Valkey**.
 
 ### Pairing with Vine & Garden for Full Orchestration
-While Locutus coordinates agent messaging, task claiming, and distributed locking, agents frequently need isolated workspaces to compile and test code without stepping on `main`.
+While Rhizo coordinates agent messaging, task claiming, and distributed locking, agents frequently need isolated workspaces to compile and test code without stepping on `main`.
 
-Locutus pairs natively with [**Braid**](https://github.com/axiomantic/vine):
-1. **Claim Task**: `locu claim queue:myproj:tasks --lease 1800` (yields monotonic `fencing_token`).
-2. **Spin Zero-Cost Strand**: `braid new <task_id> --worktree` (sub-second APFS CoW workspace).
-3. **Verify Two-Key Gate**: `braid gate --json` (Key 1 in-memory conflict check + Key 2 live compiler/test suite).
-4. **Weave & Acknowledge**: `braid weave && locu ack queue:myproj:tasks <task_id>`.
+Rhizo pairs natively with [**Vine**](https://github.com/axiomantic/vine) and [**Garden**](https://github.com/axiomantic/garden):
+1. **Claim Task**: `rhizo claim queue:myproj:tasks --lease 1800` (yields monotonic `fencing_token`).
+2. **Spin Zero-Cost Strand**: `vine new <task_id> --worktree` (sub-second APFS CoW workspace).
+3. **Verify Two-Key Gate**: `vine gate --json` (Key 1 in-memory conflict check + Key 2 live compiler/test suite).
+4. **Weave & Acknowledge**: `vine weave && rhizo ack queue:myproj:tasks <task_id>`.
 
 ---
 
 ## 30-Second Quickstart
 
-### 1. Install (Universal NPM Package)
+### 1. Install
 
 ```bash
-# Install globally via npm (provides locu, locuti, and locutus):
-npm install -g @axiomantic/rhizo
+# Add to your AI assistants (interactively choose agents):
+npx skills add axiomantic/rhizo
 
-# Or run directly without installation via npx:
-npx @axiomantic/locu --help
+# Or install the CLI globally:
+npm install -g @axiomantic/rhizo
 ```
 
 ### 2. Try it in Your Terminals
 
 **Terminal A (Worker 1):**
 ```bash
-locu open worker-1 "backend,qa"
-locu listen
+rhizo open worker-1 "backend,qa"
+rhizo listen
 ```
 *Registers `worker-1` and waits for incoming tasks with zero CPU and zero token consumption.*
 
 **Terminal B (Worker 2):**
 ```bash
-locu open worker-2 "frontend,qa"
-locu listen
+rhizo open worker-2 "frontend,qa"
+rhizo listen
 ```
 *Registers `worker-2` and waits on its own inbox.*
 
 **Terminal C (Coordinator / Sender):**
 ```bash
 # 1-to-1 Direct Task (O2O):
-locu send --to worker-1 --subject "Run Tests" --body "pytest tests/auth"
+rhizo send --to worker-1 --subject "Run Tests" --body "pytest tests/auth"
 
 # 1-to-Many Group Broadcast (O2M):
-locu broadcast --tags "qa" --subject "Deploy Staging" --body "Verify build v1.2"
+rhizo broadcast --tags "qa" --subject "Deploy Staging" --body "Verify build v1.2"
 ```
 *Terminal A receives the direct task; both Terminal A and Terminal B receive the multicast broadcast instantly.*
 
@@ -111,45 +108,45 @@ locu broadcast --tags "qa" --subject "Deploy Staging" --body "Verify build v1.2"
 You can coordinate multiple coding assistants across different terminal windows or editors using natural language:
 
 **Terminal 1 — The Orchestrator (Lead Assistant):**
-> *"You are the coordinator for this project. Connect to Locu as lead. Check who is online with `locu who`, broadcast the test plan to the 'qa' group, and assign API work to 'backend'."*
-- The lead registers (`locu open lead "orchestrator"`), inspects the active roster (`locu who`), and broadcasts work:
+> *"You are the coordinator for this project. Connect to Rhizo as lead. Check who is online with `rhizo who`, broadcast the test plan to the 'qa' group, and assign API work to 'backend'."*
+- The lead registers (`rhizo open lead "orchestrator"`), inspects the active roster (`rhizo who`), and broadcasts work:
   ```bash
-  locu broadcast --tags "qa" --subject "Test Plan" --body "Validate auth endpoints on staging"
-  locu broadcast --tags "backend" --subject "API Task" --body "Implement POST /api/v1/login"
+  rhizo broadcast --tags "qa" --subject "Test Plan" --body "Validate auth endpoints on staging"
+  rhizo broadcast --tags "backend" --subject "API Task" --body "Implement POST /api/v1/login"
   ```
 
 **Terminal 2 — Backend Worker Assistant (e.g. Claude Code or Cursor):**
-> *"Connect to Locu as worker-backend with tag 'backend'. Listen for tasks, implement them, and send replies back to lead."*
-- The worker registers (`locu open worker-backend "backend"`), blocks on `locu listen` (consuming **0 CPU** and **0 tokens** while waiting), receives the task, implements the code, and replies:
+> *"Connect to Rhizo as worker-backend with tag 'backend'. Listen for tasks, implement them, and send replies back to lead."*
+- The worker registers (`rhizo open worker-backend "backend"`), blocks on `rhizo listen` (consuming **0 CPU** and **0 tokens** while waiting), receives the task, implements the code, and replies:
   ```bash
-  locu send --to lead --type reply --subject "Re: API Task" --body "Login endpoint implemented in src/auth.py. Tests green."
+  rhizo send --to lead --type reply --subject "Re: API Task" --body "Login endpoint implemented in src/auth.py. Tests green."
   ```
 
 **Terminal 3 — QA Worker Assistant (e.g. Antigravity or Windsurf):**
-> *"Connect to Locutus as worker-qa with tag 'qa'. Listen for incoming test requests."*
+> *"Connect to Rhizo as worker-qa with tag 'qa'. Listen for incoming test requests."*
 - The QA worker automatically receives the broadcast sent to `@qa` and begins running validation tests in parallel.
 
 ### 4. Coordination Primitives at a Glance
 
-Locutus extends point-to-point and group messaging with dedicated primitives designed specifically for autonomous AI agents and parallel terminal swarms:
+Rhizo extends point-to-point and group messaging with dedicated primitives designed specifically for autonomous AI agents and parallel terminal swarms:
 
 | Coordination Primitive | Purpose & Architecture Guarantee | Core Command | Recipe |
 |:---|:---|:---|:---:|
-| **Safe File Locking** | Distributed mutual exclusion with automatic lease expiration | `locu lock file:src/router.ts 60` | [Recipe 1](#1-safe-concurrent-file-editing) |
-| **Worker Pools** | Competing consumers with FIFO dispatch and fair scheduling | `locu enqueue <q>` / `locu work <q>` | [Recipe 2](#2-distributing-batch-jobs-across-a-worker-pool) |
-| **Synchronous RPC** | Request-reply blocking on an ephemeral correlation channel | `locu request --to <agent> --subject "..." --body "..."` | [Recipe 3](#3-synchronous-rpc-delegation-specialist-query) |
-| **Status & Activity** | Real-time cluster presence with focus broadcast and directory queries | `locu status <busy\|idle> "..."` / `locu who` | [Recipe 4](#4-team-discovery--live-focus-broadcasting) |
-| **Scatter-Gather** | Fan-out queries across specialist pools with quorum aggregation | `locu scatter --targets @tag --quorum N --timeout 15` | [Recipe 5](#5-orchestrator-scatter-gather--quorum-consensus) |
-| **Reliable Task Leases** | At-least-once claims, in-flight lease renewal, and DLQ routing | `locu claim <q> --lease 60` / `locu ack <q> <id>` | [Recipe 6](#6-fault-tolerant-worker-mesh-with-leases--dead-letter-queue) |
-| **Shared Blackboard** | Durable shared KV & list scratchpad with OCC revision tracking | `locu blackboard <set\|get\|append\|snapshot\|load>` | [Recipe 7](#7-shared-blackboard--roundtable-scratchpad) |
-| **Floor Control** | Roundtable speaker ring preventing cross-talk during discussions | `locu floor <request\|yield\|pass\|status> <room>` | [Recipe 8](#8-moderated-roundtable-discussion-with-floor-control) |
-| **Cancellation Tokens** | Global abort signal halting runaway worker executions instantly | `locu cancel <run_id> --reason "..."` | [Recipe 9](#9-coordinated-run-cancellation-across-workers) |
-| **Blind Consensus Voting** | Secret-ballot consensus eliminating model anchoring bias | `locu ballot <open\|cast\|tally\|status> <id>` | [Recipe 10](#10-blind-consensus-voting-to-eliminate-anchoring-bias) |
-| **Leader Election** | Resilient coordinator lease with automatic preemption failover | `locu leader <acquire\|renew\|resign\|status> <role>` | [Recipe 11](#11-self-healing-leader-election--automated-failover) |
-| **DAG Workflow Engine** | Multi-stage pipeline graph with automatic dependency unlocking | `locu workflow <define\|next\|resolve\|export\|import>` | [Recipe 12](#12-dag-based-multi-stage-workflow-pipeline) |
-| **Cluster Health Sweeper** | Cursor-based SCAN watchdog pruning dead agents & stale listeners | `locu sweep [--dry-run] [--raw]` | [Recipe 13](#13-cluster-health-sweeping--self-healing-watchdog) |
-| **Fencing Tokens** | Monotonic integer sequence counter preventing zombie writes | `locu lock <resource> 60 --fencing` | [Recipe 14](#14-distributed-locking-with-monotonic-fencing-tokens) |
-| **Pub/Sub Streaming** | Real-time ephemeral broadcast streaming without queue memory | `locu pub <channel> "..."` / `locu sub <channel>` | [CLI Reference](#2-cli-command-reference) |
+| **Safe File Locking** | Distributed mutual exclusion with automatic lease expiration | `rhizo lock file:src/router.ts 60` | [Recipe 1](#1-safe-concurrent-file-editing) |
+| **Worker Pools** | Competing consumers with FIFO dispatch and fair scheduling | `rhizo enqueue <q>` / `rhizo work <q>` | [Recipe 2](#2-distributing-batch-jobs-across-a-worker-pool) |
+| **Synchronous RPC** | Request-reply blocking on an ephemeral correlation channel | `rhizo request --to <agent> --subject "..." --body "..."` | [Recipe 3](#3-synchronous-rpc-delegation-specialist-query) |
+| **Status & Activity** | Real-time cluster presence with focus broadcast and directory queries | `rhizo status <busy\|idle> "..."` / `rhizo who` | [Recipe 4](#4-team-discovery--live-focus-broadcasting) |
+| **Scatter-Gather** | Fan-out queries across specialist pools with quorum aggregation | `rhizo scatter --targets @tag --quorum N --timeout 15` | [Recipe 5](#5-orchestrator-scatter-gather--quorum-consensus) |
+| **Reliable Task Leases** | At-least-once claims, in-flight lease renewal, and DLQ routing | `rhizo claim <q> --lease 60` / `rhizo ack <q> <id>` | [Recipe 6](#6-fault-tolerant-worker-mesh-with-leases--dead-letter-queue) |
+| **Shared Blackboard** | Durable shared KV & list scratchpad with OCC revision tracking | `rhizo blackboard <set\|get\|append\|snapshot\|load>` | [Recipe 7](#7-shared-blackboard--roundtable-scratchpad) |
+| **Floor Control** | Roundtable speaker ring preventing cross-talk during discussions | `rhizo floor <request\|yield\|pass\|status> <room>` | [Recipe 8](#8-moderated-roundtable-discussion-with-floor-control) |
+| **Cancellation Tokens** | Global abort signal halting runaway worker executions instantly | `rhizo cancel <run_id> --reason "..."` | [Recipe 9](#9-coordinated-run-cancellation-across-workers) |
+| **Blind Consensus Voting** | Secret-ballot consensus eliminating model anchoring bias | `rhizo ballot <open\|cast\|tally\|status> <id>` | [Recipe 10](#10-blind-consensus-voting-to-eliminate-anchoring-bias) |
+| **Leader Election** | Resilient coordinator lease with automatic preemption failover | `rhizo leader <acquire\|renew\|resign\|status> <role>` | [Recipe 11](#11-self-healing-leader-election--automated-failover) |
+| **DAG Workflow Engine** | Multi-stage pipeline graph with automatic dependency unlocking | `rhizo workflow <define\|next\|resolve\|export\|import>` | [Recipe 12](#12-dag-based-multi-stage-workflow-pipeline) |
+| **Cluster Health Sweeper** | Cursor-based SCAN watchdog pruning dead agents & stale listeners | `rhizo sweep [--dry-run] [--raw]` | [Recipe 13](#13-cluster-health-sweeping--self-healing-watchdog) |
+| **Fencing Tokens** | Monotonic integer sequence counter preventing zombie writes | `rhizo lock <resource> 60 --fencing` | [Recipe 14](#14-distributed-locking-with-monotonic-fencing-tokens) |
+| **Pub/Sub Streaming** | Real-time ephemeral broadcast streaming without queue memory | `rhizo pub <channel> "..."` / `rhizo sub <channel>` | [CLI Reference](#2-cli-command-reference) |
 
 ---
 
@@ -161,178 +158,178 @@ Minimal, production-ready recipes for common multi-agent coordination patterns:
 Acquire a distributed lease before modifying shared files to prevent overwrite collisions across parallel agents:
 ```bash
 # 1. Acquire 60-second lease (returns 0 on success, 1 on conflict):
-locu lock file:src/router.ts 60
+rhizo lock file:src/router.ts 60
 
 # 2. Safely inspect, edit, or refactor the file...
 
 # 3. Release lease immediately upon completion:
-locu unlock file:src/router.ts
+rhizo unlock file:src/router.ts
 ```
 
 ### 2. Distributing Batch Jobs Across a Worker Pool
 Farm out independent tasks across interchangeable worker assistants with guaranteed exactly-once delivery:
 ```bash
 # Orchestrator pushes tasks:
-locu enqueue test_suite --subject "Auth Tests" --body "tests/auth_test.go"
-locu enqueue test_suite --subject "API Tests" --body "tests/api_test.go"
+rhizo enqueue test_suite --subject "Auth Tests" --body "tests/auth_test.go"
+rhizo enqueue test_suite --subject "API Tests" --body "tests/api_test.go"
 
 # Workers consume tasks concurrently (blocks silently until available):
-task=$(locu work test_suite)
+task=$(rhizo work test_suite)
 ```
 
 ### 3. Synchronous RPC Delegation (Specialist Query)
 Delegate a specialized query or verification and block for the clean result:
 ```bash
 # Requester (blocks up to 30s; --raw outputs clean response body):
-res=$(locu request --to db-expert --subject "Query Plan" --body "SELECT * FROM users" --timeout 30 --raw)
+res=$(rhizo request --to db-expert --subject "Query Plan" --body "SELECT * FROM users" --timeout 30 --raw)
 
 # Specialist Responder:
-locu reply --to orchestrator --subject "Re: Query Plan" --body "Add composite index on (created_at, user_id)" --reply-to <req_id> --listen
+rhizo reply --to orchestrator --subject "Re: Query Plan" --body "Add composite index on (created_at, user_id)" --reply-to <req_id> --listen
 ```
 
 ### 4. Team Discovery & Live Focus Broadcasting
 Check active teammates before dispatching tasks, and broadcast current focus to coordinators:
 ```bash
 # Discover active agents cluster-wide:
-locu who -a --json
+rhizo who -a --json
 
 # Broadcast current focus:
-locu status busy "Refactoring auth middleware"
+rhizo status busy "Refactoring auth middleware"
 
 # Signal completion when ready:
-locu status idle "Awaiting next task"
+rhizo status idle "Awaiting next task"
 ```
 
 ### 5. Orchestrator Scatter-Gather & Quorum Consensus
 Fan out an objective across a pool of specialists and aggregate responses until quorum is met:
 ```bash
 # Fan out to all agents with tag 'reviewers', waiting for at least 2 approvals:
-replies=$(locu scatter --targets @reviewers --subject "Review PR #42" --body "Please review diff in staging" --quorum 2 --timeout 15)
+replies=$(rhizo scatter --targets @reviewers --subject "Review PR #42" --body "Please review diff in staging" --quorum 2 --timeout 15)
 
 # Or fan out to explicit agents and pipe bare response bodies:
-locu scatter --targets "analyzer1,analyzer2" --subject "Benchmark" --body "run" --raw
+rhizo scatter --targets "analyzer1,analyzer2" --subject "Benchmark" --body "run" --raw
 ```
 
 ### 6. Fault-Tolerant Worker Mesh with Leases & Dead-Letter Queue
 Non-destructively claim tasks with leases and eliminate task loss on worker crash:
 ```bash
 # 1. Claim task with 60-second lease (supports --run-id for cancellation awareness):
-task=$(locu claim batch_pipeline --lease 60 --run-id run_042)
+task=$(rhizo claim batch_pipeline --lease 60 --run-id run_042)
 task_id=$(echo "$task" | jq -r '.id')
 
 # 2. For long-running execution (>60s), periodically renew lease to prevent task theft:
-locu claim renew batch_pipeline "$task_id" --lease 60
+rhizo claim renew batch_pipeline "$task_id" --lease 60
 
 # 3. Confirm completion and release lease:
-locu ack batch_pipeline "$task_id"
+rhizo ack batch_pipeline "$task_id"
 ```
 
 ### 7. Shared Blackboard & Roundtable Scratchpad
 Share persistent specs and append ideas across agents without context ballooning:
 ```bash
 # 1. Set shared architecture specification:
-locu blackboard set brainstorm arch_spec '{"runtime": "nim", "crypto": "openssl_evp"}'
+rhizo blackboard set brainstorm arch_spec '{"runtime": "nim", "crypto": "openssl_evp"}'
 
 # 2. Query current Optimistic Concurrency Control (OCC) revision:
-rev=$(locu blackboard rev brainstorm arch_spec)
+rev=$(rhizo blackboard rev brainstorm arch_spec)
 # => "1"
 
 # 3. Append ideas or action items:
-locu blackboard append brainstorm ideas "Idea 1: Add monotonic fencing tokens to mutex locks"
-locu blackboard append brainstorm ideas "Idea 2: DAG-based workflow pipeline engine"
+rhizo blackboard append brainstorm ideas "Idea 1: Add monotonic fencing tokens to mutex locks"
+rhizo blackboard append brainstorm ideas "Idea 2: DAG-based workflow pipeline engine"
 
 # 4. Take room snapshot:
-locu blackboard snapshot brainstorm
+rhizo blackboard snapshot brainstorm
 ```
 
 ### 8. Moderated Roundtable Discussion with Floor Control
 Coordinate turn-taking and prevent cross-talk during multi-agent discussions:
 ```bash
 # 1. Request the floor (with a 30s speaker lease). Blocks if occupied:
-locu floor request design_room 30
+rhizo floor request design_room 30
 
 # 2. Write speaking points or broadcast to participants:
-locu blackboard append design_room notes "Speaker proposal: Split monolithic config into modular schemas"
+rhizo blackboard append design_room notes "Speaker proposal: Split monolithic config into modular schemas"
 
 # 3. Yield floor to the next waiting speaker:
-locu floor yield design_room
+rhizo floor yield design_room
 # Or pass explicitly:
-locu floor pass design_room specialist_bob
+rhizo floor pass design_room specialist_bob
 ```
 
 ### 9. Coordinated Run Cancellation Across Workers
 Publish cancellation tokens to immediately stop background jobs and prevent wasted AI token spend:
 ```bash
 # 1. Lead / Orchestrator cancels run:
-locu cancel run_042 --reason "Aborted by lead: switching models"
+rhizo cancel run_042 --reason "Aborted by lead: switching models"
 
 # 2. Workers pass --run-id directly to work/claim loops (exits 0 immediately if cancelled):
-locu work batch_pipeline 30 --run-id run_042
+rhizo work batch_pipeline 30 --run-id run_042
 
 # Or manual pre-check before expensive inferences:
-if locu cancel check run_042 --exit-code; then
+if rhizo cancel check run_042 --exit-code; then
   echo "Job was cancelled! Halting execution."
   exit 0
 fi
 
 # 3. Clear token when starting fresh execution:
-locu cancel clear run_042
+rhizo cancel clear run_042
 ```
 
 ### 10. Blind Consensus Voting to Eliminate Anchoring Bias
 Conduct unbiased, sealed-ballot votes across independent models:
 ```bash
 # 1. Open ballot:
-locu ballot open framework_choice --options "react,vue,svelte" --voters "claude,gpt,gemini"
+rhizo ballot open framework_choice --options "react,vue,svelte" --voters "claude,gpt,gemini"
 
 # 2. Assistants cast sealed ballots:
-locu ballot cast framework_choice --vote "svelte" --voter "claude"
-locu ballot cast framework_choice --vote "svelte" --voter "gpt"
-locu ballot cast framework_choice --vote "react" --voter "gemini"
+rhizo ballot cast framework_choice --vote "svelte" --voter "claude"
+rhizo ballot cast framework_choice --vote "svelte" --voter "gpt"
+rhizo ballot cast framework_choice --vote "react" --voter "gemini"
 
 # 3. Reveal tally and determine winner:
-locu ballot tally framework_choice --close
+rhizo ballot tally framework_choice --close
 ```
 
 ### 11. Self-Healing Leader Election & Automated Failover
 Maintain resilient mesh coordination with preemption leases and failover:
 ```bash
 # 1. Acquire leadership lease (30s):
-locu leader acquire cluster_lead 30
+rhizo leader acquire cluster_lead 30
 
 # 2. While running, periodically heartbeat/renew:
-locu leader renew cluster_lead 30
+rhizo leader renew cluster_lead 30
 
 # 3. Check current leader:
-locu leader status cluster_lead
+rhizo leader status cluster_lead
 
 # 4. Release leadership to standby nodes:
-locu leader resign cluster_lead
+rhizo leader resign cluster_lead
 ```
 
 ### 12. DAG-Based Multi-Stage Workflow Pipeline
 Coordinate complex pipelines where dependent tasks unlock automatically as upstream stages finish:
 ```bash
 # 1. Define pipeline graph:
-locu workflow define release_pipeline \
+rhizo workflow define release_pipeline \
   --steps "lint,test,build,deploy" \
   --deps "test:lint;build:lint;deploy:test,build"
 
 # 2. Query ready unblocked steps:
-ready_steps=$(locu workflow next release_pipeline --raw)
+ready_steps=$(rhizo workflow next release_pipeline --raw)
 # => "lint"
 
 # 3. Worker executes 'lint' and resolves it:
-locu workflow resolve release_pipeline lint --output "lint passed"
+rhizo workflow resolve release_pipeline lint --output "lint passed"
 # 'test' and 'build' are now ready!
 
 # 4. Resolve 'test' and 'build':
-locu workflow resolve release_pipeline test --output "tests passed"
-locu workflow resolve release_pipeline build --output "artifacts packaged"
+rhizo workflow resolve release_pipeline test --output "tests passed"
+rhizo workflow resolve release_pipeline build --output "artifacts packaged"
 # 'deploy' is now unlocked!
 
 # 5. Final deployment step:
-locu workflow resolve release_pipeline deploy --output "deployed to prod"
+rhizo workflow resolve release_pipeline deploy --output "deployed to prod"
 # Pipeline status is now 'completed'
 ```
 
@@ -340,68 +337,68 @@ locu workflow resolve release_pipeline deploy --output "deployed to prod"
 Maintain clean Redis state and prevent directory clutter from crashed or ungracefully terminated agents:
 ```bash
 # 1. Sweep dead agent heartbeats and local stale listener PID locks:
-sweep_res=$(locu sweep)
+sweep_res=$(rhizo sweep)
 
 # 2. Inspect swept resources:
 echo "$sweep_res" | jq .
 
 # 3. Clean summary line for automation:
-locu sweep --raw
+rhizo sweep --raw
 ```
 
 ### 14. Distributed Locking with Monotonic Fencing Tokens
 Prevent zombie writes across distributed storage or databases after lease expiration:
 ```bash
 # 1. Acquire lock and obtain monotonic integer sequence token:
-fence_token=$(locu lock db_migration 60 --fencing --raw)
+fence_token=$(rhizo lock db_migration 60 --fencing --raw)
 # => "42"
 
 # 2. Guard storage mutations with the fencing token:
 # Storage or DB will reject any write whose fencing token <= current maximum token.
 
 # 3. Release lock:
-locu unlock db_migration
+rhizo unlock db_migration
 ```
 
 ---
 
 ## How it Works with Redis
 
-Locu has **no background daemon or server process**. It is a single compiled binary that runs atomic commands directly against Redis (`locu send`, `locu listen`). Redis manages the queues and delivers messages when assistants request them.
+Rhizo has **no background daemon or server process**. It is a single compiled binary that runs atomic commands directly against Redis (`rhizo send`, `rhizo listen`). Redis manages the queues and delivers messages when assistants request them.
 
-Locu maps communication directly onto standard Redis data structures:
+Rhizo maps communication directly onto standard Redis data structures:
 
 1. **Zero-Token, Zero-CPU Inboxes (Redis Lists)**:
-   - Each assistant has an inbox list (`locutus:inbox:<agent>`).
+   - Each assistant has an inbox list (`rhizo:inbox:<agent>`).
    - Senders push messages with `LPUSH`.
    - Receivers wait for messages with `BRPOP`. This blocking wait happens entirely inside the Redis server, so idle listeners consume **zero CPU** and **zero AI tokens** while waiting.
 
 2. **Roster and Tags (Redis Sets)**:
    - Active assistants and their role tags (like `backend`, `frontend`, `qa`) are saved in Redis sets.
-   - You can see who is online instantly with `locu who`.
+   - You can see who is online instantly with `rhizo who`.
 
 3. **Group Multicast Messaging (Set Intersection)**:
-   - When sending to a group (for example, `locutus broadcast --tags "qa"`), Redis finds matching assistants directly on the server using set intersection (`SINTER`).
+   - When sending to a group (for example, `rhizo broadcast --tags "qa"`), Redis finds matching assistants directly on the server using set intersection (`SINTER`).
 
 4. **Automatic Cleanup (Expiration)**:
    - **Heartbeats**: Active assistants refresh a 150-second key. If an assistant exits or crashes, it is automatically removed from the active roster.
    - **Inboxes**: Inboxes have a 7-day expiration that refreshes with every new message, automatically cleaning up abandoned queues.
 
 5. **Redis Cluster Support**:
-   - In a Redis Cluster, Locutus groups project keys using hash tags (such as `{locutus:project}:inbox:<name>`). This ensures all keys for a project live on the same cluster node, preventing multi-key errors.
+   - In a Redis Cluster, Rhizo groups project keys using hash tags (such as `{rhizo:project}:inbox:<name>`). This ensures all keys for a project live on the same cluster node, preventing multi-key errors.
 
 6. **Non-Blocking Memory Deallocation (`UNLINK`)**:
-   - High-throughput operations (such as clearing rooms in `locutus blackboard clear` or sweeping dead agents in `locutus sweep`) execute `UNLINK` rather than blocking `DEL`. Deallocation of large keys and sets occurs asynchronously in background reclaim threads, avoiding latency spikes.
+   - High-throughput operations (such as clearing rooms in `rhizo blackboard clear` or sweeping dead agents in `rhizo sweep`) execute `UNLINK` rather than blocking `DEL`. Deallocation of large keys and sets occurs asynchronously in background reclaim threads, avoiding latency spikes.
 
 ### Supported Engines & Minimum Versions
 
-Locutus requires:
+Rhizo requires:
 - **Redis 6.2+** (effects-based Lua replication, `UNLINK` memory deallocation, and atomic multi-key set commands).
-- **Valkey 7.2+ & 8.0+** (wire-compatible drop-in; native support for `valkey://` and `valkeys://` connection schemes, `VALKEY_URL` and `LOCUTUS_VALKEY_URL` environment variables, `--valkey-url` CLI flag, and `valkey_url` configuration keys).
+- **Valkey 7.2+ & 8.0+** (wire-compatible drop-in; native support for `valkey://` and `valkeys://` connection schemes, `VALKEY_URL` and `RHIZO_VALKEY_URL` environment variables, `--valkey-url` CLI flag, and `valkey_url` configuration keys).
 
 ### Comparison
 
-| Traditional Agent Frameworks | Locutus Architecture |
+| Traditional Agent Frameworks | Rhizo Architecture |
 | :--- | :--- |
 | ❌ Heavy Python/Node background server daemons | ⚡ **Daemonless**: Single CLI tool; direct Redis calls |
 | ❌ Complex WebSocket/HTTP setup requiring open ports | ⚡ **Standard Redis**: Works with local or hosted Redis (AWS, Upstash, Redis Cluster) |
@@ -420,15 +417,15 @@ Every agent receives tasks through a single atomic inbox: `${PREFIX}inbox:<agent
 flowchart TD
     Sender["Sending Assistant<br/><i>(Claude Code, Antigravity, etc.)</i>"]
 
-    Sender -->|Direct Task / O2O<br/><code>locutus send</code>| Send["Redis List<br/><code>locutus:inbox:worker</code>"]
-    Sender -->|Multicast / O2M<br/><code>locutus broadcast</code>| Bcast["Redis SINTER Tag Filter<br/><i>(Project-Scoped AND Filter)</i>"]
+    Sender -->|Direct Task / O2O<br/><code>rhizo send</code>| Send["Redis List<br/><code>rhizo:inbox:worker</code>"]
+    Sender -->|Multicast / O2M<br/><code>rhizo broadcast</code>| Bcast["Redis SINTER Tag Filter<br/><i>(Project-Scoped AND Filter)</i>"]
 
-    Bcast --> InboxQA["Redis List<br/><code>locutus:inbox:qa</code>"]
-    Bcast --> InboxBackend["Redis List<br/><code>locutus:inbox:backend</code>"]
+    Bcast --> InboxQA["Redis List<br/><code>rhizo:inbox:qa</code>"]
+    Bcast --> InboxBackend["Redis List<br/><code>rhizo:inbox:backend</code>"]
 
-    Send --> ListenWorker["Host Process: <code>locutus listen</code>"]
-    InboxQA --> ListenQA["Host Process: <code>locutus listen</code>"]
-    InboxBackend --> ListenBE["Host Process: <code>locutus listen</code>"]
+    Send --> ListenWorker["Host Process: <code>rhizo listen</code>"]
+    InboxQA --> ListenQA["Host Process: <code>rhizo listen</code>"]
+    InboxBackend --> ListenBE["Host Process: <code>rhizo listen</code>"]
 
     subgraph FW1["Air-Gap Prompt Firewall"]
         ListenWorker --> HMAC1{"HMAC-SHA256<br/>Signature Check"}
@@ -452,80 +449,40 @@ flowchart TD
 
 ## Installation & Setup
 
-Locutus consists of two components:
-1. **The Native Engine (CLI Binary)**: High-speed, compiled binary (`locutus`) that communicates directly with Redis.
-2. **The AI Agent Skill & Extensions**: Instructions (`SKILL.md`), plugins, extensions, and rule files that equip your AI assistants (**Claude Code, OpenCode, Pi Coding Agent, Cursor, GitHub Copilot, OpenAI Codex, Antigravity, Hermes**) to coordinate over Locutus.
+Rhizo is distributed both as an AI coding agent skill and as a high-speed CLI tool.
 
-You can install them together in one step, or install each component separately:
+### 1. For AI Coding Assistants (Interactive Skill Setup)
 
-### Option 1: Unified One-Line Installer (Recommended)
-
-Installs the native binary **and** automatically detects and configures all installed AI coding harnesses:
-
+Install the skill into your coding assistants (Claude Code, Antigravity, Cursor, etc.):
 ```bash
-# macOS & Linux:
-curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash
-
-# Windows (PowerShell):
-irm https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.ps1 | iex
+npx skills add axiomantic/rhizo
 ```
+*(The skill automatically self-bootstraps the CLI tool if it isn't already installed on your system).*
 
-#### What the Unified Installer Deploys:
-- **Native Binary**: Compiles or downloads `locu` to `/usr/local/bin` (or `~/.local/bin`).
-- **Claude Code**: Deploys `SKILL.md` and `wire_spec.md` to `~/.claude/skills/locutus/`.
-- **OpenCode**: Installs native plugin `opencode-ear.js` to `~/.config/opencode/plugins/locutus.js`.
-- **Pi Coding Agent (`pi.dev`)**: Installs native TypeScript extension to `~/.pi/agent/extensions/locutus.ts` and skill to `~/.pi/agent/skills/locutus/`.
-- **Cursor**: Deploys MDC rule to `.cursor/rules/locutus.mdc` (project) or `~/.cursor/rules/locutus.mdc` (global).
-- **GitHub Copilot**: Deploys repository instruction rules to `.github/copilot-instructions.md`.
-- **Antigravity / Gemini**: Deploys skill to `~/.gemini/config/skills/locutus/` and `~/.gemini/antigravity/skills/locutus/`.
-- **OpenAI Codex & Hermes**: Deploys skill to `~/.codex/skills/locutus/` and `~/.hermes/skills/locutus/`.
+### 2. Standalone CLI Installation
 
-### Option 2: Install the AI Agent Skill (Using Skill Tools)
-
-If you already have the binary, or prefer to manage skills through standard AI package managers:
-
-#### Via skills.sh (Vercel Labs)
+Install the compiled CLI tool directly onto your `$PATH`:
 ```bash
-# Install globally for all detected AI assistants:
-npx -y skills add axiomantic/locu -g -a '*' -y
-
-# Or install for a specific project / assistant:
-npx skills add axiomantic/locu --agent claude-code
-```
-
-#### Via skilz (Spillwave Solutions)
-```bash
-# Install globally across 30+ supported agent runtimes:
-skilz install https://github.com/axiomantic/rhizo
-
-# Or install for a specific project:
-skilz install https://github.com/axiomantic/rhizo --project
-```
-
-### Option 3: Install via NPM (Universal Multi-Platform)
-
-The recommended distribution mechanism across macOS, Linux, and Windows is the official npm wrapper package:
-
-```bash
-# Install globally (automatically provisions harness rules and native binaries):
 npm install -g @axiomantic/rhizo
-
-# Or run ad-hoc via npx without installing:
-npx @axiomantic/locu open worker-1 "backend"
 ```
 
-This installs `locu`, `locuti`, and `locutus` onto your PATH and automatically provisions instructions into `~/.claude/rules`, `~/.config/opencode/instructions`, and `~/.gemini/antigravity/rules`.
+### 3. Repository Coordination Guide
+
+To equip all AI agents working in a repository with Rhizo invariants (anti-token-thrash zero-timeout listening, task claiming, fencing tokens):
+```bash
+rhizo guide install
+```
 
 #### Standalone Pre-Compiled Binaries
 Pre-built archives and Debian packages are attached to every [GitHub Release](https://github.com/axiomantic/rhizo/releases):
 
 | Operating System | Architecture | Package Archive |
 | :--- | :--- | :--- |
-| **macOS** | Apple Silicon (M1/M2/M3/M4) | `locutus-darwin-arm64.tar.gz` |
-| **macOS** | Intel x86_64 | `locutus-darwin-amd64.tar.gz` |
-| **Linux** | x86_64 (amd64) | `locutus-linux-amd64.tar.gz` / `.deb` |
-| **Linux** | ARM64 (aarch64) | `locutus-linux-arm64.tar.gz` / `.deb` |
-| **Windows** | x86_64 (amd64) | `locutus-windows-amd64.zip` |
+| **macOS** | Apple Silicon (M1/M2/M3/M4) | `rhizo-darwin-arm64.tar.gz` |
+| **macOS** | Intel x86_64 | `rhizo-darwin-amd64.tar.gz` |
+| **Linux** | x86_64 (amd64) | `rhizo-linux-amd64.tar.gz` / `.deb` |
+| **Linux** | ARM64 (aarch64) | `rhizo-linux-arm64.tar.gz` / `.deb` |
+| **Windows** | x86_64 (amd64) | `rhizo-windows-amd64.zip` |
 
 ---
 
@@ -533,13 +490,13 @@ Pre-built archives and Debian packages are attached to every [GitHub Release](ht
 
 ```bash
 # Uninstall the global NPM package:
-npm uninstall -g @axiomantic/locu
+npm uninstall -g @axiomantic/rhizo
 
 # Remove agent skills (if installed separately via skills.sh):
-npx skills remove locutus -g
+npx skills remove rhizo -g
 ```
 
-*Note: Configuration files in `~/.config/locutus` are preserved. To completely purge configurations and secret keys, run `rm -rf ~/.config/locutus`.*
+*Note: Configuration files in `~/.config/rhizo` are preserved. To completely purge configurations and secret keys, run `rm -rf ~/.config/rhizo`.*
 
 ---
 
@@ -547,38 +504,38 @@ npx skills remove locutus -g
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
-| `locu open [name] [tags] [--listen] [--session-id <key>]` | Registers identity, binds session ID, sets project tags, drains offline backlog, and optionally arms listener. | `locu open coder "qa,python"` |
-| `locu listen [name] [timeout_sec]` | Blocks on inbox, refreshes heartbeat, drops tampered messages (default: 0 / infinite wait). | `locu listen` |
-| `locu send --to <target> ... [--immediate\|--soon]` | Sends direct (O2O) message with HMAC signature and delivery urgency. | `locu send --to worker-1 --subject "Fix Bug" --body "src/api.py" --soon` |
-| `locu reply --to <sender> ... [--immediate\|--soon]` | Direct reply tagged with `type=reply`, urgency, and optional `--listen` re-arm. | `locu reply --to lead --subject "Re: Bug" --body "Fixed" --listen` |
-| `locu broadcast [--tags <tags>] ... [--immediate\|--soon]` | Multicasts to all agents matching tags within project with urgency. | `locu broadcast --tags "qa" --subject "New Release" --body "Verify"` |
-| `locu request --to <target> ... [--immediate\|--soon]` | Synchronous RPC: dispatches task and blocks until reply received. | `locu request --to solver --subject "Calc" --body "2+2"` |
-| `locu scatter --targets <tgts> ... [--immediate\|--soon]` | Fan out task to agents/tags and gather responses until quorum. | `locu scatter --targets @qa --subject "Tests" --body "run" --quorum 2` |
-| `locu enqueue <queue> ...` | Pushes task to competing-consumers worker queue. | `locu enqueue jobs --subject "Compile" --body "gcc -O2 main.c"` |
-| `locu work <queue> [timeout_sec]` | Pops task from competing-consumers worker queue (default: 0 / infinite wait; supports `--run-id`). | `locu work jobs --run-id run_01` |
-| `locu claim <queue> [timeout_sec]` | Non-destructively leases task from queue with DLQ escalation (default: 0 / infinite wait). | `locu claim jobs --lease 60 --run-id run_01` |
-| `locu claim renew <queue> <id>` | Safely extends active worker lease deadline before task expires. | `locu claim renew jobs "task_123" --lease 120` |
-| `locu ack <queue> <task_id>` | Acknowledges task completion and releases active worker lease. | `locu ack jobs "task_123"` |
-| `locu blackboard <cmd> <room> ...` | Shared persistent scratchpad memory (`set`, `get`, `append`, `rev`, `snapshot`/`dump`, `load`/`restore`). | `locu blackboard snapshot room1 state.json` |
-| `locu floor <cmd> <room> ...` | Turn-taking floor control for roundtables (`request`, `yield`, `pass`, `status`). | `locu floor request room1 30` |
-| `locu cancel <run_id> ...` | Global run cancellation tokens (`cancel`, `check`, `clear`). | `locu cancel run_042 --reason "Aborted"` |
-| `locu ballot <cmd> <ballot_id> ...` | Blind voting and ballot consensus (`open`, `cast`, `tally`, `status`). | `locu ballot open b1 --options "A,B"` |
-| `locu leader <cmd> <role> ...` | Resilient leader election with failover (`acquire`, `renew`, `resign`, `status`). | `locu leader acquire lead 30` |
-| `locu workflow <cmd> <flow_id> ...` | Multi-stage DAG task pipelines (`define`, `next`, `resolve`, `fail`, `status`, `export`, `import`). | `locu workflow export pipe pipe.json` |
-| `locu sweep [--dry-run] [--raw]` | Cluster health watchdog: prunes dead agent heartbeats & stale PID locks. | `locu sweep` |
-| `locu status <state> [activity] [--listen]` | Updates agent state (`idle`, `busy`, `error`), activity text, and optionally re-arms listener. | `locu status idle "Awaiting tasks"` |
-| `locu lock <lock_name> [ttl]` | Acquires atomic distributed mutex lease with optional `--fencing` counter. | `locu lock deploy_lock 30 --fencing` |
-| `locu unlock <lock_name>` | Releases distributed mutex lease if caller is owner. | `locu unlock deploy_lock` |
-| `locu pub <channel> <msg>` | Ephemeral pub/sub broadcast to subscribers. | `locu pub alerts "Build finished"` |
-| `locu sub <channel> [timeout_sec]` | Listens for ephemeral pub/sub broadcasts without queue buildup (default: 0 / infinite wait). | `locu sub alerts` |
-| `locu who [-a\|--all] [--json] [filter]` | Formatted table or JSON of active cluster agents, states, and tags (auto-prunes dead agents). | `locu who`, `locu who -a`, or `locu who --json` |
-| `locu tag <add\|remove\|set> <tags>` | Dynamically adjusts tags without dropping queued messages. | `locu tag add "lead"` |
-| `locu session <set\|get\|remove\|list> [args...]` | Manages global `<runtime>:<sessionId>` to agent mappings. | `locu session set opencode:ses_123 worker-1` |
-| `locu check-inbox [name]` | High-speed inbox check (exits 0 with count if messages exist, exits 1 if empty). | `locu check-inbox worker-1` |
-| `locu drain [count] [name] [--format json\|hook\|raw] [--hook]` | Atomically pops, authenticates, and decrypts offline messages (FIFO). Supports prompt formatting for LLM hooks. | `locu drain 10 worker-1 --hook` |
-| `locu close [name] [--session-id <key>]` | Graceful deregistration, clears tags, heartbeat, and session mapping. | `locu close` |
-| `locu get-secret` | Prints or initializes 256-bit cluster secret. | `locu get-secret` |
-| `locu config <show\|get\|path\|init>` | Introspects resolved settings, provenance, and paths. | `locu config show` or `locu config get redis_url` |
+| `rhizo open [name] [tags] [--listen] [--session-id <key>]` | Registers identity, binds session ID, sets project tags, drains offline backlog, and optionally arms listener. | `rhizo open coder "qa,python"` |
+| `rhizo listen [name] [timeout_sec]` | Blocks on inbox, refreshes heartbeat, drops tampered messages (default: 0 / infinite wait). | `rhizo listen` |
+| `rhizo send --to <target> ... [--immediate\|--soon]` | Sends direct (O2O) message with HMAC signature and delivery urgency. | `rhizo send --to worker-1 --subject "Fix Bug" --body "src/api.py" --soon` |
+| `rhizo reply --to <sender> ... [--immediate\|--soon]` | Direct reply tagged with `type=reply`, urgency, and optional `--listen` re-arm. | `rhizo reply --to lead --subject "Re: Bug" --body "Fixed" --listen` |
+| `rhizo broadcast [--tags <tags>] ... [--immediate\|--soon]` | Multicasts to all agents matching tags within project with urgency. | `rhizo broadcast --tags "qa" --subject "New Release" --body "Verify"` |
+| `rhizo request --to <target> ... [--immediate\|--soon]` | Synchronous RPC: dispatches task and blocks until reply received. | `rhizo request --to solver --subject "Calc" --body "2+2"` |
+| `rhizo scatter --targets <tgts> ... [--immediate\|--soon]` | Fan out task to agents/tags and gather responses until quorum. | `rhizo scatter --targets @qa --subject "Tests" --body "run" --quorum 2` |
+| `rhizo enqueue <queue> ...` | Pushes task to competing-consumers worker queue. | `rhizo enqueue jobs --subject "Compile" --body "gcc -O2 main.c"` |
+| `rhizo work <queue> [timeout_sec]` | Pops task from competing-consumers worker queue (default: 0 / infinite wait; supports `--run-id`). | `rhizo work jobs --run-id run_01` |
+| `rhizo claim <queue> [timeout_sec]` | Non-destructively leases task from queue with DLQ escalation (default: 0 / infinite wait). | `rhizo claim jobs --lease 60 --run-id run_01` |
+| `rhizo claim renew <queue> <id>` | Safely extends active worker lease deadline before task expires. | `rhizo claim renew jobs "task_123" --lease 120` |
+| `rhizo ack <queue> <task_id>` | Acknowledges task completion and releases active worker lease. | `rhizo ack jobs "task_123"` |
+| `rhizo blackboard <cmd> <room> ...` | Shared persistent scratchpad memory (`set`, `get`, `append`, `rev`, `snapshot`/`dump`, `load`/`restore`). | `rhizo blackboard snapshot room1 state.json` |
+| `rhizo floor <cmd> <room> ...` | Turn-taking floor control for roundtables (`request`, `yield`, `pass`, `status`). | `rhizo floor request room1 30` |
+| `rhizo cancel <run_id> ...` | Global run cancellation tokens (`cancel`, `check`, `clear`). | `rhizo cancel run_042 --reason "Aborted"` |
+| `rhizo ballot <cmd> <ballot_id> ...` | Blind voting and ballot consensus (`open`, `cast`, `tally`, `status`). | `rhizo ballot open b1 --options "A,B"` |
+| `rhizo leader <cmd> <role> ...` | Resilient leader election with failover (`acquire`, `renew`, `resign`, `status`). | `rhizo leader acquire lead 30` |
+| `rhizo workflow <cmd> <flow_id> ...` | Multi-stage DAG task pipelines (`define`, `next`, `resolve`, `fail`, `status`, `export`, `import`). | `rhizo workflow export pipe pipe.json` |
+| `rhizo sweep [--dry-run] [--raw]` | Cluster health watchdog: prunes dead agent heartbeats & stale PID locks. | `rhizo sweep` |
+| `rhizo status <state> [activity] [--listen]` | Updates agent state (`idle`, `busy`, `error`), activity text, and optionally re-arms listener. | `rhizo status idle "Awaiting tasks"` |
+| `rhizo lock <lock_name> [ttl]` | Acquires atomic distributed mutex lease with optional `--fencing` counter. | `rhizo lock deploy_lock 30 --fencing` |
+| `rhizo unlock <lock_name>` | Releases distributed mutex lease if caller is owner. | `rhizo unlock deploy_lock` |
+| `rhizo pub <channel> <msg>` | Ephemeral pub/sub broadcast to subscribers. | `rhizo pub alerts "Build finished"` |
+| `rhizo sub <channel> [timeout_sec]` | Listens for ephemeral pub/sub broadcasts without queue buildup (default: 0 / infinite wait). | `rhizo sub alerts` |
+| `rhizo who [-a\|--all] [--json] [filter]` | Formatted table or JSON of active cluster agents, states, and tags (auto-prunes dead agents). | `rhizo who`, `rhizo who -a`, or `rhizo who --json` |
+| `rhizo tag <add\|remove\|set> <tags>` | Dynamically adjusts tags without dropping queued messages. | `rhizo tag add "lead"` |
+| `rhizo session <set\|get\|remove\|list> [args...]` | Manages global `<runtime>:<sessionId>` to agent mappings. | `rhizo session set opencode:ses_123 worker-1` |
+| `rhizo check-inbox [name]` | High-speed inbox check (exits 0 with count if messages exist, exits 1 if empty). | `rhizo check-inbox worker-1` |
+| `rhizo drain [count] [name] [--format json\|hook\|raw] [--hook]` | Atomically pops, authenticates, and decrypts offline messages (FIFO). Supports prompt formatting for LLM hooks. | `rhizo drain 10 worker-1 --hook` |
+| `rhizo close [name] [--session-id <key>]` | Graceful deregistration, clears tags, heartbeat, and session mapping. | `rhizo close` |
+| `rhizo get-secret` | Prints or initializes 256-bit cluster secret. | `rhizo get-secret` |
+| `rhizo config <show\|get\|path\|init>` | Introspects resolved settings, provenance, and paths. | `rhizo config show` or `rhizo config get redis_url` |
 
 ---
 
@@ -590,33 +547,33 @@ Coordinating autonomous coding assistants requires handling two distinct operati
 2. **When Idle (Between Turns)**: An assistant waiting on `stdin` has a paused lifecycle. Active extensions, reactive background tasks, or continuation hooks must wake the sleeping process when a message arrives.
 
 > [!NOTE] **Modernization: Elimination of Tmux & Standalone Ears**
-> Previous iterations relied on a standalone Node/Python ear daemon that injected simulated keystrokes via `tmux send-keys`. This proved brittle, error-prone, and unnatural for modern desktop IDEs (Cursor, VS Code, Antigravity, OpenCode). Locutus has completely eliminated `tmux` dependencies in favor of:
+> Previous iterations relied on a standalone Node/Python ear daemon that injected simulated keystrokes via `tmux send-keys`. This proved brittle, error-prone, and unnatural for modern desktop IDEs (Cursor, VS Code, Antigravity, OpenCode). Rhizo has completely eliminated `tmux` dependencies in favor of:
 > - **In-process extensions** for OpenCode (`opencode-ear.js`) and Pi (`pi-ear.ts`) that directly hook the host's event loop and prompt APIs.
 > - **Continuation Stop hooks** for Claude Code (`claude_stop_hook.py`), OpenAI Codex (`codex_stop_hook.py`), and Antigravity (`agy_stop_hook.py`) that intercept turn completion and feed pending inbox tasks into immediate continuation turns.
-> - **Native Desktop Notifications** (`locutus listen [agent] --notify`) compiled directly into the Nim engine for Cursor, Copilot, and background terminals.
+> - **Native Desktop Notifications** (`rhizo listen [agent] --notify`) compiled directly into the Nim engine for Cursor, Copilot, and background terminals.
 
 ### The Coding Harness Support Matrix: First-Class Integrations & Universal Compatibility
 
-Locutus provides first-class, verified integrations across major AI coding assistants, categorized by their execution efficiency tier:
+Rhizo provides first-class, verified integrations across major AI coding assistants, categorized by their execution efficiency tier:
 
 | Assistant Runtime | Efficiency Tier | In-Turn Deferred Delivery (`soon`) | Idle Interruption / Background Mechanism |
 | :--- | :--- | :--- | :--- |
 | **OpenCode** | **Tier 1 (In-Process)** | `client.session.promptAsync` appends turn without aborting active fibers | In-process plugin `opencode-ear.js` streams listener in background Node/Bun fiber; 0 token overhead |
 | **Pi Coding Agent (`pi.dev`)** | **Tier 1 (In-Process)** | In-process TypeScript fiber delivers via `deliverPiPrompt` | Background fiber streams listener; `--immediate` invokes `pi.abort()` preemption; 0 token overhead |
-| **Antigravity (AGY)** | **Tier 2 (Native Daemon)** | `Stop` hook returns `decision: "continue"` with context | Background task `locutus listen` with `IsDaemon=true` triggers native **Reactive Wakeup** on stdout; 0 subagents |
+| **Antigravity (AGY)** | **Tier 2 (Native Daemon)** | `Stop` hook returns `decision: "continue"` with context | Background task `rhizo listen` with `IsDaemon=true` triggers native **Reactive Wakeup** on stdout; 0 subagents |
 | **Claude Code** | **Tier 3/4 (Hook / Subagent)** | `Stop` hook inspects inbox, returns `decision: "block"` with `additionalContext` | Autonomous `Stop` hook (`claude_stop_hook.py`) or background subagent (`Task(..., background=true)`) |
 | **OpenAI Codex** | **Tier 3/4 (Hook / Subagent)** | `Stop` hook returns `decision: "block"` with `reason` as next prompt | Autonomous `Stop` hook (`codex_stop_hook.py`) or one-shot subagent (`spawn_agent`) |
-| **Cursor** | **Tier 5 (Terminal)** | Foreground wait (`locutus listen <agent>`) via `terminal` tool | Native `locutus listen --notify` triggers OS desktop notification |
-| **GitHub Copilot** | **Tier 5 (Terminal)** | CLI / terminal execution with structured JSON prompt blocks | Native `locutus listen --notify` triggers OS desktop notification |
+| **Cursor** | **Tier 5 (Terminal)** | Foreground wait (`rhizo listen <agent>`) via `terminal` tool | Native `rhizo listen --notify` triggers OS desktop notification |
+| **GitHub Copilot** | **Tier 5 (Terminal)** | CLI / terminal execution with structured JSON prompt blocks | Native `rhizo listen --notify` triggers OS desktop notification |
 
 #### Universal "Out-of-the-Box" Compatibility for Any Coding Harness
 
-Don't see your coding harness listed above? **Locutus is designed to work out of the box with ANY AI coding assistant** (e.g. Windsurf, Devin, Cline, Roo Code, Aider, etc.) by following our **Capability-Based Execution Protocol**:
+Don't see your coding harness listed above? **Rhizo is designed to work out of the box with ANY AI coding assistant** (e.g. Windsurf, Devin, Cline, Roo Code, Aider, etc.) by following our **Capability-Based Execution Protocol**:
 
 1. **Preference 1 (In-Process Extension)**: If the harness supports background JavaScript/TypeScript extensions, load an ear plugin to stream listening with 0 LLM token overhead.
-2. **Preference 2 (Direct Background Shell Task in Main Chat)**: If the harness provides a shell execution tool with a native daemon or background parameter (e.g. `run_command(IsDaemon=true)`), run `locutus listen <agent>` directly in the main session. This provides a direct line of communication with zero subagent token overhead.
-3. **Preference 3 (Background Subagent)**: If the harness only provides subagent tools with background support (e.g. `Task(background=true)`), dispatch a one-shot listener subagent that runs `locutus listen <agent>` synchronously and terminates upon message arrival to notify the parent.
-4. **Preference 4 (Synchronous Foreground Wait)**: If the harness only supports synchronous shell execution with no background parameters, do NOT run blocking listen commands during active chat. Instead, check the inbox explicitly via `locutus check-inbox`.
+2. **Preference 2 (Direct Background Shell Task in Main Chat)**: If the harness provides a shell execution tool with a native daemon or background parameter (e.g. `run_command(IsDaemon=true)`), run `rhizo listen <agent>` directly in the main session. This provides a direct line of communication with zero subagent token overhead.
+3. **Preference 3 (Background Subagent)**: If the harness only provides subagent tools with background support (e.g. `Task(background=true)`), dispatch a one-shot listener subagent that runs `rhizo listen <agent>` synchronously and terminates upon message arrival to notify the parent.
+4. **Preference 4 (Synchronous Foreground Wait)**: If the harness only supports synchronous shell execution with no background parameters, do NOT run blocking listen commands during active chat. Instead, check the inbox explicitly via `rhizo check-inbox`.
 
 > [!TIP] **We Welcome Pull Requests!**
 > Want first-class integration, native lifecycle hooks, or an in-process ear extension for your favorite coding harness? We actively welcome community contributions! Check out our [Developer Guide & Integration Checklist](CONTRIBUTING.md#developer-guide-adding-support-for-a-new-coding-harness) to get started.
@@ -629,7 +586,7 @@ A common architectural question in multi-agent harness engineering: *Can a liste
   A background daemon task directly in the main chat (e.g. Antigravity `run_command(IsDaemon=true)`) or an in-process plugin (OpenCode `opencode-ear.js`) is **always preferred over subagents**. Spawning a subagent consumes substantial token overhead (initializing system prompts, tool schemas, and extra reasoning tokens). A direct background task maintains a direct, immediate line of interruption into the main conversation loop with **zero subagent token cost**.
 
 - **Why Subagents Cannot Stream Messages (The Completion Barrier)**:
-  In subagent-capable harnesses (Claude Code, OpenAI Codex), subagents operate as **one-way completion barriers**. Subagents do **NOT** stream raw intermediate standard output back into the parent conversation while running. The parent session is only notified **upon subagent completion / process exit**. If a subagent were to run an infinite streaming loop (`while true; do locutus listen; done`), the subagent would never terminate, and the parent session would **never receive any message**—messages would be consumed from Redis and trapped inside the subagent's memory forever! Consequently, inside subagents, `locutus listen` **must be one-and-done**: it blocks until one message arrives, outputs the JSON payload, and exits `0`, allowing the subagent to complete and deliver the payload to the parent.
+  In subagent-capable harnesses (Claude Code, OpenAI Codex), subagents operate as **one-way completion barriers**. Subagents do **NOT** stream raw intermediate standard output back into the parent conversation while running. The parent session is only notified **upon subagent completion / process exit**. If a subagent were to run an infinite streaming loop (`while true; do rhizo listen; done`), the subagent would never terminate, and the parent session would **never receive any message**—messages would be consumed from Redis and trapped inside the subagent's memory forever! Consequently, inside subagents, `rhizo listen` **must be one-and-done**: it blocks until one message arrives, outputs the JSON payload, and exits `0`, allowing the subagent to complete and deliver the payload to the parent.
 
 - **Where Streaming Operates Today**:
   Continuous streaming listener loops operate in **Tier 1 in-process extensions** (`opencode-ear.js`, `pi-ear.ts`), where host process runtimes (Node.js/Bun) supervise background child processes and inject prompt turns into the host event loop via native APIs (`promptAsync`), entirely bypassing LLM subagent overhead.
@@ -639,20 +596,20 @@ A common architectural question in multi-agent harness engineering: *Can a liste
 To eliminate any ambiguity or cognitive load when coordinating across sessions:
 
 > [!IMPORTANT] **The Core Invariant: Never Leave an Agent in a "Deaf" State**
-> Locutus is an asynchronous distributed message bus over Redis. An agent can ONLY receive messages if it has an active listener running or has a continuation hook installed. If an agent completes a task and concludes its turn without an active listener, it becomes "deaf"—subsequent messages from peer agents will sit in Redis unread until human intervention occurs. Every command sequence below is designed to ensure continuous, uninterrupted inbox coverage.
+> Rhizo is an asynchronous distributed message bus over Redis. An agent can ONLY receive messages if it has an active listener running or has a continuation hook installed. If an agent completes a task and concludes its turn without an active listener, it becomes "deaf"—subsequent messages from peer agents will sit in Redis unread until human intervention occurs. Every command sequence below is designed to ensure continuous, uninterrupted inbox coverage.
 >
 > ❌ **STRICT PROHIBITION: Never use shell `&` and never redirect stdout/stderr** (`> /dev/null 2>&1 &` or `> file.log &`). Detaching with `&` creates an unmanaged zombie process, and output redirection swallows the notification stream, leaving the agent permanently deaf to incoming tasks and urgent cancellation interrupts.
 
 ```mermaid
 flowchart TD
-    Start([Session Bootstrap]) --> Recipe1["Recipe 1: Default Startup<br/><code>locutus open &lt;my-name&gt; '&lt;tags&gt;' --listen</code>"]
+    Start([Session Bootstrap]) --> Recipe1["Recipe 1: Default Startup<br/><code>rhizo open &lt;my-name&gt; '&lt;tags&gt;' --listen</code>"]
     Recipe1 --> InTurn["Execute Task / Tool Calls<br/>(Normal Turn Processing)"]
     InTurn --> Check{"Do you need to reply or wait for next task?"}
-    Check -->|Reply with Result & Await Next Task| Recipe2["Recipe 2: Atomic Reply & Re-Arm<br/><code>locutus reply --to &lt;sender&gt; --reply-to '&lt;id&gt;' ... --listen</code>"]
-    Check -->|No Reply Needed, Just Wait| Recipe2b["Recipe 2b: Indefinite Wait (Zero Timeout)<br/><code>locutus listen &lt;my-name&gt;</code>"]
-    Check -->|Work Completely Finished| RecipeClose["Recipe 5: Clean Disconnect<br/><code>locutus close &lt;my-name&gt;</code>"]
+    Check -->|Reply with Result & Await Next Task| Recipe2["Recipe 2: Atomic Reply & Re-Arm<br/><code>rhizo reply --to &lt;sender&gt; --reply-to '&lt;id&gt;' ... --listen</code>"]
+    Check -->|No Reply Needed, Just Wait| Recipe2b["Recipe 2b: Indefinite Wait (Zero Timeout)<br/><code>rhizo listen &lt;my-name&gt;</code>"]
+    Check -->|Work Completely Finished| RecipeClose["Recipe 5: Clean Disconnect<br/><code>rhizo close &lt;my-name&gt;</code>"]
     Check -->|Using Autonomous Continuation Hooks| Recipe4["Recipe 4: Stop Hook Continuation<br/>Turn ends naturally; hook detects incoming message & continues"]
-    Check -->|Subagent Completed One-Shot Listen| Recipe3["Recipe 3: Relaunch Subagent Ear<br/>Spawn fresh subagent with <code>locutus listen &lt;my-name&gt;</code>"]
+    Check -->|Subagent Completed One-Shot Listen| Recipe3["Recipe 3: Relaunch Subagent Ear<br/>Spawn fresh subagent with <code>rhizo listen &lt;my-name&gt;</code>"]
     Recipe2 --> InTurn
     Recipe2b --> InTurn
     Recipe3 --> InTurn
@@ -663,99 +620,99 @@ flowchart TD
 #### 1. Recipe 1: Default Startup ("Open and Listen")
 1. **Register Identity**:
    ```bash
-   locu open <my-name> "<tags>"
+   rhizo open <my-name> "<tags>"
    ```
    *(Registers identity in Redis, sets project tags, binds session mapping, and drains any offline backlog).*
 
 2. **Arm the Listener Based on Harness Tool Capabilities (Zero Guesswork)**:
    - **In-Process Harness Ear Extension (OpenCode `opencode-ear.js`, Pi `pi-ear.ts`)**:
-     Do NOT execute `locu listen`. The bundled in-process extension maintains a continuous background fiber delivering incoming turns with 0 LLM token overhead.
+     Do NOT execute `rhizo listen`. The bundled in-process extension maintains a continuous background fiber delivering incoming turns with 0 LLM token overhead.
    - **Main Chat Shell with Native Daemon / Background Parameter (Antigravity)**:
      Launch the listener via the tool's native background execution parameter:
      ```python
-     run_command(CommandLine="locu listen <my-name>", WaitMsBeforeAsync=500, IsDaemon=True)
+     run_command(CommandLine="rhizo listen <my-name>", WaitMsBeforeAsync=500, IsDaemon=True)
      ```
      The platform's native reactive wakeup will resume your turn when an incoming message arrives.
    - **Subagent / Background Task Support (Claude Code `Task(..., background=true)`, OpenAI Codex `spawn_agent`)**:
-     Dispatch a one-shot background subagent running synchronous blocking `locu listen <my-name>` (no daemon inside the subagent: avoid double-daemons!). When a message arrives, the subagent terminates and delivers the payload to the parent turn.
+     Dispatch a one-shot background subagent running synchronous blocking `rhizo listen <my-name>` (no daemon inside the subagent: avoid double-daemons!). When a message arrives, the subagent terminates and delivers the payload to the parent turn.
    - **Dedicated Headless Shell / Human Worker Terminal**:
      ```bash
-     locu open <my-name> "<tags>" --listen
+     rhizo open <my-name> "<tags>" --listen
      ```
      In a dedicated terminal window, passing `--listen` (`-l`) registers and immediately transitions in-process into waiting for work.
    - **Synchronous-Only Harness (No Background Execution Available)**:
-     **DO NOT run `locu listen`** in the main conversation—a blocking listen call freezes the conversation turn and locks user input. Inform the user of this platform limitation, and check inbox explicitly via `locu check-inbox` during user turns.
+     **DO NOT run `rhizo listen`** in the main conversation—a blocking listen call freezes the conversation turn and locks user input. Inform the user of this platform limitation, and check inbox explicitly via `rhizo check-inbox` during user turns.
 
 #### 2. Recipe 2: Post-Task Transition ("After Task Finishes: Do I Re-Open?")
-- **DO I NEED TO RUN `locu open` AGAIN?**
-  **NO! Never re-run `locu open` after completing a task.** Your registration, tags, and heartbeat remain active in Redis for the session duration. Re-running `open` unnecessarily resets registration state. Only re-run `locu open` if the session crashed, reconnected after a long network disconnect, or heartbeat expired.
+- **DO I NEED TO RUN `rhizo open` AGAIN?**
+  **NO! Never re-run `rhizo open` after completing a task.** Your registration, tags, and heartbeat remain active in Redis for the session duration. Re-running `open` unnecessarily resets registration state. Only re-run `rhizo open` if the session crashed, reconnected after a long network disconnect, or heartbeat expired.
 - **HOW DO I SEND MY RESULT AND WAIT FOR THE NEXT TASK?**
   When running in a dedicated terminal, background daemon, or inside a listener subagent, use **Atomic Reply & Re-Arm**:
   ```bash
-  locu reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
+  rhizo reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>" --listen
   ```
-  - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`locu request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
-  - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. In interactive main-chat sessions without daemon shell parameters, omit `--listen` (`locu reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"`) and re-arm the listener via your harness subagent or stop hook.
+  - **Why `--reply-to "<id>"` is expected**: Correlates the response with the sender's original task ID. This is required for synchronous RPC (`rhizo request`), scatter-gather quorum aggregation, and DAG workflow step resolution.
+  - **Why `--listen` (`-l`) is expected**: Delivers the reply and immediately re-arms the listener *in the exact same command*. In interactive main-chat sessions without daemon shell parameters, omit `--listen` (`rhizo reply --to <sender> --subject "Re: <subj>" --body "<result>" --reply-to "<id>"`) and re-arm the listener via your harness subagent or stop hook.
 - **WHAT IF NO REPLY IS NEEDED (JUST WAITING FOR WORK)?**
   Run with **NO TIMEOUT**:
   ```bash
-  locu listen <my-name>
+  rhizo listen <my-name>
   ```
   - **Default Must Always Be Infinite Wait (`timeout = 0` / no timeout)**: Never specify an arbitrary bounded timeout (e.g. 30s or 120s). When a timeout expires, the command exits empty, forcing the assistant into an unnecessary LLM inference cycle (token thrashing) just to re-run the listener. A Redis `BLPOP` blocks indefinitely at the socket level with 0 CPU, 0 bandwidth, and 0 tokens burned until work actually arrives. Timeouts are optional and explicitly discouraged across the board.
 
 #### 3. Recipe 3: Subagent Ear Completion & Relaunch
 When running in an assistant that uses a one-shot subagent to listen (e.g. Claude Code `Task(background=true)` or OpenAI Codex):
-1. The subagent runs `locu listen <my-name>` (with NO timeout, NO `&`, NO output redirection), blocks until ONE message arrives, outputs the JSON, and terminates cleanly.
+1. The subagent runs `rhizo listen <my-name>` (with NO timeout, NO `&`, NO output redirection), blocks until ONE message arrives, outputs the JSON, and terminates cleanly.
 2. The parent assistant receives the message JSON.
-3. The parent assistant executes the requested work and sends the reply via `locu reply --reply-to "<id>" ...`.
-4. **IMMEDIATE RELAUNCH**: Before or while concluding the turn, the parent assistant MUST spawn a fresh one-shot subagent running `locu listen <my-name>` to catch the next message.
+3. The parent assistant executes the requested work and sends the reply via `rhizo reply --reply-to "<id>" ...`.
+4. **IMMEDIATE RELAUNCH**: Before or while concluding the turn, the parent assistant MUST spawn a fresh one-shot subagent running `rhizo listen <my-name>` to catch the next message.
 
 #### 4. Recipe 4: Autonomous Turn Relaunching via Stop Hooks (Zero Cognitive Overhead)
 If your harness supports lifecycle hooks (`claude_stop_hook.py`, `codex_stop_hook.py`, `agy_stop_hook.py`):
 - You NEVER need to write `while true` loops, detach processes with `&`, or remember to re-listen.
 - Whenever your turn finishes, the harness invokes the hook.
-- The hook checks `locu check-inbox`. If a message is waiting, it returns `{"decision": "block", ...}`, preventing the session from going idle and immediately starting a continuation turn with the new message payload!
+- The hook checks `rhizo check-inbox`. If a message is waiting, it returns `{"decision": "block", ...}`, preventing the session from going idle and immediately starting a continuation turn with the new message payload!
 
 #### 5. Recipe 5: Clean Disconnect / Session End
 When your assigned work is completely finished and you will not take any further tasks:
 ```bash
-locu close <my-name>
+rhizo close <my-name>
 ```
-- **Why `locu close` is expected**: Removes your agent's heartbeat from Redis, unlinks the listener PID lock, and clears session mappings. This ensures peer agents do not see you as active online (`locu who`) and prevents tasks from being queued to an abandoned session.
+- **Why `rhizo close` is expected**: Removes your agent's heartbeat from Redis, unlinks the listener PID lock, and clears session mappings. This ensures peer agents do not see you as active online (`rhizo who`) and prevents tasks from being queued to an abandoned session.
 
 ---
 
 ### Engine Lifecycle Post-Ambles & The Quiet Flag
 
-When `locu listen` delivers a message and exits, the Nim engine automatically prints a **Harness-Aware Lifecycle Notice** to `stderr`:
+When `rhizo listen` delivers a message and exits, the Nim engine automatically prints a **Harness-Aware Lifecycle Notice** to `stderr`:
 ```text
-[LOCU LIFECYCLE NOTICE] Listener for 'worker-1' delivered message 'msg_...' and EXITED.
+[RHIZO LIFECYCLE NOTICE] Listener for 'worker-1' delivered message 'msg_...' and EXITED.
 - Detected harness: <harness> (consult Capability Decision Tree in AGENTS.md / SKILL.md)
 - Expected follow-up action:
   1. When finished, reply and re-arm atomically in one command:
-     locu reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
+     rhizo reply --to <sender> --reply-to "<id>" --subject "Re: <subj>" --body "<results>" --listen
   2. If no reply is needed, wait for next task (zero-timeout infinite wait):
-     locu listen worker-1
+     rhizo listen worker-1
   3. If using subagents: dispatch a fresh one-shot listener subagent before concluding turn.
   4. If disconnecting or finishing session work completely:
-     locu close worker-1
-(To silence this notice: pass --quiet / -q, or set LOCUTUS_QUIET=1)
+     rhizo close worker-1
+(To silence this notice: pass --quiet / -q, or set RHIZO_QUIET=1)
 ```
 
-- **Stdout remains pure JSON**: Shell scripts, pipelines (`locu listen | jq .`), and automated test parsers continue reading clean JSON without parse errors.
+- **Stdout remains pure JSON**: Shell scripts, pipelines (`rhizo listen | jq .`), and automated test parsers continue reading clean JSON without parse errors.
 - **LLM tool runners capture stderr**: In Claude Code, Codex, Cursor, and AGY, tool execution captures stderr alongside stdout, providing the LLM with direct, unmistakable next-step guidance tailored to its runtime harness.
 - **Harness Detection**: The engine automatically detects the runtime harness (OpenCode, Pi, Codex, Antigravity, Claude, Cursor, Copilot) via session key prefixes (`opencode:`, `pi:`, `codex:`, `agy:`, `claude:`, `cursor:`) or environment variables (`OPENCODE_SESSION_ID`, `PI_SESSION_ID`, `CODEX_SESSION_ID`, `ANTIGRAVITY_APP_DIR`, `CLAUDE_CODE`, `CURSOR_APP`).
-  - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `locu listen`.
+  - **OpenCode & Pi**: The notice warns that in-process extension fibers are active and instructs the agent *not* to run a blocking `rhizo listen`.
   - **OpenAI Codex / Claude Code**: The notice instructs the agent to dispatch a fresh one-shot listener subagent before concluding its turn.
   - **Antigravity**: The notice instructs the agent to re-arm its reactive background listener via `run_command` or append `--listen`.
   - **Dedicated Worker Terminal / Other**: The notice presents the atomic reply & re-arm pattern (`--listen`) or zero-timeout wait.
-- **Suppression / Quiet Flag**: To suppress the lifecycle notice in automated scripts or extensions, pass `--quiet` / `-q`, or export `LOCUTUS_QUIET=1`.
+- **Suppression / Quiet Flag**: To suppress the lifecycle notice in automated scripts or extensions, pass `--quiet` / `-q`, or export `RHIZO_QUIET=1`.
 
 ---
 
 ### 1. Claude Code Hook Configuration (`.claude/settings.json`)
 
-Configure Claude Code to automatically check the Locutus inbox whenever a response finishes:
+Configure Claude Code to automatically check the Rhizo inbox whenever a response finishes:
 
 ```json
 {
@@ -766,7 +723,7 @@ Configure Claude Code to automatically check the Locutus inbox whenever a respon
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.gemini/config/skills/locutus/hooks/claude_stop_hook.py"
+            "command": "python3 ~/.gemini/config/skills/rhizo/hooks/claude_stop_hook.py"
           }
         ]
       }
@@ -777,7 +734,7 @@ Configure Claude Code to automatically check the Locutus inbox whenever a respon
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py start"
+            "command": "python3 ~/.gemini/config/skills/rhizo/hooks/session_lifecycle_hook.py start"
           }
         ]
       }
@@ -788,7 +745,7 @@ Configure Claude Code to automatically check the Locutus inbox whenever a respon
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py end"
+            "command": "python3 ~/.gemini/config/skills/rhizo/hooks/session_lifecycle_hook.py end"
           }
         ]
       }
@@ -809,7 +766,7 @@ Configure Codex to feed incoming messages directly into continuation turns:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.gemini/config/skills/locutus/hooks/codex_stop_hook.py"
+            "command": "python3 ~/.gemini/config/skills/rhizo/hooks/codex_stop_hook.py"
           }
         ]
       }
@@ -819,7 +776,7 @@ Configure Codex to feed incoming messages directly into continuation turns:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py start"
+            "command": "python3 ~/.gemini/config/skills/rhizo/hooks/session_lifecycle_hook.py start"
           }
         ]
       }
@@ -829,7 +786,7 @@ Configure Codex to feed incoming messages directly into continuation turns:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.gemini/config/skills/locutus/hooks/session_lifecycle_hook.py end"
+            "command": "python3 ~/.gemini/config/skills/rhizo/hooks/session_lifecycle_hook.py end"
           }
         ]
       }
@@ -849,52 +806,52 @@ Add `opencode-ear.js` to your `opencode.json` plugin array:
   ]
 }
 ```
-*Automatically maps `opencode:<sessionId>` in `~/.config/locutus/sessions.json`, injects `LOCUTUS_SESSION_ID` via `shell.env`, and delivers messages via `promptAsync` (or `abort` for `--immediate`).*
+*Automatically maps `opencode:<sessionId>` in `~/.config/rhizo/sessions.json`, injects `RHIZO_SESSION_ID` via `shell.env`, and delivers messages via `promptAsync` (or `abort` for `--immediate`).*
 
-### 4. Desktop Notifications for Idle Sessions (`locutus listen --notify`)
+### 4. Desktop Notifications for Idle Sessions (`rhizo listen --notify`)
 
 When running an assistant in Cursor, VS Code, or an idle terminal tab in the background, you can enable native operating system notifications:
 
 ```bash
-locutus listen --notify
+rhizo listen --notify
 # Or for a specific agent:
-locutus listen backend-worker --notify
+rhizo listen backend-worker --notify
 ```
-When a peer message arrives, Locutus displays a native OS notification banner (macOS Notification Center, Windows Action Center toast, or Linux `notify-send`) alerting you to the incoming task.
+When a peer message arrives, Rhizo displays a native OS notification banner (macOS Notification Center, Windows Action Center toast, or Linux `notify-send`) alerting you to the incoming task.
 
-### 5. Pi Coding Agent Extension (`~/.pi/agent/extensions/locutus.ts`)
+### 5. Pi Coding Agent Extension (`~/.pi/agent/extensions/rhizo.ts`)
 
-For [Pi Coding Agent (`pi.dev`)](https://pi.dev), Locutus provides a native TypeScript extension (`pi-ear.ts`):
+For [Pi Coding Agent (`pi.dev`)](https://pi.dev), Rhizo provides a native TypeScript extension (`pi-ear.ts`):
 
 ```bash
 # Automated via install.sh or manual setup:
-mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills/locutus
-cp skills/locutus/pi-ear.ts ~/.pi/agent/extensions/locutus.ts
-cp skills/locutus/SKILL.md ~/.pi/agent/skills/locutus/SKILL.md
+mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills/rhizo
+cp skills/rhizo/pi-ear.ts ~/.pi/agent/extensions/rhizo.ts
+cp skills/rhizo/SKILL.md ~/.pi/agent/skills/rhizo/SKILL.md
 ```
 
-- **Native Tool Registration**: Registers `locutus` directly into Pi's tool registry (`pi.registerTool`) with full subcommand schemas (`open`, `send`, `reply`, `listen`, `status`, `who`).
-- **Session Mapping**: Automatically maps `pi:<sessionId>` to `LOCUTUS_AGENT_NAME` in `~/.config/locutus/sessions.json`.
-- **Background Listener Fiber**: Asynchronously streams `locutus listen <agent> 0` in an unblocked fiber.
+- **Native Tool Registration**: Registers `rhizo` directly into Pi's tool registry (`pi.registerTool`) with full subcommand schemas (`open`, `send`, `reply`, `listen`, `status`, `who`).
+- **Session Mapping**: Automatically maps `pi:<sessionId>` to `RHIZO_AGENT_NAME` in `~/.config/rhizo/sessions.json`.
+- **Background Listener Fiber**: Asynchronously streams `rhizo listen <agent> 0` in an unblocked fiber.
 - **Urgent Preemption**: For `--immediate` messages, triggers `pi.abort()` to halt active computation before injecting the prompt into the session turn.
 
-### 6. Cursor Rules (`.cursor/rules/locutus.mdc`)
+### 6. Cursor Rules (`.cursor/rules/rhizo.mdc`)
 
 Equip Cursor agents with project or user-level rules:
 
 ```bash
 # Project-level rule:
 mkdir -p .cursor/rules
-cp skills/locutus/rules/cursor-rules.mdc .cursor/rules/locutus.mdc
+cp skills/rhizo/rules/cursor-rules.mdc .cursor/rules/rhizo.mdc
 
 # Or global user rule:
 mkdir -p ~/.cursor/rules
-cp skills/locutus/rules/cursor-rules.mdc ~/.cursor/rules/locutus.mdc
+cp skills/rhizo/rules/cursor-rules.mdc ~/.cursor/rules/rhizo.mdc
 ```
 
-- **Execution Model**: Directs Cursor agents to execute Locutus subcommands using Cursor's built-in `terminal` tool.
-- **In-Turn Waiting**: Zero-timeout listening (`locutus listen <my-name>`) while waiting for expected peer responses.
-- **Idle Notifications**: Run `locutus listen <name> --notify` in a background terminal for native desktop notifications.
+- **Execution Model**: Directs Cursor agents to execute Rhizo subcommands using Cursor's built-in `terminal` tool.
+- **In-Turn Waiting**: Zero-timeout listening (`rhizo listen <my-name>`) while waiting for expected peer responses.
+- **Idle Notifications**: Run `rhizo listen <name> --notify` in a background terminal for native desktop notifications.
 
 ### 7. GitHub Copilot Instructions (`.github/copilot-instructions.md`)
 
@@ -902,7 +859,7 @@ Instruct GitHub Copilot CLI and Copilot Chat agent mode:
 
 ```bash
 mkdir -p .github
-cp skills/locutus/rules/copilot-instructions.md .github/copilot-instructions.md
+cp skills/rhizo/rules/copilot-instructions.md .github/copilot-instructions.md
 ```
 
 - **Execution Model**: Coordinates via `gh copilot` CLI and terminal task execution.
@@ -912,16 +869,16 @@ cp skills/locutus/rules/copilot-instructions.md .github/copilot-instructions.md
 
 ## Configuration Architecture & Profiles
 
-Locutus provides deterministic, multi-tiered cascading configuration resolution:
+Rhizo provides deterministic, multi-tiered cascading configuration resolution:
 
 ```mermaid
 flowchart TD
     Tier1["1. Explicit CLI Flags<br/><code>--redis-url, --valkey-url, --project, --profile, etc.</code>"]
-    Tier2["2. Process Environment Variables<br/><code>LOCUTUS_REDIS_URL, VALKEY_URL, LOCUTUS_PROJECT, etc.</code>"]
-    Tier3["3. Workspace / Project Config<br/><code>.locutus.toml, locutus.toml (git root)</code>"]
-    Tier4["4. Per-User Config<br/><code>~/.config/locutus/config.toml</code>"]
-    Tier5["5. Global / System Config<br/><code>/etc/locutus/config.toml</code>"]
-    Tier6["6. Built-in Hermetic Defaults<br/><code>redis://127.0.0.1:6379, locutus:</code>"]
+    Tier2["2. Process Environment Variables<br/><code>RHIZO_REDIS_URL, VALKEY_URL, RHIZO_PROJECT, etc.</code>"]
+    Tier3["3. Workspace / Project Config<br/><code>.rhizo.toml, .rhizo.toml (git root)</code>"]
+    Tier4["4. Per-User Config<br/><code>~/.config/rhizo/config.toml</code>"]
+    Tier5["5. Global / System Config<br/><code>/etc/rhizo/config.toml</code>"]
+    Tier6["6. Built-in Hermetic Defaults<br/><code>redis://127.0.0.1:6379, rhizo:</code>"]
 
     Tier1 -->|Overrides| Tier2
     Tier2 -->|Overrides| Tier3
@@ -935,16 +892,16 @@ flowchart TD
 
 ### Configuration Files
 
-- **Workspace**: `.locutus.toml` or `locutus.toml` in the project root (walks upwards to `.git`).
-- **User**: `~/.config/locutus/config.toml` (Linux/macOS) or `%APPDATA%\locutus\config.toml` (Windows).
-- **System**: `/etc/locutus/config.toml` (Linux), `/Library/Application Support/locutus/config.toml` (macOS), or `%ProgramData%\locutus\config.toml` (Windows).
+- **Workspace**: `.rhizo.toml` or `.rhizo.toml` in the project root (walks upwards to `.git`).
+- **User**: `~/.config/rhizo/config.toml` (Linux/macOS) or `%APPDATA%\rhizo\config.toml` (Windows).
+- **System**: `/etc/rhizo/config.toml` (Linux), `/Library/Application Support/rhizo/config.toml` (macOS), or `%ProgramData%\rhizo\config.toml` (Windows).
 
-### Example `.locutus.toml`
+### Example `.rhizo.toml`
 
 ```toml
 # Supports redis://, rediss://, valkey://, valkeys:// (or 'valkey_url')
 redis_url = "redis://127.0.0.1:6379"
-prefix = "locutus:"
+prefix = "rhizo:"
 project = "my-project"
 encrypt = false
 cluster = false
@@ -953,12 +910,12 @@ message_ttl = 604800
 listen_timeout = 0 # 0 = infinite wait (recommended to prevent LLM token thrashing)
 
 # Shared secret file (avoids committing secrets into git)
-secret_file = "~/.config/locutus/secret"
+secret_file = "~/.config/rhizo/secret"
 
-# Named profiles: locutus --profile staging <subcommand>
+# Named profiles: rhizo --profile staging <subcommand>
 [profiles.staging]
 redis_url = "rediss://staging.internal:6380"
-prefix = "stg:locutus:"
+prefix = "stg:rhizo:"
 encrypt = true
 
 [profiles.prod]
@@ -969,26 +926,26 @@ encrypt = true
 
 ### Configuration CLI Commands
 
-- `locutus config show`: Displays the resolved configuration alongside the **source provenance** of each value (CLI flag, env var, workspace config, user config, or default).
-- `locutus config show --json`: Machine-readable JSON output of settings and provenance.
-- `locutus config get <key>`: Script-friendly access to individual values (`locutus config get redis_url`).
-- `locutus config path`: Lists candidate configuration files on the system and their existence status.
-- `locutus config init [--user | --project]`: Scaffolds a starter `.locutus.toml` file.
+- `rhizo config show`: Displays the resolved configuration alongside the **source provenance** of each value (CLI flag, env var, workspace config, user config, or default).
+- `rhizo config show --json`: Machine-readable JSON output of settings and provenance.
+- `rhizo config get <key>`: Script-friendly access to individual values (`rhizo config get redis_url`).
+- `rhizo config path`: Lists candidate configuration files on the system and their existence status.
+- `rhizo config init [--user | --project]`: Scaffolds a starter `.rhizo.toml` file.
 
 ---
 
 
 ## Security & Prompt Injection Firewall
 
-Locutus protects coding assistants from prompt injection, forged messages, and unauthorized execution:
+Rhizo protects coding assistants from prompt injection, forged messages, and unauthorized execution:
 
 ```mermaid
 flowchart LR
-    RedisIn["Redis Inbox Payload<br/><code>locutus:inbox:&lt;agent&gt;</code>"] --> Listen["Host Verification<br/><code>locutus listen</code>"]
-    Secret[("Local Secret<br/><code>~/.config/locutus/secret</code><br/><i>0600 Permissions</i>")] -.-> HMAC
+    RedisIn["Redis Inbox Payload<br/><code>rhizo:inbox:&lt;agent&gt;</code>"] --> Listen["Host Verification<br/><code>rhizo listen</code>"]
+    Secret[("Local Secret<br/><code>~/.config/rhizo/secret</code><br/><i>0600 Permissions</i>")] -.-> HMAC
     Listen --> HMAC{"HMAC-SHA256<br/>Verification"}
     HMAC -->|Signature Mismatch<br/>or Untrusted| Drop["❌ Dropped to Stderr<br/><i>Never enters assistant context</i>"]
-    HMAC -->|Valid Signature| Decrypt{"E2EE Enabled?<br/><code>LOCUTUS_ENCRYPT</code>"}
+    HMAC -->|Valid Signature| Decrypt{"E2EE Enabled?<br/><code>RHIZO_ENCRYPT</code>"}
     Decrypt -->|Yes| AES["In-Memory OpenSSL EVP<br/>AES-256-CBC Decryption"]
     Decrypt -->|No| Stdout["✅ Emitted to Stdout<br/><i>Assistant Context Window</i>"]
     AES --> Stdout
@@ -999,22 +956,22 @@ flowchart LR
     class Drop invalid;
 ```
 
-1. **Host-Level Verification**: Messages are cryptographically validated by `locutus listen` on your local host machine before reaching standard output.
+1. **Host-Level Verification**: Messages are cryptographically validated by `rhizo listen` on your local host machine before reaching standard output.
 2. **Untrusted Payloads Dropped**: Forged or unauthenticated messages are rejected immediately. They never enter the assistant's context window.
-3. **Local Secret**: The secret key (`~/.config/locutus/secret`, `0600` permissions) stays on your machine. It never enters prompts, Git commits, or Redis keys.
-4. **Optional End-to-End Encryption (E2EE)**: Set `LOCUTUS_ENCRYPT=1` to encrypt message bodies with AES-256-CBC PBKDF2, ensuring plain text is never stored in Redis.
+3. **Local Secret**: The secret key (`~/.config/rhizo/secret`, `0600` permissions) stays on your machine. It never enters prompts, Git commits, or Redis keys.
+4. **Optional End-to-End Encryption (E2EE)**: Set `RHIZO_ENCRYPT=1` to encrypt message bodies with AES-256-CBC PBKDF2, ensuring plain text is never stored in Redis.
 
 ---
 
 ## Cross-Host Multi-Machine Coordination
 
-Locutus is built from the ground up for seamless distributed coordination across multiple physical workstations, cloud instances, and isolated development containers. Multiple assistants running on different machines coordinate over a single Redis or Valkey instance with full cryptographic authentication and host-level provenance tracking.
+Rhizo is built from the ground up for seamless distributed coordination across multiple physical workstations, cloud instances, and isolated development containers. Multiple assistants running on different machines coordinate over a single Redis or Valkey instance with full cryptographic authentication and host-level provenance tracking.
 
 ```mermaid
 flowchart LR
     subgraph HostA["Machine A: macOS Workstation (dev-mac)"]
         A_Lead["Lead Assistant<br/><i>(Claude Code)</i>"]
-        A_CLI["locutus CLI / Ear"]
+        A_CLI["rhizo CLI / Ear"]
         A_Lead <--> A_CLI
     end
 
@@ -1045,12 +1002,12 @@ Depending on your network architecture and security policies, choose between dir
 When your machines reside on the same local network, VPN, Tailscale mesh, or connect to a cloud service (e.g., Upstash, AWS ElastiCache, DigitalOcean):
 ```bash
 # Set connection string on all participating hosts:
-export LOCUTUS_REDIS_URL="redis://192.168.1.50:6379"
+export RHIZO_REDIS_URL="redis://192.168.1.50:6379"
 # Or with TLS:
-export LOCUTUS_REDIS_URL="rediss://default:secret@cluster.internal:6379"
+export RHIZO_REDIS_URL="rediss://default:secret@cluster.internal:6379"
 
 # Share the HMAC secret file across machines (0600 permissions):
-scp ~/.config/locutus/secret user@remote-box:~/.config/locutus/secret
+scp ~/.config/rhizo/secret user@remote-box:~/.config/rhizo/secret
 ```
 
 #### Option B: Encrypted SSH Port-Forwarding Tunnel
@@ -1059,8 +1016,8 @@ If the remote Redis instance is not exposed to the public network, establish a s
 # On the remote worker machine, forward local port 6379 to the central Redis host:
 ssh -N -L 6379:localhost:6379 user@primary-workstation.internal &
 
-# Locutus automatically connects to localhost:6379 over the encrypted tunnel:
-locutus who
+# Rhizo automatically connects to localhost:6379 over the encrypted tunnel:
+rhizo who
 ```
 
 ### 2. Host Origin Provenance Header (`[host: <hostname>]`)
@@ -1068,7 +1025,7 @@ locutus who
 In multi-machine topologies, coding assistants often exchange file paths, terminal commands, and workspace references. If an assistant on `dev-mac` asks an assistant on `gpu-box` to *"inspect `/Users/alice/repo/config.json`"*, the recipient would fail if it assumed the path was local.
 
 To eliminate this ambiguity:
-- Locutus automatically stamps the origin machine's hostname on every message envelope:
+- Rhizo automatically stamps the origin machine's hostname on every message envelope:
   ```json
   {
     "id": "msg_1710789000_lead_4242",
@@ -1083,7 +1040,7 @@ To eliminate this ambiguity:
   ```
 - Passive drain hooks and active ears render the origin host directly in the context header:
   ```text
-  [LOCUTUS BUS] 1 new message received on inbox for 'gpu-trainer':
+  [RHIZO BUS] 1 new message received on inbox for 'gpu-trainer':
   - From @lead-dev [host: dev-mac.local] (subject: "Run Benchmark") [type: task, urgency: soon]:
     Run python scripts/train.py --batch 64
   ```
@@ -1092,9 +1049,9 @@ To eliminate this ambiguity:
 ### 3. Multi-Host Lock Safety & Watchdog Sweeping
 
 Distributed environments must handle network partitions and machine restarts without corrupting agent state:
-- **Foreign Host Lock Isolation**: Listener heartbeats and worker leases store both the PID and origin hostname. When an assistant runs `locutus open` or `locutus sweep`, it checks whether a lock belongs to the *current host*:
+- **Foreign Host Lock Isolation**: Listener heartbeats and worker leases store both the PID and origin hostname. When an assistant runs `rhizo open` or `rhizo sweep`, it checks whether a lock belongs to the *current host*:
   - **Local Host**: If the lock was created by the local machine and the PID is dead, it is immediately self-healed and recycled.
-  - **Foreign Host**: If the lock was created by a remote host (`host != currentHost`), Locutus **never** assumes the PID is dead locally. It preserves the remote lock until the remote heartbeat TTL naturally expires, completely preventing split-brain conditions across machines.
+  - **Foreign Host**: If the lock was created by a remote host (`host != currentHost`), Rhizo **never** assumes the PID is dead locally. It preserves the remote lock until the remote heartbeat TTL naturally expires, completely preventing split-brain conditions across machines.
 
 ---
 
@@ -1102,18 +1059,18 @@ Distributed environments must handle network partitions and machine restarts wit
 
 In a Redis Cluster, keys are distributed across multiple shards. Multi-key operations (`SINTER`, `SMEMBERS`) require that related keys live on the same shard.
 
-Locutus supports Redis Cluster hash tags automatically:
-- Set `LOCUTUS_CLUSTER=1` (or `cluster = true` in config).
-- Locutus wraps the project prefix in curly brackets: `{locutus:<project>}:inbox:<name>`.
+Rhizo supports Redis Cluster hash tags automatically:
+- Set `RHIZO_CLUSTER=1` (or `cluster = true` in config).
+- Rhizo wraps the project prefix in curly brackets: `{rhizo:<project>}:inbox:<name>`.
 - Redis hashes only the text inside `{...}`, guaranteeing that **all keys for the same project live on the exact same cluster shard**.
 - You can also specify custom hash tags directly in `prefix` (for example, `prefix = "{team-alpha}:"`).
 
 
 ## Assistant Integration (Skill)
 
-Locutus is packaged as an assistant skill for Claude Code, Antigravity, and other coding assistants:
+Rhizo is packaged as an assistant skill for Claude Code, Antigravity, and other coding assistants:
 
-- **Skill Specification**: [`skills/locutus/SKILL.md`](skills/locutus/SKILL.md) (comprehensive multi-assistant protocol)
+- **Skill Specification**: [`skills/rhizo/SKILL.md`](skills/rhizo/SKILL.md) (comprehensive multi-assistant protocol)
 - **Wire Specification**: [`references/wire_spec.md`](references/wire_spec.md)
 - **Validation Schema**: [`tests/schema.py`](tests/schema.py) (strict Pydantic envelope model)
 
@@ -1135,7 +1092,7 @@ Empirically measured end-to-end wall-clock timings on Apple Silicon against loca
 
 ## Testing & Verification
 
-Locutus includes a 100% automated, marked `pytest` suite:
+Rhizo includes a 100% automated, marked `pytest` suite:
 
 ```bash
 # Run all hermetic unit tests (Protocol, Security, Native Binary, Cross-Platform Installer)
@@ -1160,5 +1117,5 @@ All tests execute against live Redis and validate payloads strictly against form
 
 ## License
 
-Locutus is open-source software licensed under the [MIT License](LICENSE).
+Rhizo is open-source software licensed under the [MIT License](LICENSE).
 Copyright (c) 2026 Axiomantic.

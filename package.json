@@ -1,6 +1,6 @@
 {
   "name": "@axiomantic/rhizo",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Inter-assistant communication bus, monotonic fencing locks, and work queues over Redis",
   "main": "bin/run.js",
   "bin": {
@@ -15,9 +15,6 @@
     "README.md",
     "LICENSE"
   ],
-  "scripts": {
-    "postinstall": "node scripts/postinstall.js"
-  },
   "publishConfig": {
     "access": "public"
   },
