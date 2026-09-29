@@ -489,8 +489,9 @@ jobs:
 
           # Extract Windows x64
           mkdir -p /tmp/win
-          unzip -o release-assets/${PKG_NAME}-windows-amd64.zip -d /tmp/win
+          unzip -o release-assets/${PKG_NAME}-windows-amd64.zip -d /tmp/win || true
           cp /tmp/win/${PKG_NAME}.exe bin/binaries/${PKG_NAME}-win32-x64.exe
+          test -f bin/binaries/${PKG_NAME}-win32-x64.exe
 
           chmod 755 bin/binaries/* bin/run.js
           echo "Assembled fat-package binaries in bin/binaries/:"
