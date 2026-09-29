@@ -54,10 +54,16 @@
 
 Instead of running a complex background server, Rhizo routes and queues messages directly through **Redis** or **Valkey**.
 
-### Pairing with Vine & Garden for Full Orchestration
-While Rhizo coordinates agent messaging, task claiming, and distributed locking, agents frequently need isolated workspaces to compile and test code without stepping on `main`.
+### Standalone Yet Designed for the Axiomantic Triad
 
-Rhizo pairs natively with [**Vine**](https://github.com/axiomantic/vine) and [**Garden**](https://github.com/axiomantic/garden):
+Rhizo is completely standalone and can be used on its own for any inter-process or multi-agent Redis communication, locking, and queues.
+
+However, Rhizo is designed from the ground up to pair seamlessly with **Vine** and **Garden**:
+- **Rhizo** (Transport & Concurrency): Inter-agent messaging bus, monotonic fencing locks, and task queues over Redis.
+- [**Vine**](https://github.com/axiomantic/vine) (Workspaces & Verification): Sub-second APFS Copy-on-Write strands, polyglot build-cache normalization, and the Two-Key integration gate (`git merge-tree` mechanical + compiler/test suite semantic checks).
+- [**Garden**](https://github.com/axiomantic/garden) (Swarm Ceremonies): Tmux worker fleet provisioning, 3-stage empirical dialectical pump (research, architecture, audit), and master ceremonial implementation planning.
+
+#### Complete Workflow
 1. **Claim Task**: `rhizo claim queue:myproj:tasks --lease 1800` (yields monotonic `fencing_token`).
 2. **Spin Zero-Cost Strand**: `vine new <task_id> --worktree` (sub-second APFS CoW workspace).
 3. **Verify Two-Key Gate**: `vine gate --json` (Key 1 in-memory conflict check + Key 2 live compiler/test suite).
@@ -70,11 +76,13 @@ Rhizo pairs natively with [**Vine**](https://github.com/axiomantic/vine) and [**
 ### 1. Install
 
 ```bash
-# Add to your AI assistants (interactively choose agents):
-npx skills add axiomantic/rhizo
+# Recommended: Install the complete multi-agent triad globally
+npx skills add -g axiomantic/rhizo
+npx skills add -g axiomantic/vine
+npx skills add -g axiomantic/garden
 
-# Or install the CLI globally:
-npm install -g @axiomantic/rhizo
+# Or install the CLI tools:
+npm install -g @axiomantic/rhizo @axiomantic/vine @axiomantic/garden
 ```
 
 ### 2. Try it in Your Terminals
@@ -451,18 +459,33 @@ flowchart TD
 
 Rhizo is distributed both as an AI coding agent skill and as a high-speed CLI tool.
 
-### 1. For AI Coding Assistants (Interactive Skill Setup)
+### 1. For AI Coding Assistants (Recommended)
 
-Install the skill into your coding assistants (Claude Code, Antigravity, Cursor, etc.):
+Install the skills globally (`-g`) across all your coding assistants (Claude Code, Antigravity, Cursor, Codex, OpenCode, etc.):
+
 ```bash
-npx skills add axiomantic/rhizo
+# Recommended: Install the complete multi-agent triad globally
+npx skills add -g axiomantic/rhizo
+npx skills add -g axiomantic/vine
+npx skills add -g axiomantic/garden
 ```
-*(The skill automatically self-bootstraps the CLI tool if it isn't already installed on your system).*
+
+*(Each skill automatically self-bootstraps its native CLI binary if it is not already installed on your system).*
+
+To install only Rhizo:
+```bash
+npx skills add -g axiomantic/rhizo
+```
 
 ### 2. Standalone CLI Installation
 
-Install the compiled CLI tool directly onto your `$PATH`:
+Install the compiled CLI tools directly onto your `$PATH`:
+
 ```bash
+# Install all three tools:
+npm install -g @axiomantic/rhizo @axiomantic/vine @axiomantic/garden
+
+# Or install Rhizo alone:
 npm install -g @axiomantic/rhizo
 ```
 
