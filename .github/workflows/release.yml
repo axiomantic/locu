@@ -292,11 +292,11 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Nim dependencies
-        shell: powershell
+        shell: cmd
         run: |
           git config --global core.protectNTFS false
-          try { git config --system core.protectNTFS false } catch {}
-          try { nimble install -y --depsOnly } catch { Write-Warning "Nimble deps install warning: $_" }
+          git config --global core.longpaths true
+          nimble install -y --depsOnly || verify >nul
 
       - name: Compile native Windows binary
         shell: powershell
