@@ -454,6 +454,48 @@ jobs:
             echo "${PKG_NAME}@${VERSION} is not yet published. Proceeding..."
           fi
 
+      - name: Download all release artifacts
+        if: steps.npm-check.outputs.already_published == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Assemble fat-package binaries
+        if: steps.npm-check.outputs.already_published == 'false'
+        run: |
+          mkdir -p bin/binaries
+          PKG_NAME=$(node -p "require('./package.json').name.replace('@axiomantic/', '')")
+
+          # Extract Linux x64
+          mkdir -p /tmp/lin64
+          tar -xzf release-assets/${PKG_NAME}-linux-amd64.tar.gz -C /tmp/lin64
+          cp /tmp/lin64/${PKG_NAME} bin/binaries/${PKG_NAME}-linux-x64
+
+          # Extract Linux arm64
+          mkdir -p /tmp/linarm
+          tar -xzf release-assets/${PKG_NAME}-linux-arm64.tar.gz -C /tmp/linarm
+          cp /tmp/linarm/${PKG_NAME} bin/binaries/${PKG_NAME}-linux-arm64
+
+          # Extract macOS arm64
+          mkdir -p /tmp/macarm
+          tar -xzf release-assets/${PKG_NAME}-darwin-arm64.tar.gz -C /tmp/macarm
+          cp /tmp/macarm/${PKG_NAME} bin/binaries/${PKG_NAME}-darwin-arm64
+
+          # Extract macOS x64
+          mkdir -p /tmp/macx64
+          tar -xzf release-assets/${PKG_NAME}-darwin-amd64.tar.gz -C /tmp/macx64
+          cp /tmp/macx64/${PKG_NAME} bin/binaries/${PKG_NAME}-darwin-x64
+
+          # Extract Windows x64
+          mkdir -p /tmp/win
+          unzip -o release-assets/${PKG_NAME}-windows-amd64.zip -d /tmp/win
+          cp /tmp/win/${PKG_NAME}.exe bin/binaries/${PKG_NAME}-win32-x64.exe
+
+          chmod 755 bin/binaries/* bin/run.js
+          echo "Assembled fat-package binaries in bin/binaries/:"
+          ls -lh bin/binaries/
+
       - name: Prepare npm package files
         if: steps.npm-check.outputs.already_published == 'false'
         run: |

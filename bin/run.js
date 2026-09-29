@@ -59,8 +59,10 @@ function resolveBinary() {
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
   const platform = process.platform === 'darwin' ? 'darwin' : (process.platform === 'linux' ? 'linux' : 'windows');
 
-  // 1. Check local/bundled locations
+  // 1. Check local/bundled locations (Fat-Package and local builds)
   const candidates = [
+    path.join(__dirname, 'binaries', `${PKG_NAME}-${process.platform}-${process.arch}${ext}`),
+    path.join(__dirname, 'binaries', `${PKG_NAME}-${process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}${ext}`),
     path.join(__dirname, `${PKG_NAME}-${process.platform}-${process.arch}${ext}`),
     path.join(__dirname, `${PKG_NAME}${ext}`),
     path.join(__dirname, '..', 'vendor', 'bin', `${PKG_NAME}${ext}`),
@@ -68,6 +70,7 @@ function resolveBinary() {
 
   for (const cand of candidates) {
     if (isCompatibleBinary(cand)) {
+      try { fs.chmodSync(cand, 0o755); } catch (_) {}
       return cand;
     }
   }
