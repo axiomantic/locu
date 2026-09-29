@@ -301,8 +301,9 @@ jobs:
       - name: Compile native Windows binary
         shell: powershell
         run: |
+          nimble build -y -d:release
           New-Item -ItemType Directory -Force -Path dist\windows-amd64
-          nim c -d:release --opt:speed -o:dist\windows-amd64\rhizo.exe src\rhizo.nim
+          Copy-Item -Force bin\rhizo.exe dist\windows-amd64\rhizo.exe
           Copy-Item -Recurse -Force skills dist\windows-amd64\skills
           Compress-Archive -Path dist\windows-amd64\* -DestinationPath dist\rhizo-windows-amd64.zip -Force
 
