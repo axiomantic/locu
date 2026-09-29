@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from tests.schema import LocutusMessage
 from tests.llm_client import call_llm, is_llm_available, MODEL_NAME
 
-SKILL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "skills", "locutus", "SKILL.md"))
+SKILL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "skills", "rhizo", "SKILL.md"))
 with open(SKILL_PATH, "r") as f:
     RAW_SKILL = f.read()
 

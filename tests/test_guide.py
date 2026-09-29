@@ -6,10 +6,10 @@ import tempfile
 import os
 from pathlib import Path
 
-LOCUTUS_BIN = Path(__file__).parent.parent / "bin" / "locutus"
+RHIZO_BIN = Path(__file__).parent.parent / "bin" / "rhizo"
 
 def run_locutus(*args):
-    cmd = [str(LOCUTUS_BIN)] + list(args)
+    cmd = [str(RHIZO_BIN)] + list(args)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -24,9 +24,9 @@ def test_guide_install_new_file():
         assert target.exists()
 
         content = target.read_text()
-        assert "<!-- BEGIN LOCUTUS GUIDE [v1.0] -->" in content
-        assert "<!-- END LOCUTUS GUIDE -->" in content
-        assert "Locutus Multi-Agent Coordination Guide" in content
+        assert "<!-- BEGIN RHIZO GUIDE [v1.0] -->" in content
+        assert "<!-- END RHIZO GUIDE -->" in content
+        assert "Rhizo Multi-Agent Coordination Guide" in content
 
 def test_guide_install_preserves_custom_content():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -40,17 +40,17 @@ def test_guide_install_preserves_custom_content():
 
         content = target.read_text()
         assert custom_header.strip() in content
-        assert "<!-- BEGIN LOCUTUS GUIDE [v1.0] -->" in content
-        assert "<!-- END LOCUTUS GUIDE -->" in content
+        assert "<!-- BEGIN RHIZO GUIDE [v1.0] -->" in content
+        assert "<!-- END RHIZO GUIDE -->" in content
 
 def test_guide_install_updates_in_place():
     with tempfile.TemporaryDirectory() as tmpdir:
         target = Path(tmpdir) / "AGENTS.md"
         custom_text = "# Custom Header\n\nKeep this text intact!\n\n"
         initial_block = (
-            "<!-- BEGIN LOCUTUS GUIDE [v1.0] -->\n"
+            "<!-- BEGIN RHIZO GUIDE [v1.0] -->\n"
             "Old outdated guide body.\n"
-            "<!-- END LOCUTUS GUIDE -->\n"
+            "<!-- END RHIZO GUIDE -->\n"
         )
         custom_footer = "\n\n# Custom Footer\nKeep this footer intact too!\n"
         target.write_text(custom_text + initial_block + custom_footer)
@@ -63,17 +63,17 @@ def test_guide_install_updates_in_place():
         assert "Keep this text intact!" in content
         assert "Keep this footer intact too!" in content
         assert "Old outdated guide body" not in content
-        assert "<!-- BEGIN LOCUTUS GUIDE [v1.0] -->" in content
-        assert "<!-- END LOCUTUS GUIDE -->" in content
+        assert "<!-- BEGIN RHIZO GUIDE [v1.0] -->" in content
+        assert "<!-- END RHIZO GUIDE -->" in content
 
 def test_guide_uninstall_cleans_block():
     with tempfile.TemporaryDirectory() as tmpdir:
         target = Path(tmpdir) / "AGENTS.md"
         custom_text = "# Custom Notes\n\nPreserve these notes.\n\n"
         block = (
-            "<!-- BEGIN LOCUTUS GUIDE [v1.0] -->\n"
+            "<!-- BEGIN RHIZO GUIDE [v1.0] -->\n"
             "Guide body to remove.\n"
-            "<!-- END LOCUTUS GUIDE -->\n"
+            "<!-- END RHIZO GUIDE -->\n"
         )
         target.write_text(custom_text + block)
 
@@ -83,8 +83,8 @@ def test_guide_uninstall_cleans_block():
 
         content = target.read_text()
         assert "Preserve these notes." in content
-        assert "BEGIN LOCUTUS GUIDE" not in content
-        assert "END LOCUTUS GUIDE" not in content
+        assert "BEGIN RHIZO GUIDE" not in content
+        assert "END RHIZO GUIDE" not in content
         assert "Guide body to remove" not in content
 
 def test_guide_unbalanced_marker_fails_safe():
@@ -93,7 +93,7 @@ def test_guide_unbalanced_marker_fails_safe():
         # Only BEGIN marker, no END marker (corrupt/malformed)
         corrupted = (
             "# Notes\n\n"
-            "<!-- BEGIN LOCUTUS GUIDE [v1.0] -->\n"
+            "<!-- BEGIN RHIZO GUIDE [v1.0] -->\n"
             "Accidentally missing end marker!\n"
             "Important content that must not be deleted.\n"
         )

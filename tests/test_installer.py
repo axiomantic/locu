@@ -10,13 +10,13 @@ import tripwire
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 INSTALL_SH = os.path.join(REPO_ROOT, "scripts", "install.sh")
 INSTALL_PS1 = os.path.join(REPO_ROOT, "scripts", "install.ps1")
-SKILLS_DIR = os.path.join(REPO_ROOT, "skills", "locutus")
+SKILLS_DIR = os.path.join(REPO_ROOT, "skills", "rhizo")
 
 
 @pytest.mark.unit
 class TestInstallerAndUninstaller(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.mkdtemp(prefix="locutus_install_test_")
+        self.temp_dir = tempfile.mkdtemp(prefix="rhizo_install_test_")
         self.install_dir = os.path.join(self.temp_dir, "bin")
         self.fake_home = os.path.join(self.temp_dir, "home")
         os.makedirs(self.install_dir, exist_ok=True)
@@ -52,7 +52,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         self.assertEqual(res.returncode, 0, f"install.sh failed:\n{res.stderr}\n{res.stdout}")
 
         # 1. Verify binary existence, exact permissions (0755), and operational sanity
-        binary_path = os.path.join(self.install_dir, "locutus")
+        binary_path = os.path.join(self.install_dir, "rhizo")
         self.assertTrue(os.path.isfile(binary_path), f"Binary not installed at {binary_path}")
         stat = os.stat(binary_path)
         self.assertEqual(stat.st_mode & 0o777, 0o755, f"Binary permissions {oct(stat.st_mode)} != 0755")
@@ -60,16 +60,16 @@ class TestInstallerAndUninstaller(unittest.TestCase):
 
         verify_run = subprocess.run([binary_path, "--help"], capture_output=True, text=True)
         self.assertEqual(verify_run.returncode, 0)
-        self.assertIn("Locutus", verify_run.stdout)
+        self.assertIn("Rhizo", verify_run.stdout)
         self.assertIn("Usage:", verify_run.stdout)
         self.assertIn("Nim Native", verify_run.stdout)
 
         # 2. Verify skills were installed into detected mock assistants and match byte-for-byte
-        claude_skill = os.path.join(self.fake_home, ".claude", "skills", "locutus", "SKILL.md")
-        claude_ref = os.path.join(self.fake_home, ".claude", "skills", "locutus", "references", "wire_spec.md")
-        gemini_skill = os.path.join(self.fake_home, ".gemini", "config", "skills", "locutus", "SKILL.md")
-        agents_skill = os.path.join(self.fake_home, ".agents", "skills", "locutus", "SKILL.md")
-        codex_skill = os.path.join(self.fake_home, ".codex", "skills", "locutus", "SKILL.md")
+        claude_skill = os.path.join(self.fake_home, ".claude", "skills", "rhizo", "SKILL.md")
+        claude_ref = os.path.join(self.fake_home, ".claude", "skills", "rhizo", "references", "wire_spec.md")
+        gemini_skill = os.path.join(self.fake_home, ".gemini", "config", "skills", "rhizo", "SKILL.md")
+        agents_skill = os.path.join(self.fake_home, ".agents", "skills", "rhizo", "SKILL.md")
+        codex_skill = os.path.join(self.fake_home, ".codex", "skills", "rhizo", "SKILL.md")
 
         with open(os.path.join(SKILLS_DIR, "SKILL.md"), "rb") as f_src:
             src_skill_bytes = f_src.read()
@@ -159,7 +159,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         self.assertIn("Skipping AI agent skill installation", res.stdout)
 
         # 1. Binary must exist, have 0755 permissions, and run cleanly
-        binary_path = os.path.join(self.install_dir, "locutus")
+        binary_path = os.path.join(self.install_dir, "rhizo")
         self.assertTrue(os.path.isfile(binary_path))
         stat = os.stat(binary_path)
         self.assertEqual(stat.st_mode & 0o777, 0o755)
@@ -203,7 +203,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         """Test skilz metadata schema conformance and install/remove CLI workflow."""
         import yaml
 
-        # 1. Full schema validation of skills/locutus/SKILL.md frontmatter
+        # 1. Full schema validation of skills/rhizo/SKILL.md frontmatter
         skill_file = os.path.join(SKILLS_DIR, "SKILL.md")
         self.assertTrue(os.path.isfile(skill_file), f"Missing {skill_file}")
         with open(skill_file, "r", encoding="utf-8") as f:
@@ -213,7 +213,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         self.assertGreaterEqual(len(parts), 3, "SKILL.md missing YAML frontmatter delimiters '---'")
         metadata = yaml.safe_load(parts[1])
         self.assertIsInstance(metadata, dict, "Frontmatter must be a valid YAML dictionary")
-        self.assertEqual(metadata.get("name"), "locutus")
+        self.assertEqual(metadata.get("name"), "rhizo")
         self.assertIn("description", metadata)
         self.assertIsInstance(metadata["description"], str)
         self.assertGreater(len(metadata["description"].strip()), 30, "Description must be comprehensive")
@@ -230,48 +230,48 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             return data
 
         with self.assertRaises(ValueError):
-            _validate_manifest("description: locutus without name\n")
+            _validate_manifest("description: rhizo without name\n")
         with self.assertRaises(ValueError):
-            _validate_manifest("name: locutus\n")
+            _validate_manifest("name: rhizo\n")
         with self.assertRaises(yaml.YAMLError):
-            _validate_manifest("name: locutus\n  unmatched_indent: [unterminated\n")
+            _validate_manifest("name: rhizo\n  unmatched_indent: [unterminated\n")
 
         # 2. Tripwire simulated skilz CLI workflow: guaranteed execution regardless of host package manager
         mock_install_cmd = ["skilz", "-y", "install", "-f", SKILLS_DIR, "--agent", "claude", "-p"]
-        mock_remove_cmd = ["skilz", "-y", "remove", "locutus", "-p"]
+        mock_remove_cmd = ["skilz", "-y", "remove", "rhizo", "-p"]
 
         tripwire.subprocess.mock_run(
             mock_install_cmd,
             returncode=0,
-            stdout="✓ Installed: locutus into .claude/skills/locutus\n",
+            stdout="✓ Installed: rhizo into .claude/skills/rhizo\n",
             stderr="",
         )
         tripwire.subprocess.mock_run(
             mock_remove_cmd,
             returncode=0,
-            stdout="✓ Removed: locutus\n",
+            stdout="✓ Removed: rhizo\n",
             stderr="",
         )
 
         with tripwire:
             res_inst = subprocess.run(mock_install_cmd, capture_output=True, text=True)
             self.assertEqual(res_inst.returncode, 0)
-            self.assertIn("Installed: locutus", res_inst.stdout)
+            self.assertIn("Installed: rhizo", res_inst.stdout)
 
             res_rm = subprocess.run(mock_remove_cmd, capture_output=True, text=True)
             self.assertEqual(res_rm.returncode, 0)
-            self.assertIn("Removed: locutus", res_rm.stdout)
+            self.assertIn("Removed: rhizo", res_rm.stdout)
 
         tripwire.subprocess.assert_run(
             command=mock_install_cmd,
             returncode=0,
-            stdout="✓ Installed: locutus into .claude/skills/locutus\n",
+            stdout="✓ Installed: rhizo into .claude/skills/rhizo\n",
             stderr="",
         )
         tripwire.subprocess.assert_run(
             command=mock_remove_cmd,
             returncode=0,
-            stdout="✓ Removed: locutus\n",
+            stdout="✓ Removed: rhizo\n",
             stderr="",
         )
 
@@ -298,10 +298,10 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 timeout=30,
             )
             self.assertEqual(install_res.returncode, 0)
-            installed_skill = os.path.join(proj_dir, ".claude", "skills", "locutus", "SKILL.md")
+            installed_skill = os.path.join(proj_dir, ".claude", "skills", "rhizo", "SKILL.md")
             self.assertTrue(os.path.isfile(installed_skill))
             remove_res = subprocess.run(
-                [skilz_cmd, "-y", "remove", "locutus", "-p"],
+                [skilz_cmd, "-y", "remove", "rhizo", "-p"],
                 cwd=proj_dir,
                 capture_output=True,
                 text=True,
@@ -327,7 +327,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
 
         frontmatter = yaml.safe_load(parts[1])
         self.assertIsInstance(frontmatter, dict, "Frontmatter must parse to a dictionary")
-        self.assertEqual(frontmatter.get("name"), "locutus")
+        self.assertEqual(frontmatter.get("name"), "rhizo")
         self.assertIn("description", frontmatter)
         desc = frontmatter["description"]
         self.assertIsInstance(desc, str)
@@ -336,7 +336,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertIn(keyword.lower(), desc.lower(), f"Description missing critical capability keyword: {keyword}")
 
         # 3. Negative control: verify that mutating any character triggers assertion failure
-        mutated_bytes = content.replace("name: locutus", "name: mutated_agent_wrong").encode("utf-8")
+        mutated_bytes = content.replace("name: rhizo", "name: mutated_agent_wrong").encode("utf-8")
         self.assertNotEqual(mutated_bytes, content.encode("utf-8"), "Negative control mutation did not alter content")
 
         def _strict_schema_check(raw_text: str) -> dict:
@@ -351,9 +351,9 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             return meta
 
         with self.assertRaises(ValueError):
-            _strict_schema_check("name: locutus\nno_delimiters: true")
+            _strict_schema_check("name: rhizo\nno_delimiters: true")
         with self.assertRaises(ValueError):
-            _strict_schema_check("---\nname: locutus\n---")
+            _strict_schema_check("---\nname: rhizo\n---")
         with self.assertRaises(ValueError):
             _strict_schema_check("---\ndescription: only desc\n---")
         with self.assertRaises(yaml.YAMLError):
@@ -366,7 +366,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         expected_cmd = ["npx", "skills", "add", REPO_ROOT, "-l"]
 
         # 1. Deterministic tripwire verification: guarantees test execution even in offline / minimal environments
-        mock_output = "✔ Found 1 skill in repository\n  - locutus (Multi-agent coordination layer)\n"
+        mock_output = "✔ Found 1 skill in repository\n  - rhizo (Multi-agent coordination layer)\n"
         tripwire.subprocess.mock_run(
             expected_cmd,
             returncode=0,
@@ -378,7 +378,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertEqual(res_mock.returncode, 0)
             clean_mock = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", res_mock.stdout)
             self.assertIn("Found 1 skill", clean_mock)
-            self.assertIn("locutus", clean_mock)
+            self.assertIn("rhizo", clean_mock)
 
         tripwire.subprocess.assert_run(
             command=expected_cmd,
@@ -421,7 +421,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 if res_live.returncode == 0:
                     clean_live = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", res_live.stdout)
                     self.assertRegex(clean_live, r"(?i)found\s+1\s+skill")
-                    self.assertIn("locutus", clean_live)
+                    self.assertIn("rhizo", clean_live)
             except (subprocess.TimeoutExpired, OSError):
                 pass
 
@@ -440,9 +440,9 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertIn(p, ps_content, f"Missing required parameter '{p}' in install.ps1")
 
         self.assertRegex(ps_content, r'\$ErrorActionPreference\s*=\s*"Stop"', "install.ps1 must set ErrorActionPreference = Stop")
-        self.assertIn("Programs\\locutus", ps_content, "Missing standard Windows installation path")
-        self.assertIn(".claude\\skills\\locutus", ps_content, "Missing Claude skill path in Windows installer")
-        self.assertIn(".agents\\skills\\locutus", ps_content, "Missing Agents skill path in Windows installer")
+        self.assertIn("Programs\\rhizo", ps_content, "Missing standard Windows installation path")
+        self.assertIn(".claude\\skills\\rhizo", ps_content, "Missing Claude skill path in Windows installer")
+        self.assertIn(".agents\\skills\\rhizo", ps_content, "Missing Agents skill path in Windows installer")
 
         # Negative control: validator must reject scripts missing parameters or error action preference
         def _validate_ps1(script_text: str) -> None:
@@ -464,13 +464,13 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         tripwire.subprocess.mock_run(
             mock_install_cmd,
             returncode=0,
-            stdout="=== Locutus Windows Installer ===\nInstalled successfully to Programs\\locutus\n",
+            stdout="=== Rhizo Windows Installer ===\nInstalled successfully to Programs\\rhizo\n",
             stderr="",
         )
         tripwire.subprocess.mock_run(
             mock_uninstall_cmd,
             returncode=0,
-            stdout="=== Locutus Windows Uninstaller ===\nLocutus completely uninstalled.\n",
+            stdout="=== Rhizo Windows Uninstaller ===\nRhizo completely uninstalled.\n",
             stderr="",
         )
 
@@ -486,13 +486,13 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         tripwire.subprocess.assert_run(
             command=mock_install_cmd,
             returncode=0,
-            stdout="=== Locutus Windows Installer ===\nInstalled successfully to Programs\\locutus\n",
+            stdout="=== Rhizo Windows Installer ===\nInstalled successfully to Programs\\rhizo\n",
             stderr="",
         )
         tripwire.subprocess.assert_run(
             command=mock_uninstall_cmd,
             returncode=0,
-            stdout="=== Locutus Windows Uninstaller ===\nLocutus completely uninstalled.\n",
+            stdout="=== Rhizo Windows Uninstaller ===\nRhizo completely uninstalled.\n",
             stderr="",
         )
 
@@ -518,7 +518,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 timeout=120,
             )
             self.assertEqual(res.returncode, 0, f"install.ps1 failed:\n{res.stderr}\n{res.stdout}")
-            exe_path = os.path.join(temp_appdata, "Programs", "locutus", "locutus.exe")
+            exe_path = os.path.join(temp_appdata, "Programs", "rhizo", "rhizo.exe")
             self.assertTrue(os.path.isfile(exe_path))
 
             un_res = subprocess.run(
@@ -537,7 +537,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         import json
         import re
 
-        manifest_path = os.path.join(REPO_ROOT, "packaging", "scoop", "locutus.json")
+        manifest_path = os.path.join(REPO_ROOT, "packaging", "scoop", "rhizo.json")
         self.assertTrue(os.path.isfile(manifest_path), f"Missing {manifest_path}")
 
         with open(manifest_path, "r", encoding="utf-8") as f:
@@ -551,12 +551,12 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         # Version synchronization with repo
         self.assertEqual(data["version"], "0.1.3")
         self.assertEqual(data["license"], "MIT")
-        self.assertEqual(data["homepage"], "https://github.com/axiomantic/locu")
+        self.assertEqual(data["homepage"], "https://github.com/axiomantic/rhizo")
         self.assertIn("64bit", data["architecture"])
 
         arch_64 = data["architecture"]["64bit"]
-        self.assertEqual(arch_64.get("bin"), "locutus.exe")
-        expected_url = f"https://github.com/axiomantic/locu/releases/download/v{data['version']}/locutus-windows-amd64.zip"
+        self.assertEqual(arch_64.get("bin"), "rhizo.exe")
+        expected_url = f"https://github.com/axiomantic/rhizo/releases/download/v{data['version']}/rhizo-windows-amd64.zip"
         self.assertEqual(arch_64.get("url"), expected_url)
 
         # Autoupdate pattern
@@ -580,7 +580,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         notes_text = " ".join(data["notes"])
         self.assertIn("npx skills", notes_text)
         self.assertIn("skilz", notes_text)
-        self.assertIn("$dir\\skills\\locutus", notes_text)
+        self.assertIn("$dir\\skills\\rhizo", notes_text)
 
         # 2. Negative controls: schema validator rejecting invalid manifests
         def _validate_scoop_schema(manifest: dict) -> None:
@@ -603,27 +603,27 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         """Verify Homebrew formula architecture stanzas, version sync, installation, caveats, and test block."""
         import re
 
-        formula_path = os.path.join(REPO_ROOT, "Formula", "locutus.rb")
+        formula_path = os.path.join(REPO_ROOT, "Formula", "rhizo.rb")
         self.assertTrue(os.path.isfile(formula_path), f"Missing {formula_path}")
 
         with open(formula_path, "r", encoding="utf-8") as f:
             content = f.read()
 
         # 1. Structural Ruby formula parsing
-        self.assertIn("class Locutus < Formula", content)
+        self.assertIn("class Rhizo < Formula", content)
         self.assertRegex(content, r'version\s+"0\.1\.3"', "Homebrew version must match repository version 0.1.3")
         self.assertRegex(content, r'license\s+"MIT"', "Homebrew license must be MIT")
-        self.assertIn('homepage "https://github.com/axiomantic/locu"', content)
+        self.assertIn('homepage "https://github.com/axiomantic/rhizo"', content)
 
         # 2. Multi-platform OS & Architecture blocks (macOS + Linux, arm64 + amd64)
         self.assertIn("on_macos do", content)
         self.assertIn("on_linux do", content)
 
         required_tarballs = [
-            "locutus-darwin-arm64.tar.gz",
-            "locutus-darwin-amd64.tar.gz",
-            "locutus-linux-arm64.tar.gz",
-            "locutus-linux-amd64.tar.gz",
+            "rhizo-darwin-arm64.tar.gz",
+            "rhizo-darwin-amd64.tar.gz",
+            "rhizo-linux-arm64.tar.gz",
+            "rhizo-linux-amd64.tar.gz",
         ]
         for tb in required_tarballs:
             self.assertIn(tb, content, f"Missing Homebrew bottle/tarball target: {tb}")
@@ -633,13 +633,13 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         self.assertIn("def caveats", content)
         self.assertIn("npx skills add", content)
         self.assertIn("skilz install", content)
-        self.assertIn("#{opt_pkgshare}/skills/locutus", content)
+        self.assertIn("#{opt_pkgshare}/skills/rhizo", content)
         self.assertIn("test do", content)
         self.assertIn("assert_match", content)
 
         # 4. Negative control: validator rejecting incomplete or malformed formula
         def _validate_homebrew_formula(ruby_code: str) -> None:
-            if "class Locutus < Formula" not in ruby_code:
+            if "class Rhizo < Formula" not in ruby_code:
                 raise ValueError("Missing Formula class declaration")
             if "on_macos do" not in ruby_code or "on_linux do" not in ruby_code:
                 raise ValueError("Missing OS block")
@@ -650,11 +650,11 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 raise ValueError("Missing skills installation to pkgshare")
 
         with self.assertRaises(ValueError):
-            _validate_homebrew_formula("class Locutus; end")
+            _validate_homebrew_formula("class Rhizo; end")
         with self.assertRaises(ValueError):
-            _validate_homebrew_formula("class Locutus < Formula\n  on_macos do; end\nend")
+            _validate_homebrew_formula("class Rhizo < Formula\n  on_macos do; end\nend")
         with self.assertRaises(ValueError):
-            _validate_homebrew_formula("class Locutus < Formula\n  on_macos do; end\n  on_linux do; end\nend")
+            _validate_homebrew_formula("class Rhizo < Formula\n  on_macos do; end\n  on_linux do; end\nend")
 
         # 5. Tripwire simulation of brew audit & brew test
         mock_audit_cmd = ["brew", "audit", "--formula", formula_path]
@@ -717,13 +717,13 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertIn(bjob, needs, f"publish-release must depend on {bjob} to prevent race conditions")
 
         # 4. Packaging assertions across operating systems
-        self.assertIn("tar -czf dist/locutus-linux-amd64.tar.gz -C dist/linux-amd64 locutus locu skills", raw_yaml)
-        self.assertIn("tar -czf dist/locutus-darwin-arm64.tar.gz -C dist/darwin-arm64 locutus locu skills", raw_yaml)
+        self.assertIn("tar -czf dist/rhizo-linux-amd64.tar.gz -C dist/linux-amd64 rhizo skills", raw_yaml)
+        self.assertIn("tar -czf dist/rhizo-darwin-arm64.tar.gz -C dist/darwin-arm64 rhizo skills", raw_yaml)
         self.assertIn("Copy-Item -Recurse -Force skills dist\\windows-amd64\\skills", raw_yaml)
-        self.assertIn("cp -r skills/locutus deb-amd64/usr/share/locutus/skills/", raw_yaml)
-        self.assertIn("npx skills add /usr/share/locutus/skills/locutus -g", raw_yaml)
-        self.assertIn("skilz install -f /usr/share/locutus/skills/locutus", raw_yaml)
-        self.assertIn("sha256sum locutus-* *.deb > SHA256SUMS.txt", raw_yaml)
+        self.assertIn("cp -r skills/rhizo deb-amd64/usr/share/rhizo/skills/", raw_yaml)
+        self.assertIn("npx skills add /usr/share/rhizo/skills/rhizo -g", raw_yaml)
+        self.assertIn("skilz install -f /usr/share/rhizo/skills/rhizo", raw_yaml)
+        self.assertIn("sha256sum rhizo-* *.deb > SHA256SUMS.txt", raw_yaml)
 
         # 5. Negative controls: validator rejecting broken workflow DAG
         def _validate_workflow_dag(wf_dict: dict) -> None:

@@ -1,15 +1,15 @@
 <#
 .SYNOPSIS
-    Locutus Windows PowerShell Installer & Uninstaller
+    Rhizo Windows PowerShell Installer & Uninstaller
 .DESCRIPTION
-    Installs Locutus for Windows x86_64:
+    Installs Rhizo for Windows x86_64:
     1. Installs via Scoop if Scoop is present.
     2. Downloads and installs pre-compiled binary zip from GitHub Releases.
     3. Falls back to installing Nim and compiling from source if no binary is found.
-    Configures %LOCALAPPDATA%\Programs\locutus and updates the User PATH.
+    Configures %LOCALAPPDATA%\Programs\rhizo and updates the User PATH.
 .EXAMPLE
     # Install:
-    irm https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.ps1 | iex
+    irm https://raw.githubusercontent.com/axiomantic/rhizo/main/scripts/install.ps1 | iex
 
     # Uninstall:
     & .\scripts\install.ps1 -Uninstall
@@ -24,28 +24,28 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = "axiomantic/locu"
+$Repo = "axiomantic/rhizo"
 $GitHubUrl = "https://github.com/$Repo"
-$InstallDir = Join-Path $env:LOCALAPPDATA "Programs\locutus"
+$InstallDir = Join-Path $env:LOCALAPPDATA "Programs\rhizo"
 
 # 0. Handle Uninstallation
 if ($Uninstall) {
-    Write-Host "=== Locutus Windows Uninstaller ===" -ForegroundColor Cyan
+    Write-Host "=== Rhizo Windows Uninstaller ===" -ForegroundColor Cyan
     $removed = $false
 
     # A. Remove Skills
-    Write-Host "Checking for installed Locutus AI agent skills..." -ForegroundColor Yellow
+    Write-Host "Checking for installed Rhizo AI agent skills..." -ForegroundColor Yellow
     if (Get-Command npx -ErrorAction SilentlyContinue) {
-        try { & npx -y skills remove locutus -g -y 2>$null } catch {}
+        try { & npx -y skills remove rhizo -g -y 2>$null } catch {}
     }
     if (Get-Command skilz -ErrorAction SilentlyContinue) {
-        try { & skilz -y remove locutus 2>$null } catch {}
+        try { & skilz -y remove rhizo 2>$null } catch {}
     }
     $skillPaths = @(
-        "$env:USERPROFILE\.claude\skills\locutus",
-        "$env:APPDATA\gemini\skills\locutus",
-        "$env:USERPROFILE\.agents\skills\locutus",
-        "$env:USERPROFILE\.codex\skills\locutus"
+        "$env:USERPROFILE\.claude\skills\rhizo",
+        "$env:APPDATA\gemini\skills\rhizo",
+        "$env:USERPROFILE\.agents\skills\rhizo",
+        "$env:USERPROFILE\.codex\skills\rhizo"
     )
     foreach ($spath in $skillPaths) {
         if (Test-Path $spath) {
@@ -56,9 +56,9 @@ if ($Uninstall) {
     }
 
     # B. Check Scoop
-    if ((Get-Command scoop -ErrorAction SilentlyContinue) -and (scoop list | Select-String "^locutus\b")) {
+    if ((Get-Command scoop -ErrorAction SilentlyContinue) -and (scoop list | Select-String "^rhizo\b")) {
         Write-Host "Detected Scoop package. Uninstalling via Scoop..." -ForegroundColor Yellow
-        scoop uninstall locutus
+        scoop uninstall rhizo
         $removed = $true
     }
 
@@ -79,19 +79,19 @@ if ($Uninstall) {
     }
 
     if ($removed) {
-        Write-Host "[+] Locutus (binary and AI agent skills) has been successfully uninstalled." -ForegroundColor Green
-        Write-Host "Note: Configuration files in %APPDATA%\locutus were preserved."
+        Write-Host "[+] Rhizo (binary and AI agent skills) has been successfully uninstalled." -ForegroundColor Green
+        Write-Host "Note: Configuration files in %APPDATA%\rhizo were preserved."
     } else {
-        Write-Host "Locutus does not appear to be installed on this system." -ForegroundColor Gray
+        Write-Host "Rhizo does not appear to be installed on this system." -ForegroundColor Gray
     }
     exit 0
 }
 
-Write-Host "=== Locutus Windows Installer ===" -ForegroundColor Cyan
+Write-Host "=== Rhizo Windows Installer ===" -ForegroundColor Cyan
 
 # 1. Check Architecture
 if (-not [Environment]::Is64BitOperatingSystem) {
-    Write-Error "Locutus requires a 64-bit Windows operating system (x86_64)."
+    Write-Error "Rhizo requires a 64-bit Windows operating system (x86_64)."
     exit 1
 }
 
@@ -114,7 +114,7 @@ elseif (-not ($Version.StartsWith("v"))) {
 
 # Helper: Build from Source
 function Build-FromSource {
-    Write-Host "`n=== Building Locutus from Source ===" -ForegroundColor Cyan
+    Write-Host "`n=== Building Rhizo from Source ===" -ForegroundColor Cyan
 
     # Check for Nim
     if (-not (Get-Command nim -ErrorAction SilentlyContinue)) {
@@ -133,16 +133,16 @@ function Build-FromSource {
 
     Write-Host "Using Nim: $((nim --version)[0])" -ForegroundColor Green
 
-    if (Test-Path "src\locutus.nim") {
-        Write-Host "Compiling native Locutus binary from local source tree..." -ForegroundColor Green
+    if (Test-Path "src\rhizo.nim") {
+        Write-Host "Compiling native Rhizo binary from local source tree..." -ForegroundColor Green
         if (-not (Test-Path $InstallDir)) {
             New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
         }
         if (Get-Command nimble -ErrorAction SilentlyContinue) {
             nimble build -y -d:release
-            Copy-Item -Path "bin\locutus.exe" -Destination "$InstallDir\locutus.exe" -Force
+            Copy-Item -Path "bin\rhizo.exe" -Destination "$InstallDir\rhizo.exe" -Force
         } else {
-            nim c -d:release --opt:speed -o:"$InstallDir\locutus.exe" src\locutus.nim
+            nim c -d:release --opt:speed -o:"$InstallDir\rhizo.exe" src\rhizo.nim
         }
         return
     }
@@ -151,7 +151,7 @@ function Build-FromSource {
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
     $srcZip = Join-Path $tempDir "source.zip"
 
-    Write-Host "Fetching Locutus source ($Version)..."
+    Write-Host "Fetching Rhizo source ($Version)..."
     $srcUrl = "$GitHubUrl/archive/refs/tags/$Version.zip"
     try {
         Invoke-WebRequest -Uri $srcUrl -OutFile $srcZip -UseBasicParsing
@@ -172,9 +172,9 @@ function Build-FromSource {
     try {
         if (Get-Command nimble -ErrorAction SilentlyContinue) {
             nimble build -y -d:release
-            Copy-Item -Path "bin\locutus.exe" -Destination "$InstallDir\locutus.exe" -Force
+            Copy-Item -Path "bin\rhizo.exe" -Destination "$InstallDir\rhizo.exe" -Force
         } else {
-            nim c -d:release --opt:speed -o:"$InstallDir\locutus.exe" src\locutus.nim
+            nim c -d:release --opt:speed -o:"$InstallDir\rhizo.exe" src\rhizo.nim
         }
     } finally {
         Pop-Location
@@ -189,15 +189,15 @@ function Install-Skills {
         return
     }
 
-    Write-Host "`n=== Installing Locutus AI Agent Skills ===" -ForegroundColor Cyan
+    Write-Host "`n=== Installing Rhizo AI Agent Skills ===" -ForegroundColor Cyan
     $skillInstalled = $false
 
     # Option A: skills.sh via npx
     if (Get-Command npx -ErrorAction SilentlyContinue) {
         Write-Host "Attempting global skill installation via skills.sh (npx)..." -ForegroundColor Yellow
         try {
-            & npx -y skills add axiomantic/locu -g -a '*' -y
-            Write-Host "[+] Locutus skill installed globally via skills.sh." -ForegroundColor Green
+            & npx -y skills add axiomantic/rhizo -g -a '*' -y
+            Write-Host "[+] Rhizo skill installed globally via skills.sh." -ForegroundColor Green
             $skillInstalled = $true
         }
         catch {}
@@ -207,8 +207,8 @@ function Install-Skills {
     if (-not $skillInstalled -and (Get-Command skilz -ErrorAction SilentlyContinue)) {
         Write-Host "Attempting global skill installation via skilz..." -ForegroundColor Yellow
         try {
-            & skilz -y install https://github.com/axiomantic/locu
-            Write-Host "[+] Locutus skill installed globally via skilz." -ForegroundColor Green
+            & skilz -y install https://github.com/axiomantic/rhizo
+            Write-Host "[+] Rhizo skill installed globally via skilz." -ForegroundColor Green
             $skillInstalled = $true
         }
         catch {}
@@ -217,8 +217,8 @@ function Install-Skills {
     # Option C: Direct fallback to standard assistant directories
     if (-not $skillInstalled) {
         Write-Host "Configuring skills directly for detected AI coding assistants..." -ForegroundColor Yellow
-        $localSkill = "skills\locutus\SKILL.md"
-        $localSpec = "skills\locutus\references\wire_spec.md"
+        $localSkill = "skills\rhizo\SKILL.md"
+        $localSpec = "skills\rhizo\references\wire_spec.md"
         $tempSkillDir = $null
 
         try {
@@ -226,8 +226,8 @@ function Install-Skills {
                 $skillFile = (Resolve-Path $localSkill).Path
                 $specFile = if (Test-Path $localSpec) { (Resolve-Path $localSpec).Path } else { $null }
             } else {
-                $skillUrl = "https://raw.githubusercontent.com/$Repo/main/skills/locutus/SKILL.md"
-                $specUrl = "https://raw.githubusercontent.com/$Repo/main/skills/locutus/references/wire_spec.md"
+                $skillUrl = "https://raw.githubusercontent.com/$Repo/main/skills/rhizo/SKILL.md"
+                $specUrl = "https://raw.githubusercontent.com/$Repo/main/skills/rhizo/references/wire_spec.md"
                 $tempSkillDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
                 New-Item -ItemType Directory -Path $tempSkillDir -Force | Out-Null
                 $skillFile = Join-Path $tempSkillDir "SKILL.md"
@@ -237,10 +237,10 @@ function Install-Skills {
             }
 
             $candidateDirs = @(
-                "$env:USERPROFILE\.claude\skills\locutus",
-                "$env:APPDATA\gemini\skills\locutus",
-                "$env:USERPROFILE\.agents\skills\locutus",
-                "$env:USERPROFILE\.codex\skills\locutus"
+                "$env:USERPROFILE\.claude\skills\rhizo",
+                "$env:APPDATA\gemini\skills\rhizo",
+                "$env:USERPROFILE\.agents\skills\rhizo",
+                "$env:USERPROFILE\.codex\skills\rhizo"
             )
 
             foreach ($targetSkill in $candidateDirs) {
@@ -252,7 +252,7 @@ function Install-Skills {
                     if ($specFile -and (Test-Path $specFile)) {
                         Copy-Item -Path $specFile -Destination (Join-Path $refDir "wire_spec.md") -Force
                     }
-                    Write-Host "  [+] Installed Locutus skill to: $targetSkill" -ForegroundColor Green
+                    Write-Host "  [+] Installed Rhizo skill to: $targetSkill" -ForegroundColor Green
                     $skillInstalled = $true
                 }
             }
@@ -270,16 +270,16 @@ function Install-Skills {
     } else {
         Write-Host "Notice: No coding assistant directories detected yet." -ForegroundColor Gray
         Write-Host "Install the skill into your assistant at any time using:"
-        Write-Host "    npx skills add axiomantic/locu -g"
-        Write-Host "    # Or: skilz install https://github.com/axiomantic/locu"
+        Write-Host "    npx skills add axiomantic/rhizo -g"
+        Write-Host "    # Or: skilz install https://github.com/axiomantic/rhizo"
     }
 }
 
 # 3. Check for Scoop Package Manager
 if (-not $BuildFromSource -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
     Write-Host "Detected Scoop package manager. Installing via Scoop..." -ForegroundColor Green
-    if (scoop install "https://raw.githubusercontent.com/$Repo/main/packaging/scoop/locutus.json") {
-        Write-Host "[+] Locutus successfully installed via Scoop." -ForegroundColor Green
+    if (scoop install "https://raw.githubusercontent.com/$Repo/main/packaging/scoop/rhizo.json") {
+        Write-Host "[+] Rhizo successfully installed via Scoop." -ForegroundColor Green
         Install-Skills
         exit 0
     }
@@ -289,7 +289,7 @@ if (-not $BuildFromSource -and (Get-Command scoop -ErrorAction SilentlyContinue)
 # 4. Standalone Binary Installation
 $installed = $false
 if (-not $BuildFromSource) {
-    $zipFile = "locutus-windows-amd64.zip"
+    $zipFile = "rhizo-windows-amd64.zip"
     $downloadUrl = "$GitHubUrl/releases/download/$Version/$zipFile"
     $tempDir = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName())
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
@@ -318,9 +318,9 @@ if (-not $installed) {
     Build-FromSource
 }
 
-$exePath = Join-Path $InstallDir "locutus.exe"
+$exePath = Join-Path $InstallDir "rhizo.exe"
 if (-not (Test-Path $exePath)) {
-    Write-Error "locutus.exe was not found at $exePath."
+    Write-Error "rhizo.exe was not found at $exePath."
     exit 1
 }
 
@@ -332,13 +332,13 @@ if ($userPath -split ";" -notcontains $InstallDir) {
     $env:Path = "$env:Path;$InstallDir"
 }
 
-Write-Host "[+] Locutus successfully installed to: $exePath" -ForegroundColor Green
+Write-Host "[+] Rhizo successfully installed to: $exePath" -ForegroundColor Green
 
 # 7. Verification
 try {
     & $exePath --help | Out-Null
-    Write-Host "[+] Locutus executable verified and ready to use!" -ForegroundColor Green
-    Write-Host "Run 'locutus --help' to get started."
+    Write-Host "[+] Rhizo executable verified and ready to use!" -ForegroundColor Green
+    Write-Host "Run 'rhizo --help' to get started."
 }
 catch {
     Write-Warning "Executable installed, but execution check failed. You may need to restart your terminal."

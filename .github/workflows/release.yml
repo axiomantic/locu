@@ -24,7 +24,7 @@ jobs:
             VERSION="0.1.0-dev"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Building Locutus version ${VERSION}"
+          echo "Building Rhizo version ${VERSION}"
 
       - name: Set up Nim via mise
         uses: jdx/mise-action@v4
@@ -58,38 +58,36 @@ jobs:
       - name: Compile Linux x86_64 binary
         run: |
           mkdir -p dist/linux-amd64
-          nim c -d:release --opt:speed -o:dist/linux-amd64/locutus src/locutus.nim
-          cp dist/linux-amd64/locutus dist/linux-amd64/locu
-          strip dist/linux-amd64/locutus dist/linux-amd64/locu
+          nim c -d:release --opt:speed -o:dist/linux-amd64/rhizo src/rhizo.nim
+          strip dist/linux-amd64/rhizo
           cp -r skills dist/linux-amd64/
-          tar -czf dist/locutus-linux-amd64.tar.gz -C dist/linux-amd64 locutus locu skills
+          tar -czf dist/rhizo-linux-amd64.tar.gz -C dist/linux-amd64 rhizo skills
 
       - name: Compile Linux aarch64 binary
         run: |
           mkdir -p dist/linux-arm64
           nim c -d:release --opt:speed --cpu:arm64 --os:linux \
             --gcc.exe:aarch64-linux-gnu-gcc --gcc.linkerexe:aarch64-linux-gnu-gcc \
-            -o:dist/linux-arm64/locutus src/locutus.nim
-          cp dist/linux-arm64/locutus dist/linux-arm64/locu
-          aarch64-linux-gnu-strip dist/linux-arm64/locutus dist/linux-arm64/locu
+            -o:dist/linux-arm64/rhizo src/rhizo.nim
+          aarch64-linux-gnu-strip dist/linux-arm64/rhizo
           cp -r skills dist/linux-arm64/
-          tar -czf dist/locutus-linux-arm64.tar.gz -C dist/linux-arm64 locutus locu skills
+          tar -czf dist/rhizo-linux-arm64.tar.gz -C dist/linux-arm64 rhizo skills
 
       - name: Build Debian packages (.deb)
         env:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           # Build amd64 .deb
-          mkdir -p deb-amd64/DEBIAN deb-amd64/usr/bin deb-amd64/usr/share/doc/locutus deb-amd64/usr/share/locutus/skills
-          cp dist/linux-amd64/locutus deb-amd64/usr/bin/
-          ln -sf locutus deb-amd64/usr/bin/locu
-          ln -sf locutus deb-amd64/usr/bin/locuti
-          cp LICENSE deb-amd64/usr/share/doc/locutus/copyright
-          cp README.md deb-amd64/usr/share/doc/locutus/
-          cp -r skills/locutus deb-amd64/usr/share/locutus/skills/
-          chmod 755 deb-amd64/usr/bin/locutus
+          mkdir -p deb-amd64/DEBIAN deb-amd64/usr/bin deb-amd64/usr/share/doc/rhizo deb-amd64/usr/share/rhizo/skills
+          cp dist/linux-amd64/rhizo deb-amd64/usr/bin/
+          # ln -sf rhizo deb-amd64/usr/bin/locu
+          # ln -sf rhizo deb-amd64/usr/bin/locuti
+          cp LICENSE deb-amd64/usr/share/doc/rhizo/copyright
+          cp README.md deb-amd64/usr/share/doc/rhizo/
+          cp -r skills/rhizo deb-amd64/usr/share/rhizo/skills/
+          chmod 755 deb-amd64/usr/bin/rhizo
           printf "%s\n" \
-            "Package: locutus" \
+            "Package: rhizo" \
             "Version: ${VERSION}" \
             "Section: utils" \
             "Priority: optional" \
@@ -105,29 +103,29 @@ jobs:
             "set -e" \
             "if [ \"\$1\" = \"configure\" ]; then" \
             "  echo \"--------------------------------------------------------------------------------\"" \
-            "  echo \"Locutus installed successfully!\"" \
+            "  echo \"Rhizo installed successfully!\"" \
             "  echo \"To equip your AI coding assistants (Claude Code, Antigravity, OpenCode, Cursor):\"" \
-            "  echo \"  npx skills add /usr/share/locutus/skills/locutus -g\"" \
+            "  echo \"  npx skills add /usr/share/rhizo/skills/rhizo -g\"" \
             "  echo \"  # Or using skilz:\"" \
-            "  echo \"  skilz install -f /usr/share/locutus/skills/locutus\"" \
+            "  echo \"  skilz install -f /usr/share/rhizo/skills/rhizo\"" \
             "  echo \"--------------------------------------------------------------------------------\"" \
             "fi" \
             "exit 0" \
             > deb-amd64/DEBIAN/postinst
           chmod 755 deb-amd64/DEBIAN/postinst
-          dpkg-deb --build deb-amd64 dist/locutus_${VERSION}_amd64.deb
+          dpkg-deb --build deb-amd64 dist/rhizo_${VERSION}_amd64.deb
 
           # Build arm64 .deb
-          mkdir -p deb-arm64/DEBIAN deb-arm64/usr/bin deb-arm64/usr/share/doc/locutus deb-arm64/usr/share/locutus/skills
-          cp dist/linux-arm64/locutus deb-arm64/usr/bin/
-          ln -sf locutus deb-arm64/usr/bin/locu
-          ln -sf locutus deb-arm64/usr/bin/locuti
-          cp LICENSE deb-arm64/usr/share/doc/locutus/copyright
-          cp README.md deb-arm64/usr/share/doc/locutus/
-          cp -r skills/locutus deb-arm64/usr/share/locutus/skills/
-          chmod 755 deb-arm64/usr/bin/locutus
+          mkdir -p deb-arm64/DEBIAN deb-arm64/usr/bin deb-arm64/usr/share/doc/rhizo deb-arm64/usr/share/rhizo/skills
+          cp dist/linux-arm64/rhizo deb-arm64/usr/bin/
+          # ln -sf rhizo deb-arm64/usr/bin/locu
+          # ln -sf rhizo deb-arm64/usr/bin/locuti
+          cp LICENSE deb-arm64/usr/share/doc/rhizo/copyright
+          cp README.md deb-arm64/usr/share/doc/rhizo/
+          cp -r skills/rhizo deb-arm64/usr/share/rhizo/skills/
+          chmod 755 deb-arm64/usr/bin/rhizo
           printf "%s\n" \
-            "Package: locutus" \
+            "Package: rhizo" \
             "Version: ${VERSION}" \
             "Section: utils" \
             "Priority: optional" \
@@ -143,17 +141,17 @@ jobs:
             "set -e" \
             "if [ \"\$1\" = \"configure\" ]; then" \
             "  echo \"--------------------------------------------------------------------------------\"" \
-            "  echo \"Locutus installed successfully!\"" \
+            "  echo \"Rhizo installed successfully!\"" \
             "  echo \"To equip your AI coding assistants (Claude Code, Antigravity, OpenCode, Cursor):\"" \
-            "  echo \"  npx skills add /usr/share/locutus/skills/locutus -g\"" \
+            "  echo \"  npx skills add /usr/share/rhizo/skills/rhizo -g\"" \
             "  echo \"  # Or using skilz:\"" \
-            "  echo \"  skilz install -f /usr/share/locutus/skills/locutus\"" \
+            "  echo \"  skilz install -f /usr/share/rhizo/skills/rhizo\"" \
             "  echo \"--------------------------------------------------------------------------------\"" \
             "fi" \
             "exit 0" \
             > deb-arm64/DEBIAN/postinst
           chmod 755 deb-arm64/DEBIAN/postinst
-          dpkg-deb --build deb-arm64 dist/locutus_${VERSION}_arm64.deb
+          dpkg-deb --build deb-arm64 dist/rhizo_${VERSION}_arm64.deb
 
       - name: Verify Linux packages in clean environment
         env:
@@ -161,48 +159,48 @@ jobs:
         run: |
           echo "=== [1/4] Verifying Linux amd64 tarball ==="
           mkdir -p /tmp/clean-tar-amd64
-          tar -xzf dist/locutus-linux-amd64.tar.gz -C /tmp/clean-tar-amd64
-          /tmp/clean-tar-amd64/locutus --help | grep -F "Nim Native"
-          KEY1=$(/tmp/clean-tar-amd64/locutus get-secret)
+          tar -xzf dist/rhizo-linux-amd64.tar.gz -C /tmp/clean-tar-amd64
+          /tmp/clean-tar-amd64/rhizo --help | grep -F "Nim Native"
+          KEY1=$(/tmp/clean-tar-amd64/rhizo get-secret)
           test -n "$KEY1"
-          test -f /tmp/clean-tar-amd64/skills/locutus/SKILL.md
+          test -f /tmp/clean-tar-amd64/skills/rhizo/SKILL.md
 
           echo "=== [2/4] Verifying Linux amd64 .deb package installation & uninstallation ==="
-          sudo dpkg -i dist/locutus_${VERSION}_amd64.deb
-          (cd /tmp && locutus --help | grep -F "Nim Native")
-          KEY2=$(cd /tmp && locutus get-secret)
+          sudo dpkg -i dist/rhizo_${VERSION}_amd64.deb
+          (cd /tmp && rhizo --help | grep -F "Nim Native")
+          KEY2=$(cd /tmp && rhizo get-secret)
           test -n "$KEY2"
-          test -f /usr/share/locutus/skills/locutus/SKILL.md
-          sudo dpkg -r locutus
-          if which locutus 2>/dev/null; then
-            echo "Error: locutus should have been uninstalled"
+          test -f /usr/share/rhizo/skills/rhizo/SKILL.md
+          sudo dpkg -r rhizo
+          if which rhizo 2>/dev/null; then
+            echo "Error: rhizo should have been uninstalled"
             exit 1
           fi
-          test ! -f /usr/share/locutus/skills/locutus/SKILL.md
+          test ! -f /usr/share/rhizo/skills/rhizo/SKILL.md
 
           echo "=== [3/4] Verifying Linux arm64 tarball under QEMU ==="
           mkdir -p /tmp/clean-tar-arm64
-          tar -xzf dist/locutus-linux-arm64.tar.gz -C /tmp/clean-tar-arm64
-          qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-tar-arm64/locutus --help | grep -F "Nim Native"
-          KEY3=$(qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-tar-arm64/locutus get-secret)
+          tar -xzf dist/rhizo-linux-arm64.tar.gz -C /tmp/clean-tar-arm64
+          qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-tar-arm64/rhizo --help | grep -F "Nim Native"
+          KEY3=$(qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-tar-arm64/rhizo get-secret)
           test -n "$KEY3"
-          test -f /tmp/clean-tar-arm64/skills/locutus/SKILL.md
+          test -f /tmp/clean-tar-arm64/skills/rhizo/SKILL.md
 
           echo "=== [4/4] Verifying Linux arm64 .deb extraction under QEMU ==="
           mkdir -p /tmp/clean-deb-arm64
-          dpkg-deb -x dist/locutus_${VERSION}_arm64.deb /tmp/clean-deb-arm64
-          qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-deb-arm64/usr/bin/locutus --help | grep -F "Nim Native"
-          KEY4=$(qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-deb-arm64/usr/bin/locutus get-secret)
+          dpkg-deb -x dist/rhizo_${VERSION}_arm64.deb /tmp/clean-deb-arm64
+          qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-deb-arm64/usr/bin/rhizo --help | grep -F "Nim Native"
+          KEY4=$(qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/clean-deb-arm64/usr/bin/rhizo get-secret)
           test -n "$KEY4"
-          test -f /tmp/clean-deb-arm64/usr/share/locutus/skills/locutus/SKILL.md
+          test -f /tmp/clean-deb-arm64/usr/share/rhizo/skills/rhizo/SKILL.md
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-assets
           path: |
-            dist/locutus-linux-amd64.tar.gz
-            dist/locutus-linux-arm64.tar.gz
+            dist/rhizo-linux-amd64.tar.gz
+            dist/rhizo-linux-arm64.tar.gz
             dist/*.deb
 
   build-macos:
@@ -227,13 +225,11 @@ jobs:
       - name: Compile macOS Apple Silicon (arm64) binary
         run: |
           mkdir -p dist/darwin-arm64
-          nim c -d:release --opt:speed --cpu:arm64 -o:dist/darwin-arm64/locutus src/locutus.nim
-          cp dist/darwin-arm64/locutus dist/darwin-arm64/locu
-          strip dist/darwin-arm64/locutus dist/darwin-arm64/locu
-          codesign -s - -f dist/darwin-arm64/locutus
-          codesign -s - -f dist/darwin-arm64/locu
+          nim c -d:release --opt:speed --cpu:arm64 -o:dist/darwin-arm64/rhizo src/rhizo.nim
+          strip dist/darwin-arm64/rhizo
+          codesign -s - -f dist/darwin-arm64/rhizo
           cp -r skills dist/darwin-arm64/
-          tar -czf dist/locutus-darwin-arm64.tar.gz -C dist/darwin-arm64 locutus locu skills
+          tar -czf dist/rhizo-darwin-arm64.tar.gz -C dist/darwin-arm64 rhizo skills
 
       - name: Compile macOS Intel (x86_64) binary
         run: |
@@ -241,35 +237,30 @@ jobs:
           nim c -d:release --opt:speed --cpu:amd64 \
             --passC:"-target x86_64-apple-macos11" \
             --passL:"-target x86_64-apple-macos11" \
-            -o:dist/darwin-amd64/locutus src/locutus.nim
-          cp dist/darwin-amd64/locutus dist/darwin-amd64/locu
-          strip dist/darwin-amd64/locutus dist/darwin-amd64/locu
-          codesign -s - -f dist/darwin-amd64/locutus
-          codesign -s - -f dist/darwin-amd64/locu
+            -o:dist/darwin-amd64/rhizo src/rhizo.nim
+          strip dist/darwin-amd64/rhizo
+          codesign -s - -f dist/darwin-amd64/rhizo
           cp -r skills dist/darwin-amd64/
-          tar -czf dist/locutus-darwin-amd64.tar.gz -C dist/darwin-amd64 locutus locu skills
+          tar -czf dist/rhizo-darwin-amd64.tar.gz -C dist/darwin-amd64 rhizo skills
 
       - name: Verify macOS packages in clean environment
         run: |
           echo "=== [1/2] Verifying macOS arm64 tarball ==="
           mkdir -p /tmp/clean-darwin-arm64
-          tar -xzf dist/locutus-darwin-arm64.tar.gz -C /tmp/clean-darwin-arm64
-          /tmp/clean-darwin-arm64/locutus --help | grep -F "Nim Native"
-          /tmp/clean-darwin-arm64/locu --help | grep -F "Nim Native"
-          KEY1=$(/tmp/clean-darwin-arm64/locu get-secret)
+          tar -xzf dist/rhizo-darwin-arm64.tar.gz -C /tmp/clean-darwin-arm64
+          /tmp/clean-darwin-arm64/rhizo --help | grep -F "Nim Native"
+          KEY1=$(/tmp/clean-darwin-arm64/rhizo get-secret)
           test -n "$KEY1"
-          test -f /tmp/clean-darwin-arm64/skills/locutus/SKILL.md
+          test -f /tmp/clean-darwin-arm64/skills/rhizo/SKILL.md
 
           echo "=== [2/2] Verifying macOS amd64 tarball ==="
           mkdir -p /tmp/clean-darwin-amd64
-          tar -xzf dist/locutus-darwin-amd64.tar.gz -C /tmp/clean-darwin-amd64
-          file /tmp/clean-darwin-amd64/locutus | grep -q "x86_64"
-          file /tmp/clean-darwin-amd64/locu | grep -q "x86_64"
-          test -f /tmp/clean-darwin-amd64/skills/locutus/SKILL.md
+          tar -xzf dist/rhizo-darwin-amd64.tar.gz -C /tmp/clean-darwin-amd64
+          file /tmp/clean-darwin-amd64/rhizo | grep -q "x86_64"
+          test -f /tmp/clean-darwin-amd64/skills/rhizo/SKILL.md
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
-            arch -x86_64 /tmp/clean-darwin-amd64/locutus --help | grep -F "Nim Native"
-            arch -x86_64 /tmp/clean-darwin-amd64/locu --help | grep -F "Nim Native"
-            KEY2=$(arch -x86_64 /tmp/clean-darwin-amd64/locu get-secret)
+            arch -x86_64 /tmp/clean-darwin-amd64/rhizo --help | grep -F "Nim Native"
+            KEY2=$(arch -x86_64 /tmp/clean-darwin-amd64/rhizo get-secret)
             test -n "$KEY2"
           else
             echo "Rosetta 2 not available on runner; verified Mach-O x86_64 via file utility"
@@ -280,8 +271,8 @@ jobs:
         with:
           name: macos-assets
           path: |
-            dist/locutus-darwin-arm64.tar.gz
-            dist/locutus-darwin-amd64.tar.gz
+            dist/rhizo-darwin-arm64.tar.gz
+            dist/rhizo-darwin-amd64.tar.gz
 
   build-windows:
     name: Build & Verify Windows Package
@@ -309,37 +300,32 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows-amd64
-          nim c -d:release --opt:speed -o:dist\windows-amd64\locutus.exe src\locutus.nim
-          Copy-Item -Force dist\windows-amd64\locutus.exe dist\windows-amd64\locu.exe
+          nim c -d:release --opt:speed -o:dist\windows-amd64\rhizo.exe src\rhizo.nim
           Copy-Item -Recurse -Force skills dist\windows-amd64\skills
-          Compress-Archive -Path dist\windows-amd64\* -DestinationPath dist\locutus-windows-amd64.zip -Force
+          Compress-Archive -Path dist\windows-amd64\* -DestinationPath dist\rhizo-windows-amd64.zip -Force
 
       - name: Verify Windows zip package in clean environment
         shell: powershell
         run: |
           Write-Host "=== [1/2] Verifying Windows zip in clean directory ==="
-          Expand-Archive -Path "dist/locutus-windows-amd64.zip" -DestinationPath "C:\clean-locutus-test" -Force
-          $helpOutput = & "C:\clean-locutus-test\locutus.exe" --help
+          Expand-Archive -Path "dist/rhizo-windows-amd64.zip" -DestinationPath "C:\clean-rhizo-test" -Force
+          $helpOutput = & "C:\clean-rhizo-test\rhizo.exe" --help
           Write-Host $helpOutput
           if (-not ($helpOutput -match "Nim Native")) {
-            throw "locutus.exe --help failed verification"
+            throw "rhizo.exe --help failed verification"
           }
-          $locuHelpOutput = & "C:\clean-locutus-test\locu.exe" --help
-          if (-not ($locuHelpOutput -match "Nim Native")) {
-            throw "locu.exe --help failed verification"
-          }
-          $secretOutput = & "C:\clean-locutus-test\locu.exe" get-secret
+          $secretOutput = & "C:\clean-rhizo-test\rhizo.exe" get-secret
           Write-Host "Secret: $secretOutput"
           if ([string]::IsNullOrWhiteSpace($secretOutput)) {
-            throw "locu.exe get-secret failed verification"
+            throw "rhizo.exe get-secret failed verification"
           }
-          if (-not (Test-Path "C:\clean-locutus-test\skills\locutus\SKILL.md")) {
-            throw "locutus-windows-amd64.zip missing skills\locutus\SKILL.md"
+          if (-not (Test-Path "C:\clean-rhizo-test\skills\rhizo\SKILL.md")) {
+            throw "rhizo-windows-amd64.zip missing skills\rhizo\SKILL.md"
           }
 
           Write-Host "=== [2/2] Validating Scoop manifest schema ==="
-          $scoopManifest = Get-Content -Raw "packaging/scoop/locutus.json" | ConvertFrom-Json
-          if ($scoopManifest.architecture."64bit".bin -ne "locutus.exe") {
+          $scoopManifest = Get-Content -Raw "packaging/scoop/rhizo.json" | ConvertFrom-Json
+          if ($scoopManifest.architecture."64bit".bin -ne "rhizo.exe") {
             throw "Invalid Scoop manifest binary target"
           }
           if (-not $scoopManifest.post_install) {
@@ -352,7 +338,7 @@ jobs:
         with:
           name: windows-assets
           path: |
-            dist/locutus-windows-amd64.zip
+            dist/rhizo-windows-amd64.zip
 
   publish-release:
     name: Publish GitHub Release
@@ -370,7 +356,7 @@ jobs:
       - name: Compute SHA256 Checksums
         run: |
           cd release-assets
-          sha256sum locutus-* *.deb > SHA256SUMS.txt
+          sha256sum rhizo-* *.deb > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Extract Release Notes from CHANGELOG
@@ -465,28 +451,11 @@ jobs:
             echo "${PKG_NAME}@${VERSION} is not yet published. Proceeding..."
           fi
 
-      - name: Set up Nim via mise
-        if: steps.npm-check.outputs.already_published == 'false'
-        uses: jdx/mise-action@v4
-        with:
-          tool_versions: |
-            nim 2.2.12
-          cache: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Nim dependencies
+      - name: Prepare npm package files
         if: steps.npm-check.outputs.already_published == 'false'
         run: |
-          nimble install -y --depsOnly
-
-      - name: Compile Native Binary for NPM Package
-        if: steps.npm-check.outputs.already_published == 'false'
-        run: |
-          mkdir -p bin
-          nim c -d:release --opt:speed -o:bin/locutus src/locutus.nim
-          ln -sf locutus bin/locu
-          chmod 755 bin/locutus bin/locu bin/run.js scripts/postinstall.js
+          rm -f bin/rhizo bin/rhizo.exe
+          chmod 755 bin/run.js
 
       - name: Publish to npm via OIDC
         if: steps.npm-check.outputs.already_published == 'false'

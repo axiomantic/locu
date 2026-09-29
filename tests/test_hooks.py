@@ -12,8 +12,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-HOOKS_DIR = REPO_ROOT / "skills" / "locutus" / "hooks"
-BIN_LOCUTUS = REPO_ROOT / "bin" / ("locutus.exe" if sys.platform == "win32" or (REPO_ROOT / "bin" / "locutus.exe").exists() else "locutus")
+HOOKS_DIR = REPO_ROOT / "skills" / "rhizo" / "hooks"
+BIN_LOCUTUS = REPO_ROOT / "bin" / ("rhizo.exe" if sys.platform == "win32" or (REPO_ROOT / "bin" / "rhizo.exe").exists() else "rhizo")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 TEST_PREFIX = "test_locutus_hooks:"
 
@@ -23,9 +23,12 @@ class TestLocutusHooks(unittest.TestCase):
     def setUpClass(cls):
         cls.env = os.environ.copy()
         cls.env["LOCUTUS_BIN"] = str(BIN_LOCUTUS)
+        cls.env["RHIZO_BIN"] = str(BIN_LOCUTUS)
         cls.env["REDIS_URL"] = REDIS_URL
         cls.env["LOCUTUS_REDIS_PREFIX"] = TEST_PREFIX
+        cls.env["RHIZO_REDIS_PREFIX"] = TEST_PREFIX
         cls.env["LOCUTUS_SECRET"] = "test-secret-key-32-chars-long!!"
+        cls.env["RHIZO_SECRET"] = "test-secret-key-32-chars-long!!"
 
     def run_hook(self, script_name: str, stdin_payload: dict, extra_args: list = None, env_overrides: dict = None) -> tuple[int, dict]:
         script_path = HOOKS_DIR / script_name
@@ -74,10 +77,10 @@ class TestLocutusHooks(unittest.TestCase):
             # 3. Non-empty inbox: returns block decision with additionalContext
             code, out = self.run_hook("claude_stop_hook.py", {"session_id": "ses_123"}, env_overrides=env_overrides)
             self.assertEqual(out.get("decision"), "block")
-            self.assertIn("1 new Locutus bus message", out.get("reason", ""))
+            self.assertTrue("1 new Rhizo bus message" in out.get("reason", "") or "1 new Locutus bus message" in out.get("reason", ""))
             hook_out = out.get("hookSpecificOutput", {})
             self.assertEqual(hook_out.get("hookEventName"), "Stop")
-            self.assertIn("[LOCUTUS BUS]", hook_out.get("additionalContext", ""))
+            self.assertTrue("[RHIZO BUS]" in hook_out.get("additionalContext", "") or "[LOCUTUS BUS]" in hook_out.get("additionalContext", ""))
             self.assertIn("Please review PR 99", hook_out.get("additionalContext", ""))
 
             # 4. Subsequent check is now empty
@@ -91,7 +94,7 @@ class TestLocutusHooks(unittest.TestCase):
         inbox_key = f"{TEST_PREFIX}inbox:{agent}"
         subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
 
-        env_overrides = {"LOCUTUS_AGENT_NAME": agent}
+        env_overrides = {"RHIZO_AGENT_NAME": agent, "LOCUTUS_AGENT_NAME": agent}
 
         try:
             # 1. Empty inbox: returns empty object
@@ -110,7 +113,7 @@ class TestLocutusHooks(unittest.TestCase):
             code, out = self.run_hook("codex_stop_hook.py", {"session_id": "codex_ses_456", "turn_id": "t1"}, env_overrides=env_overrides)
             self.assertEqual(out.get("decision"), "block")
             reason_text = out.get("reason", "")
-            self.assertIn("[LOCUTUS BUS]", reason_text)
+            self.assertTrue("[RHIZO BUS]" in reason_text or "[LOCUTUS BUS]" in reason_text)
             self.assertIn("Deploy Staging", reason_text)
             self.assertIn("Run deploy script now", reason_text)
             self.assertIn("urgency: immediate", reason_text)
@@ -198,7 +201,9 @@ class TestLocutusHooks(unittest.TestCase):
             recipient = f"recip_{harness_name}"
             test_env = self.env.copy()
             test_env["LOCUTUS_SESSION_ID"] = session_key
+            test_env["RHIZO_SESSION_ID"] = session_key
             test_env.pop("LOCUTUS_AGENT_NAME", None)
+            test_env.pop("RHIZO_AGENT_NAME", None)
 
             res_send = subprocess.run([
                 str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,

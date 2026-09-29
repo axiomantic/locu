@@ -7,13 +7,13 @@ import json
 import os
 from pathlib import Path
 
-LOCUTUS_BIN = Path(__file__).parent.parent / "bin" / "locutus"
+RHIZO_BIN = Path(__file__).parent.parent / "bin" / "rhizo"
 
 def run_locutus(*args, cwd=None, env=None):
-    cmd = [str(LOCUTUS_BIN)] + list(args)
+    cmd = [str(RHIZO_BIN)] + list(args)
     run_env = os.environ.copy()
     for k in list(run_env.keys()):
-        if k.startswith("LOCUTUS_"):
+        if k.startswith("LOCUTUS_") or k.startswith("RHIZO_"):
             del run_env[k]
     if env:
         run_env.update(env)
@@ -22,12 +22,12 @@ def run_locutus(*args, cwd=None, env=None):
 
 def test_config_defaults():
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Isolate from user's global ~/.config/locutus/config.toml
+        # Isolate from user's global ~/.config/rhizo/config.toml
         code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["redis_url"]["value"] == "redis://127.0.0.1:6379"
-        assert data["prefix"]["value"] == "locutus:"
+        assert data["prefix"]["value"] == "rhizo:"
         assert data["heartbeat_ttl"]["value"] == "150"
         assert data["listen_timeout"]["value"] == "0"
         assert data["message_ttl"]["value"] == "604800"

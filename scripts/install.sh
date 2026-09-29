@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Locutus Universal Installer for macOS and Linux
+# Rhizo Universal Installer for macOS and Linux
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/axiomantic/rhizo/main/scripts/install.sh | bash
 #
 # Uninstallation:
-#   curl -fsSL https://raw.githubusercontent.com/axiomantic/locu/main/scripts/install.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/axiomantic/rhizo/main/scripts/install.sh | bash -s -- --uninstall
 #   # Or if you have the script locally:
 #   ./scripts/install.sh --uninstall
 #
@@ -15,30 +15,30 @@
 
 set -euo pipefail
 
-REPO="axiomantic/locu"
+REPO="axiomantic/rhizo"
 GITHUB_URL="https://github.com/${REPO}"
 
 # 0. Handle Uninstallation
 if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]]; then
-  echo "=== Locutus Uninstaller ==="
+  echo "=== Rhizo Uninstaller ==="
   REMOVED=0
 
   # A. Remove Skills
-  echo "Checking for installed Locutus AI agent skills..."
+  echo "Checking for installed Rhizo AI agent skills..."
   if command -v npx >/dev/null 2>&1; then
-    npx -y skills remove locutus -g -y 2>/dev/null || true
+    npx -y skills remove rhizo -g -y 2>/dev/null || true
   fi
   if command -v skilz >/dev/null 2>&1; then
-    skilz -y remove locutus 2>/dev/null || true
+    skilz -y remove rhizo 2>/dev/null || true
   fi
   for sdir in \
-    "${HOME}/.claude/skills/locutus" \
-    "${HOME}/.gemini/config/skills/locutus" \
-    "${HOME}/.gemini/antigravity/skills/locutus" \
-    "${HOME}/.agents/skills/locutus" \
-    "${HOME}/.codex/skills/locutus" \
-    "${HOME}/.hermes/skills/locutus" \
-    "${HOME}/.pi/agent/skills/locutus"; do
+    "${HOME}/.claude/skills/rhizo" \
+    "${HOME}/.gemini/config/skills/rhizo" \
+    "${HOME}/.gemini/antigravity/skills/rhizo" \
+    "${HOME}/.agents/skills/rhizo" \
+    "${HOME}/.codex/skills/rhizo" \
+    "${HOME}/.hermes/skills/rhizo" \
+    "${HOME}/.pi/agent/skills/rhizo"; do
     if [ -d "$sdir" ]; then
       echo "Removing skill directory: $sdir"
       rm -rf "$sdir"
@@ -47,26 +47,26 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]
   done
 
   # B. Check Homebrew
-  if command -v brew >/dev/null 2>&1 && brew list locutus >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1 && brew list rhizo >/dev/null 2>&1; then
     echo "Detected Homebrew installation. Removing..."
-    brew uninstall locutus && REMOVED=1
+    brew uninstall rhizo && REMOVED=1
   fi
 
   # C. Check Debian / dpkg
-  if command -v dpkg >/dev/null 2>&1 && dpkg -s locutus >/dev/null 2>&1; then
+  if command -v dpkg >/dev/null 2>&1 && dpkg -s rhizo >/dev/null 2>&1; then
     echo "Detected Debian/dpkg installation. Removing..."
     if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-      apt-get remove -y locutus || dpkg -r locutus
+      apt-get remove -y rhizo || dpkg -r rhizo
     elif command -v sudo >/dev/null 2>&1; then
-      sudo apt-get remove -y locutus || sudo dpkg -r locutus
+      sudo apt-get remove -y rhizo || sudo dpkg -r rhizo
     else
-      dpkg -r locutus
+      dpkg -r rhizo
     fi
     REMOVED=1
   fi
 
   # E. Remove OpenCode Plugin
-  for op in "${HOME}/.config/opencode/plugins/locutus.js" "${HOME}/.config/opencode/plugins/locutus-ear.js"; do
+  for op in "${HOME}/.config/opencode/plugins/rhizo.js" "${HOME}/.config/opencode/plugins/rhizo-ear.js"; do
     if [ -f "$op" ]; then
       echo "Removing OpenCode plugin: $op"
       rm -f "$op"
@@ -75,7 +75,7 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]
   done
 
   # F. Remove Pi Extension
-  for pe in "${HOME}/.pi/agent/extensions/locutus.ts" "${HOME}/.pi/agent/extensions/locutus-ear.ts"; do
+  for pe in "${HOME}/.pi/agent/extensions/rhizo.ts" "${HOME}/.pi/agent/extensions/rhizo-ear.ts"; do
     if [ -f "$pe" ]; then
       echo "Removing Pi extension: $pe"
       rm -f "$pe"
@@ -84,7 +84,7 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]
   done
 
   # G. Remove Cursor Rules
-  for cr in ".cursor/rules/locutus.mdc" "${HOME}/.cursor/rules/locutus.mdc"; do
+  for cr in ".cursor/rules/rhizo.mdc" "${HOME}/.cursor/rules/rhizo.mdc"; do
     if [ -f "$cr" ]; then
       echo "Removing Cursor rule: $cr"
       rm -f "$cr"
@@ -93,8 +93,8 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]
   done
 
   # H. Check standard binary paths
-  for p in "/usr/local/bin/locutus" "${HOME}/.local/bin/locutus" "${INSTALL_DIR:-}/locutus" \
-           "/usr/local/bin/locutus-ear" "${HOME}/.local/bin/locutus-ear" "${INSTALL_DIR:-}/locutus-ear"; do
+  for p in "/usr/local/bin/rhizo" "${HOME}/.local/bin/rhizo" "${INSTALL_DIR:-}/rhizo" \
+           "/usr/local/bin/rhizo-ear" "${HOME}/.local/bin/rhizo-ear" "${INSTALL_DIR:-}/rhizo-ear"; do
     if [ -f "$p" ]; then
       echo "Removing binary at: $p"
       if [ -w "$(dirname "$p")" ]; then
@@ -107,16 +107,16 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "uninstall" || "${1:-}" == "-u" ]
   done
 
   if [ "$REMOVED" -eq 1 ]; then
-    echo "✓ Locutus (binary and AI agent skills) has been completely uninstalled."
-    echo "Note: Configuration files in ~/.config/locutus were preserved."
-    echo "To remove config & secrets: rm -rf ~/.config/locutus"
+    echo "✓ Rhizo (binary and AI agent skills) has been completely uninstalled."
+    echo "Note: Configuration files in ~/.config/rhizo were preserved."
+    echo "To remove config & secrets: rm -rf ~/.config/rhizo"
   else
-    echo "Locutus does not appear to be installed on this system."
+    echo "Rhizo does not appear to be installed on this system."
   fi
   exit 0
 fi
 
-echo "=== Locutus Installer ==="
+echo "=== Rhizo Installer ==="
 
 # 1. Detect Operating System
 OS="$(uname -s)"
@@ -173,7 +173,7 @@ mkdir -p "${DEST_DIR}"
 # Helper: Build from source if binaries are unavailable
 build_from_source() {
   echo ""
-  echo "=== Building Locutus from Source ==="
+  echo "=== Building Rhizo from Source ==="
   echo "Checking for Nim compiler..."
 
   if ! command -v nim >/dev/null 2>&1; then
@@ -193,27 +193,27 @@ build_from_source() {
     echo "Error: Failed to set up Nim compiler. Please install Nim manually."
     exit 1
   fi
-  if [ -f "src/locutus.nim" ]; then
-    echo "Compiling native Locutus binary from local source tree..."
-    rm -f "${DEST_DIR}/locutus"
+  if [ -f "src/rhizo.nim" ]; then
+    echo "Compiling native Rhizo binary from local source tree..."
+    rm -f "${DEST_DIR}/rhizo"
     if command -v nimble >/dev/null 2>&1; then
       nimble build -y -d:release
-      cp -f "bin/locutus" "${DEST_DIR}/locutus"
+      cp -f "bin/rhizo" "${DEST_DIR}/rhizo"
     else
-      nim c -d:release --opt:speed -o:"${DEST_DIR}/locutus" src/locutus.nim
+      nim c -d:release --opt:speed -o:"${DEST_DIR}/rhizo" src/rhizo.nim
     fi
-    chmod +x "${DEST_DIR}/locutus"
+    chmod +x "${DEST_DIR}/rhizo"
     if [ "${OS}" = "darwin" ] && command -v codesign >/dev/null 2>&1; then
-      codesign -s - -f "${DEST_DIR}/locutus" 2>/dev/null || true
+      codesign -s - -f "${DEST_DIR}/rhizo" 2>/dev/null || true
     fi
-    echo "✓ Locutus compiled and installed to ${DEST_DIR}/locutus"
+    echo "✓ Rhizo compiled and installed to ${DEST_DIR}/rhizo"
     return 0
   fi
 
   BUILD_TMP="$(mktemp -d)"
   trap 'rm -rf "${BUILD_TMP}"' EXIT
 
-  echo "Fetching Locutus source (${VERSION})..."
+  echo "Fetching Rhizo source (${VERSION})..."
   SRC_URL="${GITHUB_URL}/archive/refs/tags/${VERSION}.tar.gz"
   if ! curl -fsSL -o "${BUILD_TMP}/source.tar.gz" "${SRC_URL}"; then
     echo "Release tag tarball not found, falling back to main branch..."
@@ -224,20 +224,20 @@ build_from_source() {
   SRC_DIR=$(find "${BUILD_TMP}" -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
   cd "${SRC_DIR}"
-  echo "Compiling native Locutus binary with release optimizations..."
-  rm -f "${DEST_DIR}/locutus"
+  echo "Compiling native Rhizo binary with release optimizations..."
+  rm -f "${DEST_DIR}/rhizo"
   if command -v nimble >/dev/null 2>&1; then
     nimble build -y -d:release
-    cp -f "bin/locutus" "${DEST_DIR}/locutus"
+    cp -f "bin/rhizo" "${DEST_DIR}/rhizo"
   else
-    nim c -d:release --opt:speed -o:"${DEST_DIR}/locutus" src/locutus.nim
+    nim c -d:release --opt:speed -o:"${DEST_DIR}/rhizo" src/rhizo.nim
   fi
-  chmod +x "${DEST_DIR}/locutus"
+  chmod +x "${DEST_DIR}/rhizo"
   if [ "${OS}" = "darwin" ] && command -v codesign >/dev/null 2>&1; then
-    codesign -s - -f "${DEST_DIR}/locutus" 2>/dev/null || true
+    codesign -s - -f "${DEST_DIR}/rhizo" 2>/dev/null || true
   fi
 
-  echo "✓ Locutus compiled and installed to ${DEST_DIR}/locutus"
+  echo "✓ Rhizo compiled and installed to ${DEST_DIR}/rhizo"
 }
 
 # Helper: Install AI Agent Skills
@@ -248,14 +248,14 @@ install_skills() {
   fi
 
   echo ""
-  echo "=== Installing Locutus AI Agent Skills ==="
+  echo "=== Installing Rhizo AI Agent Skills ==="
   SKILL_INSTALLED=0
 
   # Option A: skills.sh (Vercel Labs) via npx
   if command -v npx >/dev/null 2>&1; then
     echo "Attempting global skill installation via skills.sh (npx)..."
-    if npx -y skills add axiomantic/locu -g -a '*' -y 2>/dev/null; then
-      echo "✓ Locutus skill installed globally via skills.sh."
+    if npx -y skills add axiomantic/rhizo -g -a '*' -y 2>/dev/null; then
+      echo "✓ Rhizo skill installed globally via skills.sh."
       SKILL_INSTALLED=1
     fi
   fi
@@ -263,8 +263,8 @@ install_skills() {
   # Option B: skilz (Spillwave)
   if [ "${SKILL_INSTALLED}" -eq 0 ] && command -v skilz >/dev/null 2>&1; then
     echo "Attempting global skill installation via skilz..."
-    if skilz -y install https://github.com/axiomantic/locu 2>/dev/null; then
-      echo "✓ Locutus skill installed globally via skilz."
+    if skilz -y install https://github.com/axiomantic/rhizo 2>/dev/null; then
+      echo "✓ Rhizo skill installed globally via skilz."
       SKILL_INSTALLED=1
     fi
   fi
@@ -273,17 +273,17 @@ install_skills() {
   if [ "${SKILL_INSTALLED}" -eq 0 ]; then
     echo "Configuring skills directly for detected AI coding assistants..."
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
-    LOCAL_SKILL_DIR="${SCRIPT_DIR}/../skills/locutus"
+    LOCAL_SKILL_DIR="${SCRIPT_DIR}/../skills/rhizo"
     CLEANUP_TMP=0
     if [ -n "${SCRIPT_DIR}" ] && [ -f "${LOCAL_SKILL_DIR}/SKILL.md" ]; then
       SRC_SKILL_DIR="${LOCAL_SKILL_DIR}"
     else
-      SKILL_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/SKILL.md"
-      SPEC_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/references/wire_spec.md"
-      OPENCODE_EAR_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/opencode-ear.js"
-      PI_EAR_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/pi-ear.ts"
-      CURSOR_RULE_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/rules/cursor-rules.mdc"
-      COPILOT_INST_URL="https://raw.githubusercontent.com/${REPO}/main/skills/locutus/rules/copilot-instructions.md"
+      SKILL_URL="https://raw.githubusercontent.com/${REPO}/main/skills/rhizo/SKILL.md"
+      SPEC_URL="https://raw.githubusercontent.com/${REPO}/main/skills/rhizo/references/wire_spec.md"
+      OPENCODE_EAR_URL="https://raw.githubusercontent.com/${REPO}/main/skills/rhizo/opencode-ear.js"
+      PI_EAR_URL="https://raw.githubusercontent.com/${REPO}/main/skills/rhizo/pi-ear.ts"
+      CURSOR_RULE_URL="https://raw.githubusercontent.com/${REPO}/main/skills/rhizo/rules/cursor-rules.mdc"
+      COPILOT_INST_URL="https://raw.githubusercontent.com/${REPO}/main/skills/rhizo/rules/copilot-instructions.md"
       TMP_SKILL="$(mktemp -d)"
       CLEANUP_TMP=1
       if curl -fsSL -o "${TMP_SKILL}/SKILL.md" "${SKILL_URL}" 2>/dev/null; then
@@ -301,20 +301,20 @@ install_skills() {
 
     if [ -n "${SRC_SKILL_DIR}" ] && [ -f "${SRC_SKILL_DIR}/SKILL.md" ]; then
       for target_skill in \
-        "${HOME}/.claude/skills/locutus" \
-        "${HOME}/.gemini/config/skills/locutus" \
-        "${HOME}/.gemini/antigravity/skills/locutus" \
-        "${HOME}/.agents/skills/locutus" \
-        "${HOME}/.codex/skills/locutus" \
-        "${HOME}/.hermes/skills/locutus" \
-        "${HOME}/.pi/agent/skills/locutus"
+        "${HOME}/.claude/skills/rhizo" \
+        "${HOME}/.gemini/config/skills/rhizo" \
+        "${HOME}/.gemini/antigravity/skills/rhizo" \
+        "${HOME}/.agents/skills/rhizo" \
+        "${HOME}/.codex/skills/rhizo" \
+        "${HOME}/.hermes/skills/rhizo" \
+        "${HOME}/.pi/agent/skills/rhizo"
       do
         parent_agent_dir="$(dirname "$(dirname "${target_skill}")")"
         if [ -d "${parent_agent_dir}" ] || [ -d "$(dirname "${target_skill}")" ]; then
           mkdir -p "${target_skill}/references"
           cp "${SRC_SKILL_DIR}/SKILL.md" "${target_skill}/SKILL.md"
           [ -f "${SRC_SKILL_DIR}/references/wire_spec.md" ] && cp "${SRC_SKILL_DIR}/references/wire_spec.md" "${target_skill}/references/wire_spec.md"
-          echo "  ✓ Installed Locutus skill to: ${target_skill}"
+          echo "  ✓ Installed Rhizo skill to: ${target_skill}"
           SKILL_INSTALLED=1
         fi
       done
@@ -323,18 +323,18 @@ install_skills() {
       if [ -d "${HOME}/.config/opencode" ]; then
         mkdir -p "${HOME}/.config/opencode/plugins"
         if [ -f "${SRC_SKILL_DIR}/opencode-ear.js" ]; then
-          cp "${SRC_SKILL_DIR}/opencode-ear.js" "${HOME}/.config/opencode/plugins/locutus.js"
-          echo "  ✓ Installed OpenCode plugin to: ${HOME}/.config/opencode/plugins/locutus.js"
+          cp "${SRC_SKILL_DIR}/opencode-ear.js" "${HOME}/.config/opencode/plugins/rhizo.js"
+          echo "  ✓ Installed OpenCode plugin to: ${HOME}/.config/opencode/plugins/rhizo.js"
           SKILL_INSTALLED=1
         fi
       fi
 
       # Install Pi Coding Agent extension
       if [ -d "${HOME}/.pi" ] || [ -d "${HOME}/.pi/agent" ]; then
-        mkdir -p "${HOME}/.pi/agent/extensions" "${HOME}/.pi/agent/skills/locutus"
+        mkdir -p "${HOME}/.pi/agent/extensions" "${HOME}/.pi/agent/skills/rhizo"
         if [ -f "${SRC_SKILL_DIR}/pi-ear.ts" ]; then
-          cp "${SRC_SKILL_DIR}/pi-ear.ts" "${HOME}/.pi/agent/extensions/locutus.ts"
-          echo "  ✓ Installed Pi Coding Agent extension to: ${HOME}/.pi/agent/extensions/locutus.ts"
+          cp "${SRC_SKILL_DIR}/pi-ear.ts" "${HOME}/.pi/agent/extensions/rhizo.ts"
+          echo "  ✓ Installed Pi Coding Agent extension to: ${HOME}/.pi/agent/extensions/rhizo.ts"
           SKILL_INSTALLED=1
         fi
       fi
@@ -343,15 +343,15 @@ install_skills() {
       if [ -d ".cursor" ]; then
         mkdir -p ".cursor/rules"
         if [ -f "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ]; then
-          cp "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ".cursor/rules/locutus.mdc"
-          echo "  ✓ Installed Cursor rules to: .cursor/rules/locutus.mdc"
+          cp "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ".cursor/rules/rhizo.mdc"
+          echo "  ✓ Installed Cursor rules to: .cursor/rules/rhizo.mdc"
           SKILL_INSTALLED=1
         fi
       elif [ -d "${HOME}/.cursor" ]; then
         mkdir -p "${HOME}/.cursor/rules"
         if [ -f "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" ]; then
-          cp "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" "${HOME}/.cursor/rules/locutus.mdc"
-          echo "  ✓ Installed Cursor rules to: ${HOME}/.cursor/rules/locutus.mdc"
+          cp "${SRC_SKILL_DIR}/rules/cursor-rules.mdc" "${HOME}/.cursor/rules/rhizo.mdc"
+          echo "  ✓ Installed Cursor rules to: ${HOME}/.cursor/rules/rhizo.mdc"
           SKILL_INSTALLED=1
         fi
       fi
@@ -376,8 +376,8 @@ install_skills() {
   else
     echo "Notice: No coding assistant directories detected yet."
     echo "Install the skill into your assistant at any time using:"
-    echo "    npx skills add axiomantic/locu -g"
-    echo "    # Or: skilz install https://github.com/axiomantic/locu"
+    echo "    npx skills add axiomantic/rhizo -g"
+    echo "    # Or: skilz install https://github.com/axiomantic/rhizo"
   fi
 }
 
@@ -392,8 +392,8 @@ fi
 # A. macOS with Homebrew (skipped if custom INSTALL_DIR requested)
 if [ -z "${INSTALL_DIR:-}" ] && [ "${OS}" = "darwin" ] && command -v brew >/dev/null 2>&1; then
   echo "Detected Homebrew on macOS. Installing via Homebrew tap..."
-  if brew install axiomantic/tap/locutus; then
-    echo "✓ Locutus successfully installed via Homebrew."
+  if brew install axiomantic/tap/rhizo; then
+    echo "✓ Rhizo successfully installed via Homebrew."
     install_skills
     exit 0
   else
@@ -403,7 +403,7 @@ fi
 
 # B. Debian / Ubuntu with dpkg/apt (skipped if custom INSTALL_DIR requested)
 if [ -z "${INSTALL_DIR:-}" ] && [ "${OS}" = "linux" ] && [ "${ARCH}" != "unknown" ] && (command -v dpkg >/dev/null 2>&1 || [ -f /etc/debian_version ]); then
-  DEB_PKG="locutus_${VERSION#v}_${ARCH}.deb"
+  DEB_PKG="rhizo_${VERSION#v}_${ARCH}.deb"
   DEB_URL="${GITHUB_URL}/releases/download/${VERSION}/${DEB_PKG}"
   TMP_DIR="$(mktemp -d)"
   trap 'rm -rf "${TMP_DIR}"' EXIT
@@ -417,7 +417,7 @@ if [ -z "${INSTALL_DIR:-}" ] && [ "${OS}" = "linux" ] && [ "${ARCH}" != "unknown
     else
       dpkg -i "${TMP_DIR}/${DEB_PKG}"
     fi
-    echo "✓ Locutus successfully installed from Debian package."
+    echo "✓ Rhizo successfully installed from Debian package."
     install_skills
     exit 0
   else
@@ -427,7 +427,7 @@ fi
 
 # 5. Standalone Pre-Compiled Binary Download
 if [ "${OS}" != "unknown" ] && [ "${ARCH}" != "unknown" ]; then
-  TARBALL="locutus-${OS}-${ARCH}.tar.gz"
+  TARBALL="rhizo-${OS}-${ARCH}.tar.gz"
   DOWNLOAD_URL="${GITHUB_URL}/releases/download/${VERSION}/${TARBALL}"
   CHECKSUMS_URL="${GITHUB_URL}/releases/download/${VERSION}/SHA256SUMS.txt"
 
@@ -449,14 +449,14 @@ if [ "${OS}" != "unknown" ] && [ "${ARCH}" != "unknown" ]; then
     fi
 
     tar -xzf "${TMP_DIR}/${TARBALL}" -C "${TMP_DIR}"
-    if [ -f "${TMP_DIR}/locutus" ]; then
-      rm -f "${DEST_DIR}/locutus"
-      cp "${TMP_DIR}/locutus" "${DEST_DIR}/locutus"
-      chmod +x "${DEST_DIR}/locutus"
+    if [ -f "${TMP_DIR}/rhizo" ]; then
+      rm -f "${DEST_DIR}/rhizo"
+      cp "${TMP_DIR}/rhizo" "${DEST_DIR}/rhizo"
+      chmod +x "${DEST_DIR}/rhizo"
       if [ "${OS}" = "darwin" ] && command -v codesign >/dev/null 2>&1; then
-        codesign -s - -f "${DEST_DIR}/locutus" 2>/dev/null || true
+        codesign -s - -f "${DEST_DIR}/rhizo" 2>/dev/null || true
       fi
-      echo "✓ Locutus installed to ${DEST_DIR}/locutus"
+      echo "✓ Rhizo installed to ${DEST_DIR}/rhizo"
 
       # PATH Check
       if [[ ":$PATH:" != *":${DEST_DIR}:"* ]]; then
@@ -466,7 +466,7 @@ if [ "${OS}" != "unknown" ] && [ "${ARCH}" != "unknown" ]; then
         echo "    export PATH=\"${DEST_DIR}:\$PATH\""
       fi
 
-      "${DEST_DIR}/locutus" --help >/dev/null 2>&1 && echo "✓ Locutus is ready to use!" || true
+      "${DEST_DIR}/rhizo" --help >/dev/null 2>&1 && echo "✓ Rhizo is ready to use!" || true
       install_skills
       exit 0
     fi
@@ -476,7 +476,7 @@ if [ "${OS}" != "unknown" ] && [ "${ARCH}" != "unknown" ]; then
 fi
 
 # 6. Fallback: Build from source if binary was not found or architecture is unsupported
-echo "Falling back to building Locutus from source..."
+echo "Falling back to building Rhizo from source..."
 build_from_source
 
 # PATH Check
@@ -487,6 +487,6 @@ if [[ ":$PATH:" != *":${DEST_DIR}:"* ]]; then
   echo "    export PATH=\"${DEST_DIR}:\$PATH\""
 fi
 
-"${DEST_DIR}/locutus" --help >/dev/null 2>&1 && echo "✓ Locutus is ready to use!" || true
+"${DEST_DIR}/rhizo" --help >/dev/null 2>&1 && echo "✓ Rhizo is ready to use!" || true
 install_skills
-echo "Run 'locutus --help' to get started."
+echo "Run 'rhizo --help' to get started."

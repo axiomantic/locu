@@ -1,0 +1,42 @@
+{
+  "version": "0.1.3",
+  "description": "High Performance Inter-Assistant Redis Bus & Multi-Agent Coordination Mesh",
+  "homepage": "https://github.com/axiomantic/rhizo",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/axiomantic/rhizo/releases/download/v0.1.3/rhizo-windows-amd64.zip",
+      "bin": "rhizo.exe"
+    }
+  },
+  "post_install": [
+    "if (Get-Command npx -ErrorAction SilentlyContinue) {",
+    "    try { npx -y skills add \"$dir\\skills\\rhizo\" -g -a '*' -y } catch { }",
+    "} elseif (Get-Command skilz -ErrorAction SilentlyContinue) {",
+    "    try { skilz install -f \"$dir\\skills\\rhizo\" } catch { }",
+    "}"
+  ],
+  "post_uninstall": [
+    "if (Get-Command npx -ErrorAction SilentlyContinue) {",
+    "    try { npx -y skills remove rhizo -g -y } catch { }",
+    "} elseif (Get-Command skilz -ErrorAction SilentlyContinue) {",
+    "    try { skilz remove rhizo } catch { }",
+    "}"
+  ],
+  "notes": [
+    "To equip your AI coding assistants (Claude Code, Antigravity, OpenCode, Cursor):",
+    "  npx skills add axiomantic/rhizo -g",
+    "  # Or using skilz:",
+    "  skilz install https://github.com/axiomantic/rhizo",
+    "  # Or offline from local Scoop files:",
+    "  npx skills add \"$dir\\skills\\rhizo\" -g"
+  ],
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/axiomantic/rhizo/releases/download/v$version/rhizo-windows-amd64.zip"
+      }
+    }
+  }
+}

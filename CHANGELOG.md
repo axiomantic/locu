@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-29
+
+### Added
+- **Architecture-Aware Binary Bootstrapping**: `bin/run.js` now verifies host architecture via executable magic bytes (Mach-O arm64/x64, ELF amd64/arm64, Windows PE) and automatically downloads the appropriate release asset from GitHub Releases into `~/.cache/rhizo/bin/`.
+- **SKILL.md Self-Bootstrapping Section 0**: Added clear instructions for agents encountering a missing `rhizo` CLI to run `npm install -g @axiomantic/rhizo`.
+
+### Fixed
+- **Release CI Multi-Platform Assets**: Fixed release workflow compiling `src/rhizo.nim` across Linux amd64/arm64, macOS arm64/amd64, and Windows amd64.
+- **Pure Universal NPM Package**: Excluded host-specific binaries from npm packages, ensuring 100% cross-platform compatibility on initial install.
+
 ### Added
 - **Native Task Routing Engine (`locu route`)**:
   - Declarative routing schema (`locu-routes.yaml` or `.locutus/routes.yaml`) dispatching unstructured task prompts directly to agent queues with matched tags and lease durations.

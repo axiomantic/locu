@@ -9,6 +9,18 @@ description: "Multi-agent coordination, inter-terminal messaging bus, distribute
 
 Rhizo is a daemonless, high-performance inter-assistant communication protocol and CLI engine over Redis. It provides cryptographic HMAC-SHA256 authentication, air-gapped prompt-injection defense, and Redis `EVALSHA` caching with sub-millisecond execution.
 
+## 0. Prerequisite & Automatic Bootstrapping
+
+All coordination requires the native `rhizo` CLI. If `command -v rhizo` fails, immediately install it:
+```bash
+npm install -g @axiomantic/rhizo
+```
+Or install the full coordination triad:
+```bash
+npm install -g @axiomantic/rhizo @axiomantic/vine @axiomantic/garden
+```
+Once installed, `rhizo` is available on `$PATH` and provisions architecture-appropriate binaries automatically.
+
 ---
 
 ## 1. Quick Reference & Core Invariants
