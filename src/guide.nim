@@ -25,6 +25,7 @@ This project requires `rhizo` and `vine`. If `command -v rhizo` or `command -v v
 ```bash
 npm install -g @axiomantic/rhizo @axiomantic/vine
 ```
+*(In restricted environments without global install permissions, prefix commands with `npx -y @axiomantic/rhizo` or `npx -y @axiomantic/vine`).*
 
 ### 1. Invariants & Identity
 * **No Workspace-Scoped Identity Files**:

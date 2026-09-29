@@ -489,6 +489,12 @@ npm install -g @axiomantic/rhizo @axiomantic/vine @axiomantic/garden
 npm install -g @axiomantic/rhizo
 ```
 
+> [!TIP]
+> **Zero-Install Run via NPX**: In restricted or containerized environments where global installation is unavailable, you can run any command directly without installing:
+> ```bash
+> npx -y @axiomantic/rhizo <command>
+> ```
+
 ### 3. Repository Coordination Guide
 
 To equip all AI agents working in a repository with Rhizo invariants (anti-token-thrash zero-timeout listening, task claiming, fencing tokens):

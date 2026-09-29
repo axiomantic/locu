@@ -11,15 +11,21 @@ Rhizo is a daemonless, high-performance inter-assistant communication protocol a
 
 ## 0. Prerequisite & Automatic Bootstrapping
 
-All coordination requires the native `rhizo` CLI. If `command -v rhizo` fails, immediately install it:
+All coordination requires the native `rhizo` CLI. If `command -v rhizo` fails, install it:
 ```bash
+# Recommended: Install globally for fastest native execution (2ms) and clean syntax:
 npm install -g @axiomantic/rhizo
-```
-Or install the full coordination triad:
-```bash
+
+# Or install the full coordination triad:
 npm install -g @axiomantic/rhizo @axiomantic/vine @axiomantic/garden
 ```
-Once installed, `rhizo` is available on `$PATH` and provisions architecture-appropriate binaries automatically.
+
+> [!TIP]
+> **Zero-Install Fallback (`npx`)**: If you are in a restricted environment, container, or CI runner where global installation is prohibited or unavailable, you can run commands directly without installing by prefixing with `npx -y`:
+> ```bash
+> npx -y @axiomantic/rhizo <command>
+> ```
+> *Note: For high-frequency swarm operations (queues, locks, continuous listening), `npm install -g` is strongly recommended to eliminate the ~200ms Node.js runtime boot latency.*
 
 ---
 
