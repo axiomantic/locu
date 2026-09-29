@@ -294,7 +294,9 @@ jobs:
       - name: Install Nim dependencies
         shell: powershell
         run: |
-          nimble install -y --depsOnly
+          git config --global core.protectNTFS false
+          try { git config --system core.protectNTFS false } catch {}
+          try { nimble install -y --depsOnly } catch { Write-Warning "Nimble deps install warning: $_" }
 
       - name: Compile native Windows binary
         shell: powershell
