@@ -1,5 +1,5 @@
 # Package
-version       = "0.1.9"
+version       = "0.1.10"
 author        = "Axiomantic"
 description   = "High Performance Inter-Assistant Redis Bus & Multi-Agent Coordination Mesh"
 license       = "MIT"

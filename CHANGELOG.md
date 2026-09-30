@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-09-30
+
+### Changed
+- **System 1 Default Port Migration (`8000` $\to$ `8100`)**:
+  - Migrated the default System 1 decision engine port from `8000` to `8100` across `src/routing.nim`, `rhizo-routes.yaml`, and test suites.
+  - Eliminates common port conflicts with local web application servers, proxy tools, and dev environments.
+
+### Added
+- **Full Cross-Platform Linux & macOS Daemon Documentation**:
+  - Added native Linux deployment documentation (`systemd` user service unit, GPU CUDA / ROCm acceleration, and `loginctl enable-linger $USER` guidance) to `references/system_one_setup.md` and `SKILL.md`.
+  - Updated all guide and skill references to [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone).
+
+### Fixed
+- **Windows Path Escaping in Test Generator**:
+  - Escaped Windows backslashes in `.locutus.toml` file generator (`tests/test_nim_binary.py`) to prevent TOML escape character parsing errors.
+- **LLM CI Dependencies**:
+  - Aligned `.github/workflows/llm-ci.yml` dependency installation with project definitions.
+
 ## [0.1.9] - 2026-09-30
 
 ### Added

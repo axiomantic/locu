@@ -1377,6 +1377,7 @@ class TestLocutusNimBinary(unittest.TestCase):
             if os.name != "nt":
                 os.chmod(custom_secret_file, 0o600)
 
+            custom_secret_file_toml = custom_secret_file.replace("\\", "\\\\")
             cfg_content = f"""redis_url = "{REDIS_URL}"
 prefix = "{TEST_PREFIX}"
 project = "cfg_test_proj"
@@ -1384,7 +1385,7 @@ agent_name = "configured_agent_99"
 heartbeat_ttl = 45
 message_ttl = 75
 listen_timeout = 1
-secret_file = "{custom_secret_file}"
+secret_file = "{custom_secret_file_toml}"
 """
             cfg_path = os.path.join(tmp_dir, ".locutus.toml")
             with open(cfg_path, "w", encoding="utf-8") as f:

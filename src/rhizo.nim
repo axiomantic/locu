@@ -79,7 +79,7 @@ const
   sweepLua*      = staticRead("../scripts/sweep.lua")
   reserveNameLua* = staticRead("../scripts/reserve_name.lua")
   resetLua*      = staticRead("../scripts/reset.lua")
-  LocutusVersion* = "0.1.9"
+  LocutusVersion* = "0.1.10"
 
 # Cryptographic Helpers
 proc computeSha1*(text: string): string =
