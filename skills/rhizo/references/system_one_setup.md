@@ -49,31 +49,38 @@ Rather than running an autoregressive text decoding loop that requires parsing J
 Rhizo supports both self-hosted local neural engines and cloud-hosted API endpoints. When configuring a project, choose between the two paths based on privacy, latency, and hardware availability:
 
 ### Option A: Local / Self-Hosted Open-Source Engine (Default Recommended)
-- **Best for:** Offline development, zero recurring token costs, strict data privacy, and sub-40ms latency.
-- **Supported Engines & Models:**
-  - **`local-systemone` ([axiomantic/local-systemone](https://github.com/axiomantic/local-systemone))**: Turnkey daemon supporting Laya (ModernBERT 421M / mmBERT 322M), Ollama models, and local GGUF llama-server endpoints with built-in macOS `launchd` and Linux `systemd` daemon management.
-  - **Laya (`convaiinnovations/laya`)**: ModernBERT-large (421M parameters), bidirectional encoder with typed decision heads. Runs on Apple Silicon Metal (MPS) or CPU with ~1.1 GB RAM footprint.
+- **Best for:** Offline development, zero recurring token costs, strict data privacy, and sub-40ms latency across both macOS and Linux.
+- **Supported Engines & Platforms:**
+  - **`local-systemone` ([axiomantic/local-systemone](https://github.com/axiomantic/local-systemone))**: Turnkey cross-platform daemon supporting Laya (ModernBERT 421M / mmBERT 322M), Ollama models, and local GGUF llama-server endpoints with built-in macOS `launchd` and Linux `systemd` daemon management.
+  - **Laya (`convaiinnovations/laya`)**: ModernBERT-large (421M parameters), bidirectional encoder with typed decision heads.
+    - **macOS**: Native Apple Silicon Metal acceleration (`mps`) or CPU (~1.1 GB RAM footprint).
+    - **Linux**: NVIDIA CUDA acceleration (`cuda`), AMD ROCm (`rocm`), or multi-core CPU.
   - **Ollama / Local LLM**: Evaluates schemas through local Ollama (`http://127.0.0.1:11434`) via `local-systemone --engine ollama`.
   - **Local GGUF (llama-server)**: Evaluates schemas via `local-systemone --engine openai`.
-- **Default Endpoint:** `http://127.0.0.1:8000`
+- **Default Endpoint:** `http://127.0.0.1:8100`
 
 #### Quickstart Local System 1 Daemon (`local-systemone`):
 ```bash
 # 1. Install local-systemone (Python 3.10+):
 pip install "local-systemone[full]"
 
-# 2. Start in foreground (or install as background daemon):
-local-systemone                   # Default: Laya ModernBERT on Apple Silicon / CUDA
+# 2. Start in foreground:
+local-systemone                     # Default: Laya ModernBERT on port 8100
 # Or run with alternative engines:
 # local-systemone --engine ollama   # Local Ollama bridge
 # local-systemone --engine openai   # Local llama-server (GGUF)
 
 # 3. (Optional) Run permanently as a background daemon:
-local-systemone --install-daemon  # Configures macOS launchd or Linux systemd
+# Configures macOS launchd (~/Library/LaunchAgents/com.axiomantic.local-systemone.plist)
+# or Linux systemd (~/.config/systemd/user/local-systemone.service):
+local-systemone --install-daemon
+
+# On Linux, enable linger so the user systemd daemon persists without an active login session:
+# loginctl enable-linger $USER
 ```
 Verify reachability:
 ```bash
-curl http://127.0.0.1:8000/healthz
+curl http://127.0.0.1:8100/healthz
 # Returns: {"status":"ok","engine":"laya","mock":false,"loaded_models":["multilingual","typed-decisions","english"],"device":"mps"}
 ```
 
@@ -97,7 +104,7 @@ Rhizo uses a strict, uncommitted layering model so secrets and developer-specifi
 4. **Project Env Defaults (`.env`)**: Shared, non-sensitive environment settings
 5. **Local Uncommitted Routes (`rhizo-routes.local.yaml`)**: Developer endpoint and rule overrides (git-ignored)
 6. **Tracked Base Routes (`rhizo-routes.yaml`)**: Team canonical routing rules (committed)
-7. **Builtin Defaults**: `http://127.0.0.1:8000`, 5.0s timeout
+7. **Builtin Defaults**: `http://127.0.0.1:8100`, 5.0s timeout
 
 ### Storing Secrets Safely:
 Create `.env.local` in your workspace root (automatically git-ignored):
@@ -128,7 +135,7 @@ Canonical route definitions live in `rhizo-routes.yaml` (or `.rhizo/routes.yaml`
 version: "1.0"
 
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
   timeout_seconds: 5.0
   model: "laya-large"
 
@@ -213,7 +220,7 @@ Expected output:
 ✓ Route configuration is valid: ./rhizo-routes.yaml (+ rhizo-routes.local.yaml)
   Questions (3): domain [choice], urgency [score], migration_required [noul]
   Routes (4): critical-production-incident, database-specialist-route, firmware-worker-fallback, general-domain-routing
-  Service: http://127.0.0.1:8000 (timeout: 5.0s)
+  Service: http://127.0.0.1:8100 (timeout: 5.0s)
   Model: laya-large
   Limits: split_aggregate (chunk: 8000, overlap: 800, max_chunks: 10)
   ✓ System 1 service check passed
@@ -269,7 +276,7 @@ rhizo enqueue --route "Deadlock on postgres users table when running migrations"
 
 | Error | Root Cause | Solution |
 | :--- | :--- | :--- |
-| `System 1 service is unreachable at ...` | Local service is stopped or port is blocked | Start local engine (`laya-serve` / `uvicorn`) or check `curl http://127.0.0.1:8000/healthz`. |
+| `System 1 service is unreachable at ...` | Local service is stopped or port is blocked | Start local engine (`local-systemone` / `laya-serve` / `uvicorn`) or check `curl http://127.0.0.1:8100/healthz`. |
 | `HTTP 401 Unauthorized` | Missing or invalid API key | Configure `RHIZO_API_KEY` in `.env.local` or `--api-key <key>`. |
 | `Route configuration not found` | No `rhizo-routes.yaml` in workspace or parents | Create `rhizo-routes.yaml` or specify `--routes-file <path>`. |
 | `No route rule matched classification results` | Missing default fallback route | Add a catch-all route at the bottom of `routes` with wildcard options. |

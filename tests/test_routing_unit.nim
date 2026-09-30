@@ -9,7 +9,7 @@ suite "Route Config Linter & Parser":
     let validYaml = """
 version: "1.0"
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
   timeout_seconds: 5.0
 limits:
   overflow_strategy: "split_aggregate"
@@ -63,7 +63,7 @@ routes:
     let badYaml = """
 version: "1.0"
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
 """
     let (valid, errors, warnings) = lintYamlContent(badYaml, checkService = false)
     check valid == false
@@ -306,7 +306,7 @@ suite "Local Route Config Overlays":
     let baseYaml = """
 version: "1.0"
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
   timeout_seconds: 5.0
 questions:
   domain:

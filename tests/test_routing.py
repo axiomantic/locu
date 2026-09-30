@@ -32,7 +32,7 @@ def test_route_lint_valid_config():
         routes_file.write_text("""
 version: "1.0"
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
   timeout_seconds: 5.0
 questions:
   domain:
@@ -243,10 +243,10 @@ routes:
         assert msg_id.startswith("msg_")
 
 def test_route_live_dry_run_and_enqueue():
-    """Optional live verification against local Laya service on port 8000 when available."""
+    """Optional live verification against local Laya service on port 8100 when available."""
     import urllib.request
     try:
-        urllib.request.urlopen("http://127.0.0.1:8000/healthz", timeout=1.0)
+        urllib.request.urlopen("http://127.0.0.1:8100/healthz", timeout=1.0)
     except Exception:
         # If live service is offline, skip this optional test (the mock test above guarantees CI coverage)
         return
@@ -256,7 +256,7 @@ def test_route_live_dry_run_and_enqueue():
         routes_file.write_text("""
 version: "1.0"
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
   timeout_seconds: 5.0
 questions:
   domain:
@@ -404,7 +404,7 @@ def test_route_lint_with_local_overlay(mock_laya_server):
         base_file.write_text("""
 version: "1.0"
 service:
-  url: "http://127.0.0.1:8000"
+  url: "http://127.0.0.1:8100"
 questions:
   domain:
     type: choice

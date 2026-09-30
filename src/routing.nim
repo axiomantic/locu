@@ -39,7 +39,7 @@ type
     defaultNoulAgg*: NoulAggregate
 
   RoutingServiceConfig* = object
-    url*: string                # default "http://127.0.0.1:8000"
+    url*: string                # default "http://127.0.0.1:8100"
     timeoutSeconds*: float      # default 5.0
     model*: string              # optional model identifier (e.g. "kev-4b", "decider-4b")
     apiKey*: string             # optional API key for hosted endpoints (e.g. TypeSafe Jev)
@@ -128,7 +128,7 @@ proc defaultRoutingLimits*(): RoutingLimits =
   result.defaultNoulAgg = naAny
 
 proc defaultServiceConfig*(): RoutingServiceConfig =
-  result.url = "http://127.0.0.1:8000"
+  result.url = "http://127.0.0.1:8100"
   result.timeoutSeconds = 5.0
   result.model = ""
   result.apiKey = ""
@@ -344,7 +344,7 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
 
   # Optional live service check
   if checkService and errors.len == 0:
-    var serviceUrl = "http://127.0.0.1:8000"
+    var serviceUrl = "http://127.0.0.1:8100"
     var apiKey = ""
     if root.hasKey("service") and root["service"].kind == JObject:
       serviceUrl = root["service"].getOrDefault("url").getStr(serviceUrl)

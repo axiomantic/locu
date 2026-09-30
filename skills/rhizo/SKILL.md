@@ -39,13 +39,13 @@ Rhizo uses layered configuration so local developer settings and API keys are ne
 ### C. System 1 Decision Engine Setup
 Rhizo employs fast, calibrated **System 1 Decision Models** to route natural language directives into typed queues without generative decoding bottlenecks:
 1. **Choose a Provider**:
-   - **Local Daemon (Recommended)**: Use [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone) to run ModernBERT Laya, Ollama, or local GGUF models at `http://127.0.0.1:8000` with macOS launchd and Linux systemd background daemon support. Offline, zero cost, <40ms latency.
+   - **Local Daemon (Recommended)**: Use [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone) to run ModernBERT Laya, Ollama, or local GGUF models at `http://127.0.0.1:8100` with macOS launchd and Linux systemd background daemon support. Offline, zero cost, <40ms latency.
    - **Cloud API**: TypeSafe Jev at `https://api.typesafe.ai`. Configure `RHIZO_API_KEY` (or `JEV_API_KEY`) and optional `RHIZO_MODEL="jev-1"`.
 2. **Configure Endpoint**:
    Add to uncommitted `.env.local` or `rhizo-routes.local.yaml`:
    ```bash
    # .env.local
-   RHIZO_SERVICE_URL="http://127.0.0.1:8000"
+   RHIZO_SERVICE_URL="http://127.0.0.1:8100"
    # Or for Cloud API:
    # RHIZO_SERVICE_URL="https://api.typesafe.ai"
    # RHIZO_API_KEY="jev_live_sec_..."
@@ -55,7 +55,7 @@ Rhizo employs fast, calibrated **System 1 Decision Models** to route natural lan
    ```bash
    rhizo route lint --check-service
    ```
-   *For detailed service setup, ModernBERT Apple Silicon instructions, and schema definitions, see [references/system_one_setup.md](references/system_one_setup.md).*
+   *For detailed service setup, macOS (launchd / Metal) & Linux (systemd / CUDA / CPU) deployment instructions, and schema definitions, see [references/system_one_setup.md](references/system_one_setup.md).*
 
 ---
 
