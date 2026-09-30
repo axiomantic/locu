@@ -79,7 +79,7 @@ const
   sweepLua*      = staticRead("../scripts/sweep.lua")
   reserveNameLua* = staticRead("../scripts/reserve_name.lua")
   resetLua*      = staticRead("../scripts/reset.lua")
-  LocutusVersion* = "0.1.8"
+  LocutusVersion* = "0.1.9"
 
 # Cryptographic Helpers
 proc computeSha1*(text: string): string =
@@ -2833,8 +2833,8 @@ proc main() =
     echo "  rhizo request --to <agent> --subject <subj> --body <body> [--timeout 30] [--raw]"
     echo "  rhizo scatter --targets <@tag|agents|*> --subject <subj> --body <body> [--quorum N] [--timeout 30] [--raw]"
     echo "  rhizo enqueue <queue_name> --subject <subj> --body <body>"
-    echo "  rhizo enqueue --route <task_text> [--routes-file <file>] [--subject <subj>] [--body <body>]"
-    echo "  rhizo route <task_text> [--routes-file <file>] [--laya-url <url>] [--route-timeout <sec>]"
+    echo "  rhizo enqueue --route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]"
+    echo "  rhizo route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]"
     echo "  rhizo route <lint|check> [--routes-file <file>] [--check-service]"
     echo "  rhizo work <queue_name> [--timeout <sec>] [--run-id <id>] (default timeout: 0 / infinite)"
     echo "  rhizo claim <queue_name> [--timeout <sec>] [--lease 120] [--run-id <id>] [--raw]"
@@ -3522,31 +3522,51 @@ proc main() =
   of "enqueue":
     var isRoute = false
     var routesFilePath = ""
-    var layaUrl = ""
+    var serviceUrl = ""
+    var modelOverride = ""
+    var apiKeyOverride = ""
     var routeTimeout = ""
-    for a in args:
+    var j = 0
+    while j < args.len:
+      let a = args[j]
       if a == "--route": isRoute = true
       elif a.startsWith("--routes-file="): routesFilePath = a[14..^1]
       elif a.startsWith("--routes_file="): routesFilePath = a[14..^1]
-      elif a.startsWith("--laya-url="): layaUrl = a[11..^1]
-      elif a.startsWith("--laya_url="): layaUrl = a[11..^1]
+      elif (a == "--routes-file" or a == "--routes_file") and j + 1 < args.len:
+        routesFilePath = args[j+1]; inc j
+      elif a.startsWith("--service-url=") or a.startsWith("--service_url="): serviceUrl = a[14..^1]
+      elif (a == "--service-url" or a == "--service_url") and j + 1 < args.len:
+        serviceUrl = args[j+1]; inc j
+      elif a.startsWith("--systemone-url=") or a.startsWith("--systemone_url="): serviceUrl = a[16..^1]
+      elif (a == "--systemone-url" or a == "--systemone_url") and j + 1 < args.len:
+        serviceUrl = args[j+1]; inc j
+      elif a.startsWith("--laya-url=") or a.startsWith("--laya_url="): serviceUrl = a[11..^1]
+      elif (a == "--laya-url" or a == "--laya_url" or a == "-s") and j + 1 < args.len:
+        serviceUrl = args[j+1]; inc j
+      elif a.startsWith("--model="): modelOverride = a[8..^1]
+      elif (a == "--model" or a == "-m") and j + 1 < args.len:
+        modelOverride = args[j+1]; inc j
+      elif a.startsWith("--api-key=") or a.startsWith("--api_key="): apiKeyOverride = a[10..^1]
+      elif (a == "--api-key" or a == "--api_key" or a == "-k") and j + 1 < args.len:
+        apiKeyOverride = args[j+1]; inc j
       elif a.startsWith("--route-timeout="): routeTimeout = a[16..^1]
       elif a.startsWith("--route_timeout="): routeTimeout = a[16..^1]
+      elif a.startsWith("--timeout="): routeTimeout = a[10..^1]
+      elif (a == "--route-timeout" or a == "--route_timeout" or a == "--timeout" or a == "-t") and j + 1 < args.len:
+        routeTimeout = args[j+1]; inc j
+      inc j
 
     if isRoute:
-      let rPath = findRoutesConfig(routesFilePath)
-      if rPath.len == 0:
-        stderr.writeLine("Error: Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml). Specify --routes-file or initialize rhizo-routes.yaml.")
-        quit(1)
-
       var routesCfg: RoutingConfig
       try:
-        routesCfg = parseRoutesConfig(readFile(rPath), rPath)
+        routesCfg = loadEffectiveRoutesConfig(routesFilePath)
       except CatchableError as e:
         stderr.writeLine("Error: Failed to parse route configuration: " & e.msg)
         quit(1)
 
-      if layaUrl.len > 0: routesCfg.service.url = layaUrl
+      if serviceUrl.len > 0: routesCfg.service.url = serviceUrl
+      if modelOverride.len > 0: routesCfg.service.model = modelOverride
+      if apiKeyOverride.len > 0: routesCfg.service.apiKey = apiKeyOverride
       if routeTimeout.len > 0:
         try: routesCfg.service.timeoutSeconds = parseFloat(routeTimeout)
         except ValueError: discard
@@ -3567,10 +3587,19 @@ proc main() =
         if a == "--route": discard
         elif a.startsWith("--routes-file=") or a.startsWith("--routes_file="): discard
         elif (a == "--routes-file" or a == "--routes_file") and i + 1 < args.len: inc i
+        elif a.startsWith("--service-url=") or a.startsWith("--service_url="): discard
+        elif (a == "--service-url" or a == "--service_url") and i + 1 < args.len: inc i
+        elif a.startsWith("--systemone-url=") or a.startsWith("--systemone_url="): discard
+        elif (a == "--systemone-url" or a == "--systemone_url") and i + 1 < args.len: inc i
         elif a.startsWith("--laya-url=") or a.startsWith("--laya_url="): discard
-        elif (a == "--laya-url" or a == "--laya_url") and i + 1 < args.len: inc i
+        elif (a == "--laya-url" or a == "--laya_url" or a == "-s") and i + 1 < args.len: inc i
+        elif a.startsWith("--model="): discard
+        elif (a == "--model" or a == "-m") and i + 1 < args.len: inc i
+        elif a.startsWith("--api-key=") or a.startsWith("--api_key="): discard
+        elif (a == "--api-key" or a == "--api_key" or a == "-k") and i + 1 < args.len: inc i
         elif a.startsWith("--route-timeout=") or a.startsWith("--route_timeout="): discard
-        elif (a == "--route-timeout" or a == "--route_timeout") and i + 1 < args.len: inc i
+        elif a.startsWith("--timeout="): discard
+        elif (a == "--route-timeout" or a == "--route_timeout" or a == "--timeout" or a == "-t") and i + 1 < args.len: inc i
         elif a.startsWith("--type="): msgType = a[7..^1]
         elif a == "--type" and i + 1 < args.len: msgType = args[i+1]; inc i
         elif a.startsWith("--from="): fromAgent = a[7..^1]
@@ -3679,12 +3708,14 @@ proc main() =
     if args.len < 2:
       stderr.writeLine("Error: Missing task text or sub-command (lint / check).")
       stderr.writeLine("Usage:")
-      stderr.writeLine("  rhizo route <task_text> [--routes-file <file>] [--laya-url <url>]")
+      stderr.writeLine("  rhizo route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]")
       stderr.writeLine("  rhizo route lint [--routes-file <file>] [--check-service]")
       quit(1)
 
     var routesFilePath = ""
-    var layaUrl = ""
+    var serviceUrl = ""
+    var modelOverride = ""
+    var apiKeyOverride = ""
     var routeTimeout = ""
     var checkService = false
     var isLint = false
@@ -3701,31 +3732,45 @@ proc main() =
       elif a.startsWith("--routes_file="): routesFilePath = a[14..^1]
       elif (a == "--routes-file" or a == "--routes_file") and i + 1 < args.len:
         routesFilePath = args[i+1]; inc i
-      elif a.startsWith("--laya-url="): layaUrl = a[11..^1]
-      elif a.startsWith("--laya_url="): layaUrl = a[11..^1]
-      elif (a == "--laya-url" or a == "--laya_url") and i + 1 < args.len:
-        layaUrl = args[i+1]; inc i
+      elif a.startsWith("--service-url=") or a.startsWith("--service_url="): serviceUrl = a[14..^1]
+      elif (a == "--service-url" or a == "--service_url") and i + 1 < args.len:
+        serviceUrl = args[i+1]; inc i
+      elif a.startsWith("--systemone-url=") or a.startsWith("--systemone_url="): serviceUrl = a[16..^1]
+      elif (a == "--systemone-url" or a == "--systemone_url") and i + 1 < args.len:
+        serviceUrl = args[i+1]; inc i
+      elif a.startsWith("--laya-url=") or a.startsWith("--laya_url="): serviceUrl = a[11..^1]
+      elif (a == "--laya-url" or a == "--laya_url" or a == "-s") and i + 1 < args.len:
+        serviceUrl = args[i+1]; inc i
+      elif a.startsWith("--model="): modelOverride = a[8..^1]
+      elif (a == "--model" or a == "-m") and i + 1 < args.len:
+        modelOverride = args[i+1]; inc i
+      elif a.startsWith("--api-key=") or a.startsWith("--api_key="): apiKeyOverride = a[10..^1]
+      elif (a == "--api-key" or a == "--api_key" or a == "-k") and i + 1 < args.len:
+        apiKeyOverride = args[i+1]; inc i
       elif a.startsWith("--route-timeout="): routeTimeout = a[16..^1]
       elif a.startsWith("--route_timeout="): routeTimeout = a[16..^1]
-      elif (a == "--route-timeout" or a == "--route_timeout") and i + 1 < args.len:
+      elif a.startsWith("--timeout="): routeTimeout = a[10..^1]
+      elif (a == "--route-timeout" or a == "--route_timeout" or a == "--timeout" or a == "-t") and i + 1 < args.len:
         routeTimeout = args[i+1]; inc i
       elif not a.startsWith("-"):
         if taskText.len == 0: taskText = a
         else: taskText.add(" " & a)
       inc i
 
-    let rPath = findRoutesConfig(routesFilePath)
-    if rPath.len == 0:
-      stderr.writeLine("Error: Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml). Specify --routes-file or initialize rhizo-routes.yaml.")
-      quit(1)
-
     if isLint:
-      let (valid, errors, warnings) = lintRoutesConfigFile(rPath, checkService = checkService)
+      let (valid, errors, warnings, pathDesc) = lintEffectiveRoutesConfig(routesFilePath, checkService = checkService)
       if valid:
         var routesCfg: RoutingConfig
         try:
-          routesCfg = parseRoutesConfig(readFile(rPath), rPath)
+          routesCfg = loadEffectiveRoutesConfig(routesFilePath)
         except CatchableError: discard
+
+        if serviceUrl.len > 0: routesCfg.service.url = serviceUrl
+        if modelOverride.len > 0: routesCfg.service.model = modelOverride
+        if apiKeyOverride.len > 0: routesCfg.service.apiKey = apiKeyOverride
+        if routeTimeout.len > 0:
+          try: routesCfg.service.timeoutSeconds = parseFloat(routeTimeout)
+          except ValueError: discard
 
         var qList: seq[string] = @[]
         for qid, qc in routesCfg.questions:
@@ -3734,20 +3779,24 @@ proc main() =
         for r in routesCfg.routes:
           rList.add(r.name)
 
-        echo "✓ Route configuration is valid: " & rPath
+        echo "✓ Route configuration is valid: " & pathDesc
         echo "  Questions (" & $qList.len & "): " & qList.join(", ")
         echo "  Routes (" & $rList.len & "): " & rList.join(", ")
         echo "  Service: " & routesCfg.service.url & " (timeout: " & $routesCfg.service.timeoutSeconds & "s)"
+        if routesCfg.service.model.len > 0:
+          echo "  Model: " & routesCfg.service.model
+        if routesCfg.service.apiKey.len > 0:
+          echo "  API Key: [configured]"
         echo "  Limits: " & $routesCfg.limits.overflowStrategy & " (chunk: " & $routesCfg.limits.chunkSize &
              ", overlap: " & $routesCfg.limits.chunkOverlap & ", max_chunks: " & $routesCfg.limits.maxChunks & ")"
         if checkService:
-          echo "  ✓ Laya System 1 service check passed"
+          echo "  ✓ System 1 service check passed"
         if warnings.len > 0:
           echo "Warnings:"
           for w in warnings: echo "  ! " & w
         quit(0)
       else:
-        stderr.writeLine("✗ Route configuration failed validation: " & rPath)
+        stderr.writeLine("✗ Route configuration failed validation: " & pathDesc)
         stderr.writeLine("Errors:")
         for e in errors:
           stderr.writeLine("  - " & e)
@@ -3760,17 +3809,19 @@ proc main() =
     # Dry-run task routing
     if taskText.len == 0:
       stderr.writeLine("Error: Missing task text to route.")
-      stderr.writeLine("Usage: rhizo route <task_text> [--routes-file <file>] [--laya-url <url>]")
+      stderr.writeLine("Usage: rhizo route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]")
       quit(1)
 
     var routesCfg: RoutingConfig
     try:
-      routesCfg = parseRoutesConfig(readFile(rPath), rPath)
+      routesCfg = loadEffectiveRoutesConfig(routesFilePath)
     except CatchableError as e:
       stderr.writeLine("Error: Failed to parse route configuration: " & e.msg)
       quit(1)
 
-    if layaUrl.len > 0: routesCfg.service.url = layaUrl
+    if serviceUrl.len > 0: routesCfg.service.url = serviceUrl
+    if modelOverride.len > 0: routesCfg.service.model = modelOverride
+    if apiKeyOverride.len > 0: routesCfg.service.apiKey = apiKeyOverride
     if routeTimeout.len > 0:
       try: routesCfg.service.timeoutSeconds = parseFloat(routeTimeout)
       except ValueError: discard

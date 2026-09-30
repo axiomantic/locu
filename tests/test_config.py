@@ -80,3 +80,75 @@ def test_config_cli_overrides():
     assert data["prefix"]["value"] == "cli:"
     assert data["project"]["value"] == "test-project"
     assert data["redis_url"]["source"] == "cli flag"
+
+def test_config_dotenv_loading():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dotenv_path = Path(tmpdir) / ".env"
+        dotenv_path.write_text("""
+RHIZO_PROJECT=dotenv-project
+RHIZO_REDIS_URL="redis://dotenv.internal:6379"
+export RHIZO_PREFIX="env_pfx:"
+""")
+        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        assert code == 0, f"Error: {err}"
+        data = json.loads(out)
+        assert data["project"]["value"] == "dotenv-project"
+        assert data["redis_url"]["value"] == "redis://dotenv.internal:6379"
+        assert data["prefix"]["value"] == "env_pfx:"
+
+def test_config_dotenv_local_overrides_dotenv():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dotenv_path = Path(tmpdir) / ".env"
+        dotenv_path.write_text("""
+RHIZO_PROJECT=base-project
+RHIZO_REDIS_URL=redis://base.internal:6379
+""")
+        dotenv_local = Path(tmpdir) / ".env.local"
+        dotenv_local.write_text("""
+RHIZO_REDIS_URL=redis://local-override.internal:6379
+""")
+        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        assert code == 0, f"Error: {err}"
+        data = json.loads(out)
+        assert data["project"]["value"] == "base-project"
+        assert data["redis_url"]["value"] == "redis://local-override.internal:6379"
+
+def test_config_process_env_overrides_dotenv():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dotenv_path = Path(tmpdir) / ".env"
+        dotenv_path.write_text("""
+RHIZO_PROJECT=dotenv-project
+RHIZO_REDIS_URL=redis://dotenv:6379
+""")
+        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={
+            "XDG_CONFIG_HOME": tmpdir,
+            "HOME": tmpdir,
+            "RHIZO_PROJECT": "process-env-project"
+        })
+        assert code == 0, f"Error: {err}"
+        data = json.loads(out)
+        assert data["project"]["value"] == "process-env-project"
+        assert data["redis_url"]["value"] == "redis://dotenv:6379"
+
+def test_config_local_toml_layers_over_workspace_toml():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base_toml = Path(tmpdir) / ".rhizo.toml"
+        base_toml.write_text("""
+project = "base-team-project"
+prefix = "team:"
+encrypt = true
+""")
+        local_toml = Path(tmpdir) / ".rhizo.local.toml"
+        local_toml.write_text("""
+redis_url = "redis://my-dev-box:6379"
+prefix = "my-dev:"
+""")
+        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        assert code == 0, f"Error: {err}"
+        data = json.loads(out)
+        assert data["project"]["value"] == "base-team-project"
+        assert data["encrypt"]["value"] == "true"
+        assert data["project"]["source"] == "workspace config"
+        assert data["redis_url"]["value"] == "redis://my-dev-box:6379"
+        assert data["prefix"]["value"] == "my-dev:"
+        assert data["redis_url"]["source"] == "local workspace config"

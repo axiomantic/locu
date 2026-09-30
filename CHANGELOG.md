@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-09-30
+
+### Added
+- **Layered Uncommitted Configuration & Dotenv Secrets**:
+  - Added automatic `.env` and `.env.local` secret loading in `src/config.nim` via `loadDotEnv()`.
+  - Added `.rhizo.local.toml` layering over `.rhizo.toml` with `srcWorkspaceLocalFile` setting precedence (`sourceLabel: "local workspace config"`).
+  - Added `rhizo-routes.local.yaml` overlay support in `src/routing.nim`, merging questions, limits, service configuration, and route rules over `rhizo-routes.yaml`.
+  - Updated `.gitignore` to prevent leaking uncommitted `.env`, `.env.*`, and `*.local.{toml,yaml,yml,json}` configuration files.
+- **System 1 Decision Engine CLI & Architecture Generalization**:
+  - Generalized System 1 CLI flags: `--service-url`, `--systemone-url`, `--model` (`-m`), `--api-key` (`-k`), and `--route-timeout` across `rhizo route` and `rhizo enqueue --route`.
+  - Preserved backward compatibility for `--laya-url` and `callLayaSystemOne()`.
+  - Added `Authorization: Bearer <apiKey>` header support in `callSystemOne()`, enabling seamless integration with TypeSafe Jev API (`https://api.typesafe.ai`) and hosted endpoints.
+  - Added environment variable resolution (`RHIZO_SERVICE_URL`, `RHIZO_SYSTEMONE_URL`, `RHIZO_MODEL`, `RHIZO_API_KEY`, `JEV_API_KEY`, `RHIZO_ROUTE_TIMEOUT`).
+  - Generalized diagnostic and error messages from Laya-specific wording to vendor-neutral System 1 decision engine terminology.
+- **System 1 Routing & Multi-Agent Skill Documentation**:
+  - Added comprehensive System 1 setup and architecture guide in `references/system_one_setup.md` covering local open-source models (ModernBERT Laya, Kev, Decider) and cloud APIs (TypeSafe Jev).
+  - Updated `SKILL.md` (root, packaged, and global `~/.gemini/config/skills/rhizo/`) with Environment Verification (`rhizo ping`), Layered Config, System 1 setup instructions, causal command reference, and directive routing workflows.
+- **Comprehensive Test Coverage**:
+  - Added unit and integration tests across `tests/test_config.py`, `tests/test_routing.py`, and `tests/test_routing_unit.nim`.
+
 ## [0.1.8] - 2026-09-30
 
 ### Added

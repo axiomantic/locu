@@ -4,7 +4,7 @@
 # fail-fast timeout/connectivity, and schema linting.
 
 import std/[os, strutils, json, tables, httpclient, uri, net]
-import yaml/tojson
+import yaml/tojson, config
 
 type
   OverflowStrategy* = enum
@@ -133,6 +133,29 @@ proc defaultServiceConfig*(): RoutingServiceConfig =
   result.model = ""
   result.apiKey = ""
 
+# Find uncommitted local routes configuration file if present
+proc findLocalRoutesConfig*(basePath: string = ""): string =
+  let envPath = getEnv("RHIZO_ROUTES_LOCAL_FILE", getEnv("SYSTEMONE_ROUTES_LOCAL_FILE", ""))
+  if envPath.len > 0 and fileExists(envPath): return envPath
+
+  var searchDirs: seq[string] = @[]
+  if basePath.len > 0 and fileExists(basePath):
+    searchDirs.add(basePath.splitPath.head)
+  searchDirs.add(getCurrentDir())
+
+  for dir in searchDirs:
+    for candidate in [
+      "rhizo-routes.local.yaml", "rhizo-routes.local.yml", "rhizo-routes.local.json",
+      ".rhizo/routes.local.yaml", ".rhizo/routes.local.yml", ".rhizo/routes.local.json",
+      "locu-routes.local.yaml", "locu-routes.local.yml", "locu-routes.local.json",
+      ".locu/routes.local.yaml", ".locu/routes.local.yml", ".locu/routes.local.json",
+      "locutus-routes.local.yaml", "locutus-routes.local.yml", "locutus-routes.local.json",
+      ".locutus/routes.local.yaml", ".locutus/routes.local.yml", ".locutus/routes.local.json"
+    ]:
+      let p = dir / candidate
+      if fileExists(p): return p
+  return ""
+
 # Find configuration file starting from startDir walking up
 proc findRoutesConfig*(customPath: string = ""): string =
   if customPath.len > 0:
@@ -159,6 +182,10 @@ proc findRoutesConfig*(customPath: string = ""): string =
     if parent == cur or parent.len == 0:
       break
     cur = parent
+
+  # Fallback to local uncommitted routes configuration file if base is not found
+  let localFallback = findLocalRoutesConfig("")
+  if localFallback.len > 0: return localFallback
   return ""
 
 # Lint YAML / JSON route configuration
@@ -318,18 +345,27 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
   # Optional live service check
   if checkService and errors.len == 0:
     var serviceUrl = "http://127.0.0.1:8000"
-    if root.hasKey("service") and root["service"].hasKey("url"):
-      serviceUrl = root["service"]["url"].getStr("http://127.0.0.1:8000")
-    serviceUrl = getEnv("RHIZO_SYSTEMONE_URL", getEnv("RHIZO_LAYA_URL", serviceUrl))
+    var apiKey = ""
+    if root.hasKey("service") and root["service"].kind == JObject:
+      serviceUrl = root["service"].getOrDefault("url").getStr(serviceUrl)
+      apiKey = root["service"].getOrDefault("api_key").getStr("")
+    let envUrl = getEnvFirst("RHIZO_SERVICE_URL", "RHIZO_SYSTEMONE_URL", "RHIZO_LAYA_URL", "SYSTEMONE_URL", "LAYA_URL")
+    if envUrl.len > 0: serviceUrl = envUrl
+    let envKey = getEnvFirst("RHIZO_API_KEY", "RHIZO_SYSTEMONE_API_KEY", "SYSTEMONE_API_KEY", "JEV_API_KEY")
+    if envKey.len > 0: apiKey = envKey
 
     var client = newHttpClient(timeout = 3000)
+    if apiKey.len > 0:
+      client.headers = newHttpHeaders({"Authorization": "Bearer " & apiKey})
     try:
       var resp = client.get(serviceUrl & "/healthz")
       if resp.code != Http200:
-        # Fallback to root or v1/models for Kev/Decider/Jev servers
-        resp = client.get(serviceUrl & "/")
-        if resp.code != Http200 and resp.code != Http404 and resp.code != Http405:
-          errors.add("System 1 service at " & serviceUrl & " returned HTTP " & $resp.code)
+        # Fallback to /v1/models or root for Kev/Decider/Jev servers
+        resp = client.get(serviceUrl & "/v1/models")
+        if resp.code != Http200:
+          resp = client.get(serviceUrl & "/")
+          if resp.code != Http200 and resp.code != Http404 and resp.code != Http405:
+            errors.add("System 1 service at " & serviceUrl & " returned HTTP " & $resp.code)
     except CatchableError as e:
       errors.add("Cannot connect to System 1 service at " & serviceUrl & ": " & e.msg)
     finally:
@@ -349,6 +385,7 @@ proc lintRoutesConfigFile*(filePath: string, checkService: bool = false): tuple[
 
 # Parse full configuration from YAML content
 proc parseRoutesConfig*(yamlContent: string, configPath: string = ""): RoutingConfig =
+  loadDotEnv()
   var doc: seq[JsonNode]
   try:
     var s = yamlContent
@@ -380,13 +417,13 @@ proc parseRoutesConfig*(yamlContent: string, configPath: string = ""): RoutingCo
         result.service.timeoutSeconds = float(sNode["timeout_seconds"].getInt())
 
   # Env overrides
-  let envUrl = getEnv("RHIZO_SYSTEMONE_URL", getEnv("RHIZO_LAYA_URL", ""))
+  let envUrl = getEnvFirst("RHIZO_SERVICE_URL", "RHIZO_SYSTEMONE_URL", "RHIZO_LAYA_URL", "SYSTEMONE_URL", "LAYA_URL")
   if envUrl.len > 0: result.service.url = envUrl
-  let envModel = getEnv("RHIZO_SYSTEMONE_MODEL", "")
+  let envModel = getEnvFirst("RHIZO_MODEL", "RHIZO_SYSTEMONE_MODEL", "SYSTEMONE_MODEL", "LAYA_MODEL")
   if envModel.len > 0: result.service.model = envModel
-  let envKey = getEnv("RHIZO_SYSTEMONE_API_KEY", "")
+  let envKey = getEnvFirst("RHIZO_API_KEY", "RHIZO_SYSTEMONE_API_KEY", "SYSTEMONE_API_KEY", "JEV_API_KEY")
   if envKey.len > 0: result.service.apiKey = envKey
-  let envTimeout = getEnv("RHIZO_ROUTE_TIMEOUT", "")
+  let envTimeout = getEnvFirst("RHIZO_ROUTE_TIMEOUT", "RHIZO_SYSTEMONE_TIMEOUT", "SYSTEMONE_TIMEOUT")
   if envTimeout.len > 0:
     try: result.service.timeoutSeconds = parseFloat(envTimeout)
     except ValueError: discard
@@ -473,6 +510,118 @@ proc parseRoutesConfig*(yamlContent: string, configPath: string = ""): RoutingCo
           for t in tNode["tags"]: rule.target.tags.add(t.getStr())
 
       result.routes.add(rule)
+
+# Merge uncommitted local route overrides onto base configuration
+proc mergeRoutingConfigs*(baseCfg: var RoutingConfig, localCfg: RoutingConfig) =
+  # Service overrides
+  let def = defaultServiceConfig()
+  if localCfg.service.url.len > 0 and localCfg.service.url != def.url:
+    baseCfg.service.url = localCfg.service.url
+  if localCfg.service.model.len > 0:
+    baseCfg.service.model = localCfg.service.model
+  if localCfg.service.apiKey.len > 0:
+    baseCfg.service.apiKey = localCfg.service.apiKey
+  if localCfg.service.timeoutSeconds != def.timeoutSeconds and localCfg.service.timeoutSeconds > 0:
+    baseCfg.service.timeoutSeconds = localCfg.service.timeoutSeconds
+
+  # Limits overrides
+  let defLim = defaultRoutingLimits()
+  if localCfg.limits.overflowStrategy != defLim.overflowStrategy:
+    baseCfg.limits.overflowStrategy = localCfg.limits.overflowStrategy
+  if localCfg.limits.chunkSize != defLim.chunkSize:
+    baseCfg.limits.chunkSize = localCfg.limits.chunkSize
+  if localCfg.limits.chunkOverlap != defLim.chunkOverlap:
+    baseCfg.limits.chunkOverlap = localCfg.limits.chunkOverlap
+  if localCfg.limits.maxChunks != defLim.maxChunks:
+    baseCfg.limits.maxChunks = localCfg.limits.maxChunks
+
+  # Questions overrides / additions
+  for qid, qc in localCfg.questions:
+    baseCfg.questions[qid] = qc
+
+  # Routes overrides / additions (prepend new rules so local rules match first)
+  for localRule in localCfg.routes:
+    var replaced = false
+    for i in 0 ..< baseCfg.routes.len:
+      if baseCfg.routes[i].name == localRule.name:
+        baseCfg.routes[i] = localRule
+        replaced = true
+        break
+    if not replaced:
+      baseCfg.routes.insert(localRule, 0)
+
+# Load effective configuration cascading across base file and local uncommitted overlay
+proc loadEffectiveRoutesConfig*(customPath: string = ""): RoutingConfig =
+  loadDotEnv()
+  if customPath.len > 0:
+    let p = findRoutesConfig(customPath)
+    return parseRoutesConfig(readFile(p), p)
+
+  let basePath = findRoutesConfig("")
+  let localPath = findLocalRoutesConfig(basePath)
+
+  if basePath.len > 0 and localPath.len > 0 and basePath != localPath:
+    var baseCfg = parseRoutesConfig(readFile(basePath), basePath)
+    let localCfg = parseRoutesConfig(readFile(localPath), localPath)
+    mergeRoutingConfigs(baseCfg, localCfg)
+    baseCfg.configPath = basePath & " (+ " & localPath.extractFilename & ")"
+    return baseCfg
+  elif basePath.len > 0:
+    return parseRoutesConfig(readFile(basePath), basePath)
+  elif localPath.len > 0:
+    return parseRoutesConfig(readFile(localPath), localPath)
+  else:
+    raise newException(IOError, "Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml). Specify --routes-file or initialize rhizo-routes.yaml.")
+
+# Lint effective routes configuration considering both base and local overlays
+proc lintEffectiveRoutesConfig*(customPath: string = "", checkService: bool = false): tuple[valid: bool, errors: seq[string], warnings: seq[string], pathDesc: string] =
+  loadDotEnv()
+  if customPath.len > 0:
+    let (v, e, w) = lintRoutesConfigFile(customPath, checkService)
+    return (v, e, w, customPath)
+
+  let basePath = findRoutesConfig("")
+  let localPath = findLocalRoutesConfig(basePath)
+
+  if basePath.len > 0 and localPath.len > 0 and basePath != localPath:
+    let (vBase, eBase, wBase) = lintRoutesConfigFile(basePath, checkService = false)
+    var allErrors = eBase
+    var allWarnings = wBase
+
+    try:
+      var baseCfg = parseRoutesConfig(readFile(basePath), basePath)
+      let localCfg = parseRoutesConfig(readFile(localPath), localPath)
+      mergeRoutingConfigs(baseCfg, localCfg)
+
+      if checkService:
+        var client = newHttpClient(timeout = 3000)
+        if baseCfg.service.apiKey.len > 0:
+          client.headers = newHttpHeaders({"Authorization": "Bearer " & baseCfg.service.apiKey})
+        try:
+          var resp = client.get(baseCfg.service.url & "/healthz")
+          if resp.code != Http200:
+            resp = client.get(baseCfg.service.url & "/v1/models")
+            if resp.code != Http200:
+              resp = client.get(baseCfg.service.url & "/")
+              if resp.code != Http200 and resp.code != Http404 and resp.code != Http405:
+                allErrors.add("System 1 service at " & baseCfg.service.url & " returned HTTP " & $resp.code)
+        except CatchableError as e:
+          allErrors.add("Cannot connect to System 1 service at " & baseCfg.service.url & ": " & e.msg)
+        finally:
+          client.close()
+    except CatchableError as e:
+      allErrors.add("Failed to merge local route overlay: " & e.msg)
+
+    let pathDesc = basePath & " (+ " & localPath.extractFilename & ")"
+    return (allErrors.len == 0 and vBase, allErrors, allWarnings, pathDesc)
+  elif basePath.len > 0:
+    let (v, e, w) = lintRoutesConfigFile(basePath, checkService)
+    return (v, e, w, basePath)
+  elif localPath.len > 0:
+    let (v, e, w) = lintRoutesConfigFile(localPath, checkService)
+    return (v, e, w, localPath)
+  else:
+    return (false, @["Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml)"], @[], "")
 
 # Split oversized input into chunks respecting limits
 proc splitIntoChunks*(text: string, limits: RoutingLimits): seq[string] =
@@ -826,8 +975,8 @@ proc evaluateRules*(rules: seq[RouteRule], answers: JsonNode, meta: JsonNode): R
   # Fail-Fast: Zero graceful degradation
   raise newException(ValueError, "No route rule matched Laya classification results: " & $answers)
 
-# Call Laya System 1 endpoint with strict timeout and diagnostics
-proc callLayaSystemOne*(
+# Call System 1 endpoint with strict timeout and diagnostics
+proc callSystemOne*(
   service: RoutingServiceConfig,
   stateText: string,
   questions: Table[string, QuestionConfig]
@@ -872,7 +1021,7 @@ proc callLayaSystemOne*(
     quit(1)
   except CatchableError as e:
     stderr.writeLine("Error: System 1 service is unreachable at " & endpoint & " (" & e.msg & ").")
-    stderr.writeLine("Start your System 1 service (Laya, Kev, Decider, or Ollaya) before routing tasks.")
+    stderr.writeLine("Start your System 1 service (Laya, Kev, Decider, Jev, or Ollama) before routing tasks.")
     quit(1)
   finally:
     client.close()
@@ -883,9 +1032,17 @@ proc callLayaSystemOne*(
       return parsed["answers"]
     return parsed
   except CatchableError as e:
-    stderr.writeLine("Error: Failed to parse Laya response JSON: " & e.msg)
+    stderr.writeLine("Error: Failed to parse System 1 response JSON: " & e.msg)
     stderr.writeLine("Raw response: " & respStr)
     quit(1)
+
+# Backwards compatible alias for callSystemOne
+proc callLayaSystemOne*(
+  service: RoutingServiceConfig,
+  stateText: string,
+  questions: Table[string, QuestionConfig]
+): JsonNode =
+  callSystemOne(service, stateText, questions)
 
 # Full end-to-end task routing pipeline
 proc routeTask*(cfg: RoutingConfig, text: string): RoutingDecision =
@@ -893,7 +1050,7 @@ proc routeTask*(cfg: RoutingConfig, text: string): RoutingDecision =
   var chunkResults: seq[JsonNode] = @[]
 
   for c in chunks:
-    let ans = callLayaSystemOne(cfg.service, c, cfg.questions)
+    let ans = callSystemOne(cfg.service, c, cfg.questions)
     chunkResults.add(ans)
 
   let (aggAnswers, meta) = aggregateChunkAnswers(chunkResults, cfg.questions)

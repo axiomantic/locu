@@ -7,3 +7,13 @@ bin/*
 .locutus.agent
 *.egg-info/
 uv.lock
+
+# Environment secrets and uncommitted local configurations
+.env
+.env.*
+!.env.example
+*.local.toml
+*.local.yaml
+*.local.yml
+*.local.json
+.rhizo.local.*

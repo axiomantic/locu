@@ -3,7 +3,7 @@
 # Handles cascading resolution across CLI flags, env vars, workspace TOML,
 # user config, system config, defaults, and named profiles.
 
-import std/[os, strutils, tables, json, options, uri]
+import std/[os, strutils, tables, json, options, uri, sets]
 
 # Universal Redis / Valkey URL parser
 proc parseRedisUrl*(rawUrl: string): tuple[host: string, port: int, password: string, db: int, tls: bool] =
@@ -55,6 +55,7 @@ type
     srcSystemFile,
     srcUserFile,
     srcWorkspaceFile,
+    srcWorkspaceLocalFile,
     srcCustomFile,
     srcEnv,
     srcCli
@@ -90,16 +91,20 @@ proc sourceLabel*(s: SettingSource): string =
   of srcSystemFile: "system config"
   of srcUserFile: "user config"
   of srcWorkspaceFile: "workspace config"
+  of srcWorkspaceLocalFile: "local workspace config"
   of srcCustomFile: "custom file"
   of srcEnv: "environment"
   of srcCli: "cli flag"
 
-# Strip surrounding single or double quotes
+# Strip surrounding single or double quotes and unescape
 proc unquote*(s: string): string =
   let t = s.strip()
   if (t.startsWith("\"") and t.endsWith("\"")) or (t.startsWith("'") and t.endsWith("'")):
     if t.len >= 2:
-      return t[1 .. ^2]
+      var inner = t[1 .. ^2]
+      if t.startsWith("\""):
+        inner = inner.replace("\\n", "\n").replace("\\t", "\t").replace("\\\"", "\"").replace("\\\\", "\\")
+      return inner
   return t
 
 # Expand tilde in path
@@ -139,11 +144,34 @@ proc getUserConfigPath*(): string =
     if fileExists(rXdg): return rXdg
     return getEnv("XDG_CONFIG_HOME", getHomeDir() / ".config") / "locutus" / "config.toml"
 
+# Find the workspace or project directory containing configs or git root
+proc findWorkspaceDir*(startDir: string = getCurrentDir()): string =
+  var cur = startDir
+  while true:
+    for candidate in [".rhizo.local.toml", "rhizo.local.toml", ".rhizo.toml", "rhizo.toml",
+                      ".locutus.local.toml", "locutus.local.toml", ".locutus.toml", "locutus.toml",
+                      ".rhizo.local.json", "rhizo.local.json", ".rhizo.json", ".locutus.json",
+                      ".env.local", ".env", "rhizo-routes.yaml", "rhizo-routes.local.yaml",
+                      "locu-routes.yaml", "locu-routes.local.yaml", "AGENTS.md"]:
+      let p = cur / candidate
+      if fileExists(p):
+        return cur
+    if dirExists(cur / ".git") or fileExists(cur / ".git"):
+      return cur
+    let parent = cur.parentDir()
+    if parent == cur or parent.len == 0:
+      break
+    cur = parent
+  return startDir
+
 # Walk up from current directory to find workspace configuration or git root
 proc findWorkspaceConfigPath*(startDir: string = getCurrentDir()): string =
   var cur = startDir
   while true:
-    for candidate in [".rhizo.toml", "rhizo.toml", ".locutus.toml", "locutus.toml", ".rhizo.json", ".locutus.json", ".env", "AGENTS.md"]:
+    for candidate in [".rhizo.toml", "rhizo.toml", ".locutus.toml", "locutus.toml",
+                      ".rhizo.json", ".locutus.json", ".rhizo.local.toml", "rhizo.local.toml",
+                      ".locutus.local.toml", "locutus.local.toml", ".rhizo.local.json", "rhizo.local.json",
+                      ".env", "AGENTS.md"]:
       let p = cur / candidate
       if fileExists(p):
         return p
@@ -154,6 +182,16 @@ proc findWorkspaceConfigPath*(startDir: string = getCurrentDir()): string =
     if parent == cur or parent.len == 0:
       break
     cur = parent
+  return ""
+
+# Find uncommitted local workspace configuration file if present
+proc findWorkspaceLocalConfigPath*(wsConfigPath: string = "", startDir: string = getCurrentDir()): string =
+  let dir = if wsConfigPath.len > 0: wsConfigPath.splitPath.head else: findWorkspaceDir(startDir)
+  for candidate in [".rhizo.local.toml", "rhizo.local.toml", ".locutus.local.toml", "locutus.local.toml",
+                    ".rhizo.local.json", "rhizo.local.json"]:
+    let p = dir / candidate
+    if fileExists(p):
+      return p
   return ""
 
 # Lightweight TOML parser supporting sections, key-value strings, ints, bools
@@ -197,14 +235,53 @@ proc parseSimpleToml*(content: string): TomlTable =
 
 proc parseSimpleEnv*(content: string): Table[string, string] =
   result = initTable[string, string]()
-  for line in content.splitLines():
-    let s = line.strip()
-    if s.len == 0 or s.startsWith("#"): continue
+  for rawLine in content.splitLines():
+    var s = rawLine.strip()
+    if s.len == 0 or s.startsWith("#") or s.startsWith(";"): continue
+    if s.startsWith("export "):
+      s = s[7..^1].strip()
     let eqIdx = s.find('=')
     if eqIdx > 0:
       let k = s[0 ..< eqIdx].strip()
-      let v = s[eqIdx + 1 .. ^1].strip().unquote()
+      var v = s[eqIdx + 1 .. ^1].strip()
+      if (v.startsWith("\"") and v.endsWith("\"")) or (v.startsWith("'") and v.endsWith("'")):
+        v = unquote(v)
+      else:
+        let hashIdx = v.find('#')
+        if hashIdx >= 0:
+          v = v[0 ..< hashIdx].strip()
+        v = unquote(v)
       result[k] = v
+
+var gInitialEnvKeys: HashSet[string] = initHashSet[string]()
+var gDotEnvLoaded* = false
+
+proc initInitialEnvKeys*() =
+  if gInitialEnvKeys.len == 0:
+    for pair in envPairs():
+      gInitialEnvKeys.incl(pair.key)
+
+proc loadDotEnvFile*(path: string) =
+  if not fileExists(path): return
+  initInitialEnvKeys()
+  try:
+    let content = readFile(path)
+    let dict = parseSimpleEnv(content)
+    for k, v in dict:
+      if k notin gInitialEnvKeys:
+        putEnv(k, v)
+  except CatchableError:
+    discard
+
+proc loadDotEnv*(startDir: string = getCurrentDir()) =
+  let wsDir = findWorkspaceDir(startDir)
+  # Precedence cascade: .env -> .rhizo.env -> .env.local -> .rhizo.env.local
+  # Later files override earlier files for variables not locked by initial system environment.
+  for cand in [".env", ".rhizo.env", ".env.local", ".rhizo.env.local"]:
+    let p = wsDir / cand
+    if fileExists(p):
+      loadDotEnvFile(p)
+  gDotEnvLoaded = true
 
 proc parseAgentsMd*(content: string): Table[string, string] =
   result = initTable[string, string]()
@@ -360,6 +437,9 @@ proc getEnvFirst*(keys: varargs[string]): string =
   return ""
 
 proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): RhizoConfig =
+  # Step 0: Pre-load .env and .env.local into process environment
+  loadDotEnv()
+
   # Step 1: Initialize with default values
   let defProject = getCurrentDir().splitPath.tail
   result = RhizoConfig(
@@ -413,6 +493,11 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): RhizoConfig =
   if wsPath.len > 0 and fileExists(wsPath):
     loadConfigFile(result, wsPath, srcWorkspaceFile, targetProfile)
 
+  # Step 4b: Workspace Local Configuration Override (.rhizo.local.toml, etc.)
+  let wsLocalPath = findWorkspaceLocalConfigPath(wsPath)
+  if wsLocalPath.len > 0 and fileExists(wsLocalPath) and wsLocalPath != wsPath:
+    loadConfigFile(result, wsLocalPath, srcWorkspaceLocalFile, targetProfile)
+
   # Step 5: Custom Config File Override (if provided via CLI or RHIZO_CONFIG / LOCUTUS_CONFIG)
   var customPath = cli.configFile
   if customPath.len == 0:
@@ -430,10 +515,10 @@ proc resolveFullConfig*(cli: CliOverrides = CliOverrides()): RhizoConfig =
     result.redisUrl = envRedisUrl
     result.provenance["redis_url"] = ProvenanceEntry(key: "redis_url", value: envRedisUrl, source: srcEnv, detail: "RHIZO_REDIS_URL / LOCUTUS_REDIS_URL / VALKEY_URL / REDIS_URL")
 
-  let envPrefix = getEnvFirst("RHIZO_REDIS_PREFIX", "LOCUTUS_REDIS_PREFIX", "A2A_REDIS_PREFIX")
+  let envPrefix = getEnvFirst("RHIZO_REDIS_PREFIX", "RHIZO_PREFIX", "LOCUTUS_REDIS_PREFIX", "LOCUTUS_PREFIX", "A2A_REDIS_PREFIX")
   if envPrefix.len > 0:
     result.prefix = envPrefix
-    result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: envPrefix, source: srcEnv, detail: "RHIZO_REDIS_PREFIX / LOCUTUS_REDIS_PREFIX")
+    result.provenance["prefix"] = ProvenanceEntry(key: "prefix", value: envPrefix, source: srcEnv, detail: "RHIZO_REDIS_PREFIX / RHIZO_PREFIX")
 
   let envProject = getEnvFirst("RHIZO_PROJECT", "LOCUTUS_PROJECT", "A2A_PROJECT")
   if envProject.len > 0:

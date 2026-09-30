@@ -300,3 +300,49 @@ suite "Rule Matching & Interpolation":
     }
     expect(CatchableError):
       discard evaluateRules(@[rule], answers, %*{})
+
+suite "Local Route Config Overlays":
+  test "mergeRoutingConfigs overlays service url, model, api key and prepends routes":
+    let baseYaml = """
+version: "1.0"
+service:
+  url: "http://127.0.0.1:8000"
+  timeout_seconds: 5.0
+questions:
+  domain:
+    type: choice
+    instructions: "Which domain?"
+    options: ["database", "api"]
+routes:
+  - name: "base-db"
+    match:
+      domain.choice: "database"
+    target:
+      queue: "queue:swarm:database"
+"""
+    let localYaml = """
+service:
+  url: "https://api.typesafe.ai"
+  model: "jev-2"
+  api_key: "jev-secret-xyz"
+  timeout_seconds: 8.0
+routes:
+  - name: "local-override"
+    match:
+      domain.choice: "api"
+    target:
+      queue: "queue:worker:local-agent"
+"""
+    var baseCfg = parseRoutesConfig(baseYaml)
+    let localCfg = parseRoutesConfig(localYaml)
+    mergeRoutingConfigs(baseCfg, localCfg)
+
+    check baseCfg.service.url == "https://api.typesafe.ai"
+    check baseCfg.service.model == "jev-2"
+    check baseCfg.service.apiKey == "jev-secret-xyz"
+    check baseCfg.service.timeoutSeconds == 8.0
+    check baseCfg.questions.hasKey("domain")
+    check baseCfg.routes.len == 2
+    check baseCfg.routes[0].name == "local-override"
+    check baseCfg.routes[1].name == "base-db"
+
