@@ -6,8 +6,8 @@ Architectures: amd64 arm64
 Components: main
 Description: Axiomantic Locutus Debian/Ubuntu APT Repository
 MD5Sum:
- c1f0faa353bf0265144e5e6b0be3ecef 1164 Packages
- 359dc68b7084359ae7400d221d1a691a 523 Packages.gz
+ da4d0fa3050db1892f8fe1ca1d7d8b67 1164 Packages
+ 51d2f188bb1b235b455a7090d55424cf 523 Packages.gz
 SHA256:
- b6f23ad5d228271a0e26e9f4bed8b428f1fc94dc9ce4b432094a2b62b59efc4c 1164 Packages
- bef0e4ba8884e8b1fc0e09a71a068f8b42d5c7338cac7267a85b2b0517918d44 523 Packages.gz
+ 738a3ac9f2ccb023c265a591c877e2d3d4f99512beaab48d57721347b441b560 1164 Packages
+ 398a4b7fe4a0561e3fb8964d5cf019dce2f29f2bb2fbf7c9141fdd3dc9e3b305 523 Packages.gz
