@@ -4,13 +4,23 @@ import subprocess
 import unittest
 import redis
 
-REDIS_URL = os.environ.get("RHIZO_REDIS_URL", "redis://127.0.0.1:6379")
-BIN_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "rhizo"))
+import sys
+
+REDIS_URL = os.environ.get("RHIZO_REDIS_URL", os.environ.get("LOCUTUS_REDIS_URL", "redis://127.0.0.1:6379"))
+if sys.platform == "win32":
+    BIN_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "rhizo.exe"))
+    if not os.path.isfile(BIN_PATH):
+        BIN_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "locutus.exe"))
+else:
+    BIN_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "rhizo"))
+    if not os.path.isfile(BIN_PATH):
+        BIN_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "locutus"))
+
 TEST_PREFIX = "test_rhizo_name:"
 
 class TestRhizoNameReservation(unittest.TestCase):
     def setUp(self):
-        self.r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        self.r = redis.Redis.from_url(REDIS_URL, decode_responses=True, protocol=2)
         res = self.run_rhizo(["nuke"])
         self.assertEqual(res.returncode, 0, f"Nuke failed in setUp: {res.stderr}")
 
