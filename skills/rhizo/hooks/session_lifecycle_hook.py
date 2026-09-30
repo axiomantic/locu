@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-session_lifecycle_hook.py - SessionStart & SessionEnd Lifecycle Hook for Locutus.
+session_lifecycle_hook.py - SessionStart & SessionEnd Lifecycle Hook for Rhizo.
 
-Automatically registers sessions on the Locutus bus on startup/resume,
+Automatically registers sessions on the Rhizo bus on startup/resume,
 and cleanly unregisters and releases locks when the session ends.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 # Add hooks directory to path for hook_utils
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hook_utils import (
-    find_locutus_bin,
+    find_rhizo_bin,
     resolve_agent_name,
     save_session_mapping,
     remove_session_mapping,
@@ -31,7 +31,7 @@ def detect_runtime(payload: dict) -> str:
 
 
 def handle_session_start(payload: dict, runtime: str):
-    locutus_bin = find_locutus_bin()
+    rhizo_bin = find_rhizo_bin()
     session_id = payload.get("session_id") or payload.get("conversationId") or ""
     if not session_id:
         print("{}")
@@ -48,10 +48,10 @@ def handle_session_start(payload: dict, runtime: str):
     # Save session mapping locally
     save_session_mapping(session_key, agent_name)
 
-    # Register with locutus open
+    # Register with rhizo open
     try:
         subprocess.run(
-            [locutus_bin, "open", agent_name, "--session-id", session_key],
+            [rhizo_bin, "open", agent_name, "--session-id", session_key],
             capture_output=True,
             text=True,
             timeout=5,
@@ -59,7 +59,7 @@ def handle_session_start(payload: dict, runtime: str):
     except Exception:
         pass
 
-    notice = f"[LOCUTUS BUS] Session active on bus as '@{agent_name}'. Run 'locutus who' to discover peers, or 'locutus send' to message them."
+    notice = f"[RHIZO BUS] Session active on bus as '@{agent_name}'. Run 'rhizo who' to discover peers, or 'rhizo send' to message them."
     output = {
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
@@ -70,7 +70,7 @@ def handle_session_start(payload: dict, runtime: str):
 
 
 def handle_session_end(payload: dict, runtime: str):
-    locutus_bin = find_locutus_bin()
+    rhizo_bin = find_rhizo_bin()
     session_id = payload.get("session_id") or payload.get("conversationId") or ""
     if not session_id:
         print("{}")
@@ -82,7 +82,7 @@ def handle_session_end(payload: dict, runtime: str):
     if agent_name:
         try:
             subprocess.run(
-                [locutus_bin, "close", agent_name, "--session-id", session_key],
+                [rhizo_bin, "close", agent_name, "--session-id", session_key],
                 capture_output=True,
                 text=True,
                 timeout=5,

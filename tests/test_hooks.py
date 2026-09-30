@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test_hooks.py - Unit and integration tests for Locutus lifecycle hooks.
+test_hooks.py - Unit and integration tests for Rhizo lifecycle hooks.
 Tests claude_stop_hook.py, codex_stop_hook.py, agy_stop_hook.py, and session_lifecycle_hook.py.
 """
 
@@ -13,21 +13,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = REPO_ROOT / "skills" / "rhizo" / "hooks"
-BIN_LOCUTUS = REPO_ROOT / "bin" / ("rhizo.exe" if sys.platform == "win32" or (REPO_ROOT / "bin" / "rhizo.exe").exists() else "rhizo")
+BIN_RHIZO = REPO_ROOT / "bin" / ("rhizo.exe" if sys.platform == "win32" or (REPO_ROOT / "bin" / "rhizo.exe").exists() else "rhizo")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
-TEST_PREFIX = "test_locutus_hooks:"
+TEST_PREFIX = "test_rhizo_hooks:"
 
 
-class TestLocutusHooks(unittest.TestCase):
+class TestRhizoHooks(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.env = os.environ.copy()
-        cls.env["LOCUTUS_BIN"] = str(BIN_LOCUTUS)
-        cls.env["RHIZO_BIN"] = str(BIN_LOCUTUS)
+        cls.env["RHIZO_BIN"] = str(BIN_RHIZO)
         cls.env["REDIS_URL"] = REDIS_URL
-        cls.env["LOCUTUS_REDIS_PREFIX"] = TEST_PREFIX
         cls.env["RHIZO_REDIS_PREFIX"] = TEST_PREFIX
-        cls.env["LOCUTUS_SECRET"] = "test-secret-key-32-chars-long!!"
         cls.env["RHIZO_SECRET"] = "test-secret-key-32-chars-long!!"
 
     def run_hook(self, script_name: str, stdin_payload: dict, extra_args: list = None, env_overrides: dict = None) -> tuple[int, dict]:
@@ -59,7 +56,7 @@ class TestLocutusHooks(unittest.TestCase):
         inbox_key = f"{TEST_PREFIX}inbox:{agent}"
         subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
 
-        env_overrides = {"LOCUTUS_AGENT_NAME": agent}
+        env_overrides = {"RHIZO_AGENT_NAME": agent}
 
         try:
             # 1. Empty inbox: returns empty object
@@ -68,7 +65,7 @@ class TestLocutusHooks(unittest.TestCase):
 
             # 2. Send message
             subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "send", "--to", agent, "--from", "alice",
                 "--subject", "Review Request", "--body", "Please review PR 99",
                 "--urgency=soon"
@@ -77,10 +74,10 @@ class TestLocutusHooks(unittest.TestCase):
             # 3. Non-empty inbox: returns block decision with additionalContext
             code, out = self.run_hook("claude_stop_hook.py", {"session_id": "ses_123"}, env_overrides=env_overrides)
             self.assertEqual(out.get("decision"), "block")
-            self.assertTrue("1 new Rhizo bus message" in out.get("reason", "") or "1 new Locutus bus message" in out.get("reason", ""))
+            self.assertTrue("1 new Rhizo bus message" in out.get("reason", ""))
             hook_out = out.get("hookSpecificOutput", {})
             self.assertEqual(hook_out.get("hookEventName"), "Stop")
-            self.assertTrue("[RHIZO BUS]" in hook_out.get("additionalContext", "") or "[LOCUTUS BUS]" in hook_out.get("additionalContext", ""))
+            self.assertTrue("[RHIZO BUS]" in hook_out.get("additionalContext", ""))
             self.assertIn("Please review PR 99", hook_out.get("additionalContext", ""))
 
             # 4. Subsequent check is now empty
@@ -94,7 +91,7 @@ class TestLocutusHooks(unittest.TestCase):
         inbox_key = f"{TEST_PREFIX}inbox:{agent}"
         subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
 
-        env_overrides = {"RHIZO_AGENT_NAME": agent, "LOCUTUS_AGENT_NAME": agent}
+        env_overrides = {"RHIZO_AGENT_NAME": agent}
 
         try:
             # 1. Empty inbox: returns empty object
@@ -103,7 +100,7 @@ class TestLocutusHooks(unittest.TestCase):
 
             # 2. Send message
             subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "send", "--to", agent, "--from", "lead_dev",
                 "--subject", "Deploy Staging", "--body", "Run deploy script now",
                 "--immediate"
@@ -113,7 +110,7 @@ class TestLocutusHooks(unittest.TestCase):
             code, out = self.run_hook("codex_stop_hook.py", {"session_id": "codex_ses_456", "turn_id": "t1"}, env_overrides=env_overrides)
             self.assertEqual(out.get("decision"), "block")
             reason_text = out.get("reason", "")
-            self.assertTrue("[RHIZO BUS]" in reason_text or "[LOCUTUS BUS]" in reason_text)
+            self.assertTrue("[RHIZO BUS]" in reason_text)
             self.assertIn("Deploy Staging", reason_text)
             self.assertIn("Run deploy script now", reason_text)
             self.assertIn("urgency: immediate", reason_text)
@@ -125,7 +122,7 @@ class TestLocutusHooks(unittest.TestCase):
         inbox_key = f"{TEST_PREFIX}inbox:{agent}"
         subprocess.run(["redis-cli", "-u", REDIS_URL, "DEL", inbox_key], capture_output=True)
 
-        env_overrides = {"LOCUTUS_AGENT_NAME": agent}
+        env_overrides = {"RHIZO_AGENT_NAME": agent}
 
         try:
             # 1. Empty inbox: returns empty object
@@ -134,7 +131,7 @@ class TestLocutusHooks(unittest.TestCase):
 
             # 2. Send message
             subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "send", "--to", agent, "--from", "qa_bot",
                 "--subject", "Tests Complete", "--body", "All 50 unit tests passed",
             ], check=True, env=self.env)
@@ -150,7 +147,7 @@ class TestLocutusHooks(unittest.TestCase):
     def test_session_lifecycle_hook(self):
         sid = "lifecycle_test_session"
         agent = "test_lifecycle_agent"
-        env_overrides = {"LOCUTUS_AGENT_NAME": agent}
+        env_overrides = {"RHIZO_AGENT_NAME": agent}
 
         # 1. SessionStart registers agent
         code, out = self.run_hook(
@@ -183,7 +180,7 @@ class TestLocutusHooks(unittest.TestCase):
         for harness_name, session_key, agent_name in harnesses:
             # 1. Set session mapping via CLI
             res_set = subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "session", "set", session_key, agent_name
             ], capture_output=True, text=True, env=self.env)
             self.assertEqual(res_set.returncode, 0, f"session set failed for {session_key}: {res_set.stderr}")
@@ -191,29 +188,27 @@ class TestLocutusHooks(unittest.TestCase):
 
             # 2. Get session mapping via CLI
             res_get = subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "session", "get", session_key
             ], capture_output=True, text=True, env=self.env)
             self.assertEqual(res_get.returncode, 0)
             self.assertEqual(res_get.stdout.strip(), agent_name)
 
-            # 3. Verify CLI commands inherit agent identity when LOCUTUS_SESSION_ID is set
+            # 3. Verify CLI commands inherit agent identity when RHIZO_SESSION_ID is set
             recipient = f"recip_{harness_name}"
             test_env = self.env.copy()
-            test_env["LOCUTUS_SESSION_ID"] = session_key
             test_env["RHIZO_SESSION_ID"] = session_key
-            test_env.pop("LOCUTUS_AGENT_NAME", None)
             test_env.pop("RHIZO_AGENT_NAME", None)
 
             res_send = subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "send", "--to", recipient, "--subject", f"From {harness_name}", "--body", "Payload content"
             ], capture_output=True, text=True, env=test_env)
             self.assertEqual(res_send.returncode, 0, f"send with session {session_key} failed: {res_send.stderr}")
 
             # Verify message envelope sender in Redis
             res_drain = subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "drain", "1", recipient, "--json"
             ], capture_output=True, text=True, env=self.env)
             self.assertEqual(res_drain.returncode, 0)
@@ -222,7 +217,7 @@ class TestLocutusHooks(unittest.TestCase):
 
             # 4. Remove session mapping
             res_rm = subprocess.run([
-                str(BIN_LOCUTUS), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
+                str(BIN_RHIZO), "--redis-url", REDIS_URL, "--prefix", TEST_PREFIX,
                 "session", "remove", session_key
             ], capture_output=True, text=True, env=self.env)
             self.assertEqual(res_rm.returncode, 0)

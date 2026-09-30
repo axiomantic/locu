@@ -79,7 +79,7 @@ const
   sweepLua*      = staticRead("../scripts/sweep.lua")
   reserveNameLua* = staticRead("../scripts/reserve_name.lua")
   resetLua*      = staticRead("../scripts/reset.lua")
-  LocutusVersion* = "0.1.10"
+  RhizoVersion*  = "0.1.11"
 
 # Cryptographic Helpers
 proc computeSha1*(text: string): string =
@@ -584,7 +584,7 @@ proc removeRedisSessionMapping*(cfg: RhizoConfig, sessionKey: string, agentName:
 
 # Agent Identity Persistence (User-level fallback for plain shell invocations)
 # Note: Workspace-scoped .rhizo.agent is intentionally forbidden to prevent
-# tying directories 1:1 to Locutus sessions. Identity is strictly scoped to the process
+# tying directories 1:1 to Rhizo sessions. Identity is strictly scoped to the process
 # environment (RHIZO_AGENT_NAME), the harness session ID, or user fallback.
 proc currentAgentPath*(): string =
   getHomeDir() / ".config" / "rhizo" / "current_agent"
@@ -860,18 +860,17 @@ proc doUnregister*(cfg: RhizoConfig, name: string): string =
   return runLuaScript(cfg.redisUrl, unregisterLua, unregisterSha, [cfg.prefix, name])
 
 proc cleanupOldTmpFiles*() =
-  for sub in ["rhizo", "locutus"]:
-    let tmpDir = getHomeDir() / ".config" / sub / "tmp"
-    if dirExists(tmpDir):
-      let nowUnix = getTime().toUnix()
-      for kind, path in walkDir(tmpDir):
-        if kind == pcFile and path.endsWith(".tmp"):
-          try:
-            let info = getFileInfo(path)
-            if nowUnix - info.lastWriteTime.toUnix() > 3600:
-              removeFile(path)
-          except OSError:
-            discard
+  let tmpDir = getHomeDir() / ".config" / "rhizo" / "tmp"
+  if dirExists(tmpDir):
+    let nowUnix = getTime().toUnix()
+    for kind, path in walkDir(tmpDir):
+      if kind == pcFile and path.endsWith(".tmp"):
+        try:
+          let info = getFileInfo(path)
+          if nowUnix - info.lastWriteTime.toUnix() > 3600:
+            removeFile(path)
+        except OSError:
+          discard
 
 proc buildShutdownPayload*(reason: string = "bus shutdown"): string =
   var node = newJObject()
@@ -1236,7 +1235,7 @@ proc sendDesktopNotification*(msgNode: JsonNode) =
     let body = msgNode.getOrDefault("body").getStr("")
     let urgency = msgNode.getOrDefault("urgency").getStr("soon")
     let prefix = if urgency == "immediate": "[URGENT] " else: ""
-    let title = "Locutus: " & prefix & "@" & fromAgent
+    let title = "Rhizo: " & prefix & "@" & fromAgent
     let fullText = if subject.len > 0: subject & ": " & body else: body
     let displayBody = if fullText.len > 140: fullText[0..136] & "..." else: fullText
 
@@ -2817,11 +2816,11 @@ proc main() =
   var args = positionalArgs
 
   if "-v" in rawArgs or "--version" in rawArgs or (args.len > 0 and args[0].toLowerAscii == "version"):
-    echo "rhizo " & LocutusVersion
+    echo "rhizo " & RhizoVersion
     return
 
   if args.len == 0 or args[0] in ["-h", "--help", "help"]:
-    echo "Rhizo (formerly Locu) " & LocutusVersion & " - High Performance Inter-Assistant Redis Bus (Nim Native)"
+    echo "Rhizo " & RhizoVersion & " - High Performance Inter-Assistant Redis Bus (Nim Native)"
     echo "Usage:"
     echo "  rhizo version"
     echo "  rhizo name [prefix] [--ttl <sec>] [--json]"
@@ -2836,6 +2835,7 @@ proc main() =
     echo "  rhizo enqueue --route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]"
     echo "  rhizo route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]"
     echo "  rhizo route <lint|check> [--routes-file <file>] [--check-service]"
+    echo "  rhizo route init [--global] [--force]"
     echo "  rhizo work <queue_name> [--timeout <sec>] [--run-id <id>] (default timeout: 0 / infinite)"
     echo "  rhizo claim <queue_name> [--timeout <sec>] [--lease 120] [--run-id <id>] [--raw]"
     echo "  rhizo ack <queue_name> <task_id>"
@@ -3706,10 +3706,11 @@ proc main() =
 
   of "route":
     if args.len < 2:
-      stderr.writeLine("Error: Missing task text or sub-command (lint / check).")
+      stderr.writeLine("Error: Missing task text or sub-command (init / lint / check).")
       stderr.writeLine("Usage:")
       stderr.writeLine("  rhizo route <task_text> [--routes-file <file>] [--service-url <url>] [--model <model>] [--api-key <key>]")
       stderr.writeLine("  rhizo route lint [--routes-file <file>] [--check-service]")
+      stderr.writeLine("  rhizo route init [--global] [--force]")
       quit(1)
 
     var routesFilePath = ""
@@ -3719,6 +3720,9 @@ proc main() =
     var routeTimeout = ""
     var checkService = false
     var isLint = false
+    var isInit = false
+    var isGlobal = false
+    var forceOverwrite = false
     var taskText = ""
 
     var i = 1
@@ -3726,6 +3730,12 @@ proc main() =
       let a = args[i]
       if a in ["lint", "check"]:
         isLint = true
+      elif a in ["init", "scaffold"]:
+        isInit = true
+      elif a in ["--global", "-g"]:
+        isGlobal = true
+      elif a in ["--force", "-f"]:
+        forceOverwrite = true
       elif a in ["--check-service", "--check_service", "--ping"]:
         checkService = true
       elif a.startsWith("--routes-file="): routesFilePath = a[14..^1]
@@ -3756,6 +3766,26 @@ proc main() =
         if taskText.len == 0: taskText = a
         else: taskText.add(" " & a)
       inc i
+
+    if isInit:
+      let targetFile = if isGlobal:
+        getHomeDir() / ".config" / "rhizo" / "routes.yaml"
+      else:
+        getCurrentDir() / "rhizo-routes.yaml"
+
+      let targetDir = targetFile.splitPath.head
+      if fileExists(targetFile) and not forceOverwrite:
+        echo "Notice: Route configuration already exists at: " & targetFile
+        echo "Use --force to overwrite."
+        quit(0)
+
+      createDir(targetDir)
+      writeFile(targetFile, StarterRouteTemplate)
+      echo "✓ Initialized route configuration at: " & targetFile
+      echo "  Scope: " & (if isGlobal: "Global user fallback (~/.config/rhizo/routes.yaml)" else: "Project root (./rhizo-routes.yaml)")
+      echo "  Note: System 1 routing is optional. Core queueing, messaging, and locking operate directly over Redis."
+      echo "  Verify configuration: rhizo route lint --check-service"
+      quit(0)
 
     if isLint:
       let (valid, errors, warnings, pathDesc) = lintEffectiveRoutesConfig(routesFilePath, checkService = checkService)

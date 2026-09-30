@@ -29,6 +29,7 @@
 - [Multi-Agent Playbooks & Recipes](#multi-agent-playbooks--recipes)
 - [How it Works with Redis](#how-it-works-with-redis)
   - [Comparison](#comparison)
+- [Task Routing & Optional System 1](#task-routing--optional-system-1-decision-engine)
 - [How Messages Flow](#how-messages-flow)
 - [Installation & Setup](#installation--setup)
   - [Option 1: Unified One-Line Installer (Recommended)](#option-1-unified-one-line-installer-recommended)
@@ -154,6 +155,7 @@ Rhizo extends point-to-point and group messaging with dedicated primitives desig
 | **DAG Workflow Engine** | Multi-stage pipeline graph with automatic dependency unlocking | `rhizo workflow <define\|next\|resolve\|export\|import>` | [Recipe 12](#12-dag-based-multi-stage-workflow-pipeline) |
 | **Cluster Health Sweeper** | Cursor-based SCAN watchdog pruning dead agents & stale listeners | `rhizo sweep [--dry-run] [--raw]` | [Recipe 13](#13-cluster-health-sweeping--self-healing-watchdog) |
 | **Fencing Tokens** | Monotonic integer sequence counter preventing zombie writes | `rhizo lock <resource> 60 --fencing` | [Recipe 14](#14-distributed-locking-with-monotonic-fencing-tokens) |
+| **Semantic Task Routing** | Zero-shot task classification into queues (<40ms) via ModernBERT/Laya | `rhizo enqueue --route "<task>"` | [Recipe 15](#15-semantic-task-routing-with-optional-system-1) |
 | **Pub/Sub Streaming** | Real-time ephemeral broadcast streaming without queue memory | `rhizo pub <channel> "..."` / `rhizo sub <channel>` | [CLI Reference](#2-cli-command-reference) |
 
 ---
@@ -368,6 +370,28 @@ fence_token=$(rhizo lock db_migration 60 --fencing --raw)
 rhizo unlock db_migration
 ```
 
+### 15. Semantic Task Routing with Optional System 1
+Classify unstructured natural language tasks directly into typed worker queues without LLM decoding delays:
+```bash
+# 1. Enqueue task via System 1 triage (evaluates rules and pushes to queue):
+rhizo enqueue --route "Investigate PostgreSQL deadlock during migration"
+
+# 2. Or test dry-run routing decision with full provenance:
+rhizo route "Investigate PostgreSQL deadlock during migration"
+# => Routing Decision:
+#    Target Queue: queue:swarm:database
+#    Confidence:   0.94
+#    Evaluator:    local-systemone (http://127.0.0.1:8100)
+
+# 3. Initialize global routing rules that apply across all projects:
+rhizo route init --global
+# => Created ~/.config/rhizo/rhizo-routes.yaml (all projects inherit these rules)
+
+# 4. Or scaffold project-specific routes (layers on top of global):
+rhizo route init
+# => Created ./rhizo-routes.yaml
+```
+
 ---
 
 ## How it Works with Redis
@@ -413,6 +437,42 @@ Rhizo requires:
 | ❌ High memory usage and slow startup | ⚡ **Fast and lightweight**: Single small native binary with instant startup |
 | ❌ Vulnerable to prompt injection from untrusted messages | ⚡ **Built-in Authentication**: Drops unauthenticated or tampered messages automatically |
 | ❌ Idle listeners consume continuous AI tokens | ⚡ **Zero-token idle**: Blocking wait consumes 0 AI tokens while waiting for work |
+
+---
+
+## Task Routing & Optional System 1 Decision Engine
+
+> [!NOTE]
+> **System 1 Routing is strictly OPTIONAL.**
+> All core Rhizo coordination (messaging `rhizo open/send/listen`, distributed locking `rhizo lock --fencing`, explicit task queues `rhizo enqueue <queue>`, roundtable floor control, consensus ballots, and leader election) operates directly over Redis and requires **zero ML models, zero Python runtimes, and zero configuration files**.
+
+When you have a high-throughput stream of raw, untyped natural language tasks (e.g. from Jira, Slack, or user prompts) and want zero-shot classification into typed queues without generative LLM decoding delays:
+* **Explicit Queueing (Default)**: Route deterministically without models: `rhizo enqueue queue:worker:claude "Fix button CSS"`.
+* **Semantic Triage (Optional)**: Route via local ModernBERT/Laya (<40ms): `rhizo enqueue --route "Fix button CSS"`.
+
+### Cascading Routing Hierarchy & Scaffolding
+When using semantic routing (`--route`), Rhizo resolves rules in a cascading hierarchy where more specific scopes override broader ones:
+1. **Built-in Baseline**: Zero config needed; automatically classifies into standard domains (`backend`, `frontend`, `database`, `devops`, `firmware`, `docs`) routing to `queue:swarm:{{ domain.choice }}`.
+2. **Global User Config**: `~/.config/rhizo/routes.yaml` (machine-wide personal baseline).
+3. **Repo Root Config**: `<git-root>/rhizo-routes.yaml` (project canonical rules).
+4. **Subdirectory Config**: `<repo>/packages/*/rhizo-routes.yaml` (monorepo subproject rules).
+5. **Local Uncommitted Overrides**: `rhizo-routes.local.yaml` (developer scratch overrides).
+
+Initialize routes anytime:
+```bash
+rhizo route init           # Scaffold project rhizo-routes.yaml
+rhizo route init --global  # Scaffold machine-wide ~/.config/rhizo/routes.yaml
+rhizo route lint --check-service  # Validate rules & verify daemon connectivity
+```
+
+### Local System 1 Daemon Setup (Optional)
+1. **Install Daemon**: Use [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone) (Python 3.10+):
+   ```bash
+   pip install "git+https://github.com/axiomantic/local-systemone.git#egg=local-systemone[full]"
+   local-systemone --install-daemon   # macOS launchd or Linux systemd daemon on port 8100
+   ```
+2. **Cloud Alternative**: TypeSafe Jev API at `https://api.typesafe.ai` with `RHIZO_API_KEY`.
+   *For detailed service setup, macOS Metal & Linux deployment instructions, and schema definitions, see [references/system_one_setup.md](references/system_one_setup.md).*
 
 ---
 

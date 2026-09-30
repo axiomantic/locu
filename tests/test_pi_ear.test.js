@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test"
 import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import LocutusPiExtension, {
+import RhizoPiExtension, {
   resolveMessageUrgency,
   resolveSessionAgent,
   sanitizeAgentName,
@@ -13,59 +13,63 @@ import LocutusPiExtension, {
   removeLocalSessionMapping,
   deliverPiPrompt,
   interruptPiIfBusy,
-} from "../skills/locutus/pi-ear.ts"
+} from "../skills/rhizo/pi-ear.ts"
+
+const PiExtension = RhizoPiExtension
 
 describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
   let tempHome
   let originalHome
 
   beforeEach(() => {
-    tempHome = join(tmpdir(), "locutus-pi-test-home-" + Math.random().toString(36).slice(2))
-    mkdirSync(join(tempHome, ".config", "locutus"), { recursive: true })
+    tempHome = join(tmpdir(), "rhizo-pi-test-home-" + Math.random().toString(36).slice(2))
+    mkdirSync(join(tempHome, ".config", "rhizo"), { recursive: true })
     originalHome = process.env.HOME
     process.env.HOME = tempHome
   })
 
   afterEach(() => {
     process.env.HOME = originalHome
-    delete process.env.LOCUTUS_AGENT_NAME
-    delete process.env.LOCUTUS_SESSION_ID
+    delete process.env.RHIZO_AGENT_NAME
+    delete process.env.RHIZO_SESSION_ID
     try {
       rmSync(tempHome, { recursive: true, force: true })
     } catch {}
   })
 
-  it("exports main function and respects LOCUTUS_EAR_DISABLED", () => {
-    expect(typeof LocutusPiExtension).toBe("function")
-    const prev = process.env.LOCUTUS_EAR_DISABLED
+  it("exports main function and respects RHIZO_EAR_DISABLED", () => {
+    expect(typeof PiExtension).toBe("function")
+    const prev = process.env.RHIZO_EAR_DISABLED
     try {
-      process.env.LOCUTUS_EAR_DISABLED = "1"
-      const res = LocutusPiExtension({})
+      process.env.RHIZO_EAR_DISABLED = "1"
+      const res = PiExtension({})
       expect(res).toEqual({})
     } finally {
-      if (prev === undefined) delete process.env.LOCUTUS_EAR_DISABLED
-      else process.env.LOCUTUS_EAR_DISABLED = prev
+      if (prev === undefined) delete process.env.RHIZO_EAR_DISABLED
+      else process.env.RHIZO_EAR_DISABLED = prev
     }
   })
 
-  it("correctly registers locutus tool with Pi", () => {
-    let registeredTool = null
+  it("correctly registers rhizo tool with Pi", () => {
+    const registeredTools = []
     const mockPi = {
       registerTool: (toolDef) => {
-        registeredTool = toolDef
+        registeredTools.push(toolDef)
       },
       on: () => {},
     }
 
-    LocutusPiExtension(mockPi)
-    expect(registeredTool).not.toBeNull()
-    expect(registeredTool.name).toBe("locutus")
-    expect(registeredTool.parameters.required).toContain("subcommand")
-    expect(typeof registeredTool.execute).toBe("function")
+    PiExtension(mockPi)
+    expect(registeredTools.length).toBeGreaterThanOrEqual(1)
+    const toolNames = registeredTools.map((t) => t.name)
+    expect(toolNames).toContain("rhizo")
+    const rhizoTool = registeredTools.find((t) => t.name === "rhizo")
+    expect(rhizoTool.parameters.required).toContain("subcommand")
+    expect(typeof rhizoTool.execute).toBe("function")
   })
 
   it("binds session to agent name and persists in sessions.json", () => {
-    const sessionsPath = join(tempHome, ".config", "locutus", "sessions.json")
+    const sessionsPath = join(tempHome, ".config", "rhizo", "sessions.json")
     const events = {}
     const mockPi = {
       on: (event, handler) => {
@@ -73,14 +77,14 @@ describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
       },
     }
 
-    LocutusPiExtension(mockPi)
+    PiExtension(mockPi)
     expect(typeof events["session_start"]).toBe("function")
 
     // Trigger session_start
     events["session_start"]({ id: "ses_pi_100", title: "feature-refactor" })
 
-    expect(process.env.LOCUTUS_SESSION_ID).toBe("pi:ses_pi_100")
-    expect(process.env.LOCUTUS_AGENT_NAME).toBe("feature-refactor")
+    expect(process.env.RHIZO_SESSION_ID).toBe("pi:ses_pi_100")
+    expect(process.env.RHIZO_AGENT_NAME).toBe("feature-refactor")
 
     expect(existsSync(sessionsPath)).toBe(true)
     const map = JSON.parse(readFileSync(sessionsPath, "utf8"))
@@ -88,6 +92,7 @@ describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
     expect(map["pi:ses_pi_100"].agent).toBe("feature-refactor")
 
     // Trigger session_end
+
     expect(typeof events["session_end"]).toBe("function")
     events["session_end"]()
 
@@ -110,8 +115,8 @@ describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
     const clientA = {
       sendMessage: async (msg) => { sentMessage = msg }
     }
-    await deliverPiPrompt(clientA, "Hello from Locutus")
-    expect(sentMessage).toBe("Hello from Locutus")
+    await deliverPiPrompt(clientA, "Hello from Rhizo")
+    expect(sentMessage).toBe("Hello from Rhizo")
 
     let sentPrompt = null
     const clientB = {
@@ -130,7 +135,7 @@ describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
     expect(promptPayload).toEqual({ body: { parts: [{ type: "text", text: "Session payload" }] } })
   })
 
-  it("interruptPiIfBusy triggers abort unless LOCUTUS_INTERRUPT=0", async () => {
+  it("interruptPiIfBusy triggers abort unless RHIZO_INTERRUPT=0", async () => {
     let aborted = false
     const client = {
       abort: async () => { aborted = true }
@@ -139,16 +144,16 @@ describe("Pi Coding Agent Extension (pi-ear.ts)", () => {
     await interruptPiIfBusy(client)
     expect(aborted).toBe(true)
 
-    // With LOCUTUS_INTERRUPT=0
-    const prev = process.env.LOCUTUS_INTERRUPT
+    // With RHIZO_INTERRUPT=0
+    const prev = process.env.RHIZO_INTERRUPT
     try {
-      process.env.LOCUTUS_INTERRUPT = "0"
+      process.env.RHIZO_INTERRUPT = "0"
       aborted = false
       await interruptPiIfBusy(client)
       expect(aborted).toBe(false)
     } finally {
-      if (prev === undefined) delete process.env.LOCUTUS_INTERRUPT
-      else process.env.LOCUTUS_INTERRUPT = prev
+      if (prev === undefined) delete process.env.RHIZO_INTERRUPT
+      else process.env.RHIZO_INTERRUPT = prev
     }
   })
 })

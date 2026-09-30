@@ -1,5 +1,5 @@
 # src/routing.nim
-# Declarative, Fail-Fast Laya System 1 Task Routing Engine for Locutus.
+# Declarative, Fail-Fast Laya System 1 Task Routing Engine for Rhizo.
 # Handles rhizo-routes.yaml parsing, question-level chunk aggregation,
 # fail-fast timeout/connectivity, and schema linting.
 
@@ -146,15 +146,203 @@ proc findLocalRoutesConfig*(basePath: string = ""): string =
   for dir in searchDirs:
     for candidate in [
       "rhizo-routes.local.yaml", "rhizo-routes.local.yml", "rhizo-routes.local.json",
-      ".rhizo/routes.local.yaml", ".rhizo/routes.local.yml", ".rhizo/routes.local.json",
-      "locu-routes.local.yaml", "locu-routes.local.yml", "locu-routes.local.json",
-      ".locu/routes.local.yaml", ".locu/routes.local.yml", ".locu/routes.local.json",
-      "locutus-routes.local.yaml", "locutus-routes.local.yml", "locutus-routes.local.json",
-      ".locutus/routes.local.yaml", ".locutus/routes.local.yml", ".locutus/routes.local.json"
+      ".rhizo/routes.local.yaml", ".rhizo/routes.local.yml", ".rhizo/routes.local.json"
     ]:
       let p = dir / candidate
       if fileExists(p): return p
   return ""
+
+# Starter template for rhizo route init
+const StarterRouteTemplate* = """# rhizo-routes.yaml
+# Declarative System 1 Task Classification & Routing Configuration for Rhizo.
+#
+# NOTE: System 1 routing is OPTIONAL.
+# Rhizo's core primitives (inter-agent messaging, distributed mutex locking,
+# and explicit work queues) require zero ML models and operate directly over Redis.
+#
+# Semantic routing (`rhizo enqueue --route <task>`) is an optional triage accelerator
+# that evaluates this declarative rule schema via local ModernBERT/Laya (<40ms forward pass).
+#
+# Cascading Search & Overriding Hierarchy:
+#   1. Built-in defaults: Fallback domain & urgency classifier
+#   2. Global user config: ~/.config/rhizo/routes.yaml
+#   3. Repo root: <git-root>/rhizo-routes.yaml
+#   4. Subdirectories: <repo>/packages/*/rhizo-routes.yaml
+#   5. Local scratch: rhizo-routes.local.yaml (uncommitted)
+#
+version: "1.0"
+
+service:
+  url: "http://127.0.0.1:8100"   # local-systemone daemon port
+  timeout_seconds: 5.0
+
+limits:
+  overflow_strategy: "split_aggregate"
+  chunk_size: 8000
+  chunk_overlap: 800
+  max_chunks: 10
+  defaults:
+    choice: "max_confidence"
+    score: "max"
+    noul: "any"
+
+questions:
+  domain:
+    type: choice
+    instructions: "Which technical domain or subsystem does this task belong to?"
+    options:
+      - backend
+      - frontend
+      - database
+      - devops
+      - firmware
+      - docs
+    aggregate: max_confidence
+
+  urgency:
+    type: score
+    instructions: "How urgent is this issue or request?"
+    criteria:
+      - "low priority backlog chore"
+      - "standard feature or bug fix"
+      - "urgent blocker or production issue"
+    aggregate: max
+
+routes:
+  - name: "critical-production-incident"
+    match:
+      urgency.score: { gte: 1.5 }
+    target:
+      queue: "queue:swarm:incidents"
+      tags: ["urgent", "incident"]
+      lease_seconds: 3600
+
+  - name: "domain-swarm-routing"
+    match: {}
+    target:
+      queue: "queue:swarm:{{ domain.choice }}"
+      tags: ["{{ domain.choice }}"]
+      lease_seconds: 1800
+"""
+
+# Built-in sensible fallback routing config used when no routes file is found
+proc defaultFallbackRoutingConfig*(): RoutingConfig =
+  result.version = "1.0"
+  result.configPath = "built-in default fallback"
+  result.service = defaultServiceConfig()
+  result.limits = defaultRoutingLimits()
+  result.questions = initTable[string, QuestionConfig]()
+  result.routes = @[]
+
+  var qDomain = QuestionConfig(
+    id: "domain",
+    qType: "choice",
+    instructions: "Which technical domain or subsystem does this task belong to?",
+    options: @["backend", "frontend", "database", "devops", "firmware", "docs"],
+    choiceAgg: caMaxConfidence
+  )
+  result.questions["domain"] = qDomain
+
+  var qUrgency = QuestionConfig(
+    id: "urgency",
+    qType: "score",
+    instructions: "How urgent is this issue or request?",
+    criteria: @["low priority backlog chore", "standard feature or bug fix", "urgent blocker or production issue"],
+    scoreAgg: saMax
+  )
+  result.questions["urgency"] = qUrgency
+
+  var dynRule = RouteRule(
+    name: "default-domain-swarm",
+    conditions: @[],
+    target: RouteTarget(
+      queue: "queue:swarm:{{ domain.choice }}",
+      tags: @["auto-routed"],
+      leaseSeconds: 1800
+    )
+  )
+  result.routes.add(dynRule)
+
+# Find global user-level routes configuration file (~/.config/rhizo/routes.yaml or rhizo-routes.yaml)
+proc getGlobalRoutesConfigPath*(): string =
+  let envGlobal = getEnv("RHIZO_GLOBAL_ROUTES_FILE", getEnv("SYSTEMONE_GLOBAL_ROUTES_FILE", ""))
+  if envGlobal.len > 0 and fileExists(envGlobal): return envGlobal
+  let home = getHomeDir()
+  for candidate in [
+    home / ".config" / "rhizo" / "rhizo-routes.yaml",
+    home / ".config" / "rhizo" / "rhizo-routes.yml",
+    home / ".config" / "rhizo" / "rhizo-routes.json",
+    home / ".config" / "rhizo" / "routes.yaml",
+    home / ".config" / "rhizo" / "routes.yml",
+    home / ".config" / "rhizo" / "routes.json",
+    home / ".rhizo-routes.yaml",
+    home / ".rhizo-routes.yml",
+    home / ".rhizo-routes.json",
+    home / ".rhizo" / "rhizo-routes.yaml",
+    home / ".rhizo" / "rhizo-routes.yml",
+    home / ".rhizo" / "rhizo-routes.json",
+    home / ".rhizo" / "routes.yaml",
+    home / ".rhizo" / "routes.yml",
+    home / ".rhizo" / "routes.json"
+  ]:
+    if fileExists(candidate): return candidate
+  return ""
+
+# Find global user-level uncommitted local routes configuration file (~/.config/rhizo/routes.local.yaml)
+proc getGlobalLocalRoutesConfigPath*(): string =
+  let home = getHomeDir()
+  for candidate in [
+    home / ".config" / "rhizo" / "rhizo-routes.local.yaml",
+    home / ".config" / "rhizo" / "rhizo-routes.local.yml",
+    home / ".config" / "rhizo" / "rhizo-routes.local.json",
+    home / ".config" / "rhizo" / "routes.local.yaml",
+    home / ".config" / "rhizo" / "routes.local.yml",
+    home / ".config" / "rhizo" / "routes.local.json",
+    home / ".rhizo-routes.local.yaml",
+    home / ".rhizo-routes.local.yml",
+    home / ".rhizo-routes.local.json",
+    home / ".rhizo" / "rhizo-routes.local.yaml",
+    home / ".rhizo" / "rhizo-routes.local.yml",
+    home / ".rhizo" / "rhizo-routes.local.json",
+    home / ".rhizo" / "routes.local.yaml",
+    home / ".rhizo" / "routes.local.yml",
+    home / ".rhizo" / "routes.local.json"
+  ]:
+    if fileExists(candidate): return candidate
+  return ""
+
+# Discover all route configuration files walking up the directory chain to the git root.
+# Returns list ordered from root (lowest precedence) to leaf subdirectory (highest precedence).
+proc findRoutesConfigChain*(startDir: string = ""): seq[string] =
+  var cur = if startDir.len > 0: startDir else: getCurrentDir()
+  var discovered: seq[string] = @[]
+
+  while true:
+    var foundInCur = ""
+    for candidate in [
+      "rhizo-routes.yaml", "rhizo-routes.yml", "rhizo-routes.json",
+      ".rhizo/routes.yaml", ".rhizo/routes.yml", ".rhizo/routes.json"
+    ]:
+      let p = cur / candidate
+      if fileExists(p):
+        foundInCur = p
+        break
+
+    if foundInCur.len > 0:
+      discovered.add(foundInCur)
+
+    if dirExists(cur / ".git") or fileExists(cur / ".git"):
+      break
+    let parent = cur.parentDir()
+    if parent == cur or parent.len == 0:
+      break
+    cur = parent
+
+  # Reverse so root comes first and leaf comes last (lowest to highest precedence)
+  var chain: seq[string] = @[]
+  for idx in countdown(discovered.len - 1, 0):
+    chain.add(discovered[idx])
+  return chain
 
 # Find configuration file starting from startDir walking up
 proc findRoutesConfig*(customPath: string = ""): string =
@@ -162,17 +350,13 @@ proc findRoutesConfig*(customPath: string = ""): string =
     if fileExists(customPath): return customPath
     raise newException(IOError, "Custom routes file not found: " & customPath)
 
-  let envPath = getEnv("RHIZO_ROUTES_FILE", getEnv("LOCUTUS_ROUTES_FILE", getEnv("LOCU_ROUTES_FILE", "")))
+  let envPath = getEnv("RHIZO_ROUTES_FILE")
   if envPath.len > 0 and fileExists(envPath): return envPath
 
   var cur = getCurrentDir()
   while true:
     for candidate in ["rhizo-routes.yaml", "rhizo-routes.yml", "rhizo-routes.json",
-                      ".rhizo/routes.yaml", ".rhizo/routes.yml", ".rhizo/routes.json",
-                      "locu-routes.yaml", "locu-routes.yml", "locu-routes.json",
-                      ".locu/routes.yaml", ".locu/routes.yml", ".locu/routes.json",
-                      "locutus-routes.yaml", "locutus-routes.yml", "locutus-routes.json",
-                      ".locutus/routes.yaml", ".locutus/routes.yml", ".locutus/routes.json"]:
+                      ".rhizo/routes.yaml", ".rhizo/routes.yml", ".rhizo/routes.json"]:
       let p = cur / candidate
       if fileExists(p): return p
 
@@ -183,13 +367,19 @@ proc findRoutesConfig*(customPath: string = ""): string =
       break
     cur = parent
 
+  # Check global user fallback (~/.config/rhizo/routes.yaml)
+  let globalFallback = getGlobalRoutesConfigPath()
+  if globalFallback.len > 0: return globalFallback
+
   # Fallback to local uncommitted routes configuration file if base is not found
   let localFallback = findLocalRoutesConfig("")
   if localFallback.len > 0: return localFallback
   return ""
 
 # Lint YAML / JSON route configuration
-proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid: bool, errors: seq[string], warnings: seq[string]] =
+proc lintYamlContent*(content: string, checkService: bool = false, isOverlay: bool = false,
+                      inheritedQuestionIds: seq[string] = @[],
+                      inheritedQuestionOptions: Table[string, seq[string]] = initTable[string, seq[string]]()): tuple[valid: bool, errors: seq[string], warnings: seq[string]] =
   var errors: seq[string] = @[]
   var warnings: seq[string] = @[]
 
@@ -206,15 +396,16 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
   let root = doc[0]
 
   # Version check
-  if not root.hasKey("version"):
+  if not isOverlay and not root.hasKey("version"):
     warnings.add("Missing 'version' field in route configuration (recommended: version: \"1.0\")")
 
   # Questions check
-  if not root.hasKey("questions") or root["questions"].kind != JObject or root["questions"].len == 0:
+  if not isOverlay and inheritedQuestionIds.len == 0 and (not root.hasKey("questions") or root["questions"].kind != JObject or root["questions"].len == 0):
     errors.add("Missing or empty 'questions' section: at least one classifier question is required")
 
   var questionIds: seq[string] = @[]
-  var questionOptions: Table[string, seq[string]] = initTable[string, seq[string]]()
+  for q in inheritedQuestionIds: questionIds.add(q)
+  var questionOptions: Table[string, seq[string]] = inheritedQuestionOptions
 
   if root.hasKey("questions") and root["questions"].kind == JObject:
     for qid, qNode in root["questions"]:
@@ -276,7 +467,7 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
                        "'. Valid options: any, all, mean")
 
   # Routes check
-  if not root.hasKey("routes") or root["routes"].kind != JArray or root["routes"].len == 0:
+  if not isOverlay and (not root.hasKey("routes") or root["routes"].kind != JArray or root["routes"].len == 0):
     errors.add("Missing or empty 'routes' section: at least one routing rule is required")
 
   var seenRuleNames: seq[string] = @[]
@@ -292,10 +483,10 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
         warnings.add("Duplicate route rule name: '" & name & "'")
       seenRuleNames.add(name)
 
-      # Match conditions
-      if not rNode.hasKey("match") or rNode["match"].kind != JObject or rNode["match"].len == 0:
-        errors.add("Route '" & name & "' missing non-empty 'match' conditions")
-      else:
+      # Match conditions (empty mapping acts as catch-all rule)
+      if rNode.hasKey("match") and rNode["match"].kind == JObject:
+        if rNode["match"].len == 0 and idx < root["routes"].elems.len - 1:
+          warnings.add("Route '" & name & "' has empty match (catch-all) but is not the last rule in the list")
         for mKey, mVal in rNode["match"]:
           let qPrefix = mKey.split('.')[0]
           if qPrefix notin questionIds:
@@ -312,6 +503,11 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
                 for item in mVal:
                   if item.kind == JString and item.getStr() notin opts:
                     errors.add("Route '" & name & "' matches choice value '" & item.getStr() & "' not present in question '" & qPrefix & "' options " & $opts)
+      elif not rNode.hasKey("match"):
+        if idx < root["routes"].elems.len - 1:
+          warnings.add("Route '" & name & "' has no match conditions (catch-all) but is not the last rule in the list")
+      else:
+        errors.add("Route '" & name & "' 'match' must be a mapping object")
 
       # Target validation
       if not rNode.hasKey("target") or rNode["target"].kind != JObject:
@@ -374,12 +570,17 @@ proc lintYamlContent*(content: string, checkService: bool = false): tuple[valid:
   return (errors.len == 0, errors, warnings)
 
 # Lint file directly
-proc lintRoutesConfigFile*(filePath: string, checkService: bool = false): tuple[valid: bool, errors: seq[string], warnings: seq[string]] =
+proc lintRoutesConfigFile*(filePath: string, checkService: bool = false, isOverlay: bool = false,
+                           inheritedQuestionIds: seq[string] = @[],
+                           inheritedQuestionOptions: Table[string, seq[string]] = initTable[string, seq[string]]()): tuple[valid: bool, errors: seq[string], warnings: seq[string]] =
   if not fileExists(filePath):
     return (false, @["File does not exist: " & filePath], @[])
   try:
     let content = readFile(filePath)
-    return lintYamlContent(content, checkService)
+    let overlayFlag = isOverlay or filePath.contains(".local.")
+    return lintYamlContent(content, checkService, isOverlay = overlayFlag,
+                           inheritedQuestionIds = inheritedQuestionIds,
+                           inheritedQuestionOptions = inheritedQuestionOptions)
   except CatchableError as e:
     return (false, @["Failed to read file: " & e.msg], @[])
 
@@ -550,78 +751,182 @@ proc mergeRoutingConfigs*(baseCfg: var RoutingConfig, localCfg: RoutingConfig) =
     if not replaced:
       baseCfg.routes.insert(localRule, 0)
 
-# Load effective configuration cascading across base file and local uncommitted overlay
+# Load effective configuration cascading across global config, directory chain, and local overlays
 proc loadEffectiveRoutesConfig*(customPath: string = ""): RoutingConfig =
   loadDotEnv()
   if customPath.len > 0:
-    let p = findRoutesConfig(customPath)
-    return parseRoutesConfig(readFile(p), p)
-
-  let basePath = findRoutesConfig("")
-  let localPath = findLocalRoutesConfig(basePath)
-
-  if basePath.len > 0 and localPath.len > 0 and basePath != localPath:
-    var baseCfg = parseRoutesConfig(readFile(basePath), basePath)
-    let localCfg = parseRoutesConfig(readFile(localPath), localPath)
-    mergeRoutingConfigs(baseCfg, localCfg)
-    baseCfg.configPath = basePath & " (+ " & localPath.extractFilename & ")"
+    let p = if fileExists(customPath): customPath else: findRoutesConfig(customPath)
+    if p.len == 0 or not fileExists(p):
+      raise newException(IOError, "Custom routes file not found: " & customPath)
+    let localCompanion = findLocalRoutesConfig(p)
+    var baseCfg = parseRoutesConfig(readFile(p), p)
+    if localCompanion.len > 0 and fileExists(localCompanion) and localCompanion != p:
+      let localCfg = parseRoutesConfig(readFile(localCompanion), localCompanion)
+      mergeRoutingConfigs(baseCfg, localCfg)
+      baseCfg.configPath = p & " (+ " & localCompanion.extractFilename & ")"
     return baseCfg
-  elif basePath.len > 0:
-    return parseRoutesConfig(readFile(basePath), basePath)
-  elif localPath.len > 0:
-    return parseRoutesConfig(readFile(localPath), localPath)
-  else:
-    raise newException(IOError, "Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml). Specify --routes-file or initialize rhizo-routes.yaml.")
 
-# Lint effective routes configuration considering both base and local overlays
+  let envPath = getEnv("RHIZO_ROUTES_FILE")
+  if envPath.len > 0 and fileExists(envPath):
+    var baseCfg = parseRoutesConfig(readFile(envPath), envPath)
+    let localCompanion = findLocalRoutesConfig(envPath)
+    if localCompanion.len > 0 and fileExists(localCompanion) and localCompanion != envPath:
+      let localCfg = parseRoutesConfig(readFile(localCompanion), localCompanion)
+      mergeRoutingConfigs(baseCfg, localCfg)
+      baseCfg.configPath = envPath & " (+ " & localCompanion.extractFilename & ")"
+    return baseCfg
+
+  # Hierarchical resolution:
+  # 1. Global config (~/.config/rhizo/routes.yaml)
+  # 2. Directory chain from repo-root down to current dir
+  # 3. Local uncommitted overrides (*.local.yaml)
+  var fileChain: seq[string] = @[]
+  var pathDescriptions: seq[string] = @[]
+
+  let globalBase = getGlobalRoutesConfigPath()
+  if globalBase.len > 0:
+    fileChain.add(globalBase)
+    pathDescriptions.add(globalBase)
+    let globalLocal = getGlobalLocalRoutesConfigPath()
+    if globalLocal.len > 0 and globalLocal != globalBase:
+      fileChain.add(globalLocal)
+      pathDescriptions.add(globalLocal.extractFilename)
+
+  let dirChain = findRoutesConfigChain(getCurrentDir())
+  for f in dirChain:
+    fileChain.add(f)
+    pathDescriptions.add(f)
+    let fLocal = findLocalRoutesConfig(f)
+    if fLocal.len > 0 and fLocal != f and fLocal notin fileChain:
+      fileChain.add(fLocal)
+      pathDescriptions.add(fLocal.extractFilename)
+
+  let curLocal = findLocalRoutesConfig(getCurrentDir())
+  if curLocal.len > 0 and curLocal notin fileChain:
+    fileChain.add(curLocal)
+    pathDescriptions.add(curLocal.extractFilename)
+
+  if fileChain.len == 0:
+    # No route files anywhere in chain: return built-in fallback default
+    return defaultFallbackRoutingConfig()
+
+  var effective = parseRoutesConfig(readFile(fileChain[0]), fileChain[0])
+  for i in 1 ..< fileChain.len:
+    let nextCfg = parseRoutesConfig(readFile(fileChain[i]), fileChain[i])
+    mergeRoutingConfigs(effective, nextCfg)
+
+  effective.configPath = pathDescriptions.join(" -> ")
+  return effective
+
+# Lint effective routes configuration considering both base, chain, and local overlays
 proc lintEffectiveRoutesConfig*(customPath: string = "", checkService: bool = false): tuple[valid: bool, errors: seq[string], warnings: seq[string], pathDesc: string] =
   loadDotEnv()
   if customPath.len > 0:
     let (v, e, w) = lintRoutesConfigFile(customPath, checkService)
     return (v, e, w, customPath)
 
-  let basePath = findRoutesConfig("")
-  let localPath = findLocalRoutesConfig(basePath)
+  let envPath = getEnv("RHIZO_ROUTES_FILE")
+  if envPath.len > 0 and fileExists(envPath):
+    let (v, e, w) = lintRoutesConfigFile(envPath, checkService)
+    return (v, e, w, envPath)
 
-  if basePath.len > 0 and localPath.len > 0 and basePath != localPath:
-    let (vBase, eBase, wBase) = lintRoutesConfigFile(basePath, checkService = false)
-    var allErrors = eBase
-    var allWarnings = wBase
+  var fileChain: seq[string] = @[]
+  var pathDescriptions: seq[string] = @[]
 
+  let globalBase = getGlobalRoutesConfigPath()
+  if globalBase.len > 0:
+    fileChain.add(globalBase)
+    pathDescriptions.add(globalBase)
+    let globalLocal = getGlobalLocalRoutesConfigPath()
+    if globalLocal.len > 0 and globalLocal != globalBase:
+      fileChain.add(globalLocal)
+      pathDescriptions.add(globalLocal.extractFilename)
+
+  let dirChain = findRoutesConfigChain(getCurrentDir())
+  for f in dirChain:
+    fileChain.add(f)
+    pathDescriptions.add(f)
+    let fLocal = findLocalRoutesConfig(f)
+    if fLocal.len > 0 and fLocal != f and fLocal notin fileChain:
+      fileChain.add(fLocal)
+      pathDescriptions.add(fLocal.extractFilename)
+
+  let curLocal = findLocalRoutesConfig(getCurrentDir())
+  if curLocal.len > 0 and curLocal notin fileChain:
+    fileChain.add(curLocal)
+    pathDescriptions.add(curLocal.extractFilename)
+
+  if fileChain.len == 0:
+    var warnings: seq[string] = @["No rhizo-routes.yaml found; using built-in default domain/urgency routing fallback"]
+    var errors: seq[string] = @[]
+    if checkService:
+      let defSvc = defaultServiceConfig()
+      var client = newHttpClient(timeout = 3000)
+      try:
+        var resp = client.get(defSvc.url & "/healthz")
+        if resp.code != Http200:
+          resp = client.get(defSvc.url & "/")
+          if resp.code != Http200 and resp.code != Http404 and resp.code != Http405:
+            errors.add("System 1 service at " & defSvc.url & " returned HTTP " & $resp.code)
+      except CatchableError as e:
+        errors.add("Cannot connect to System 1 service at " & defSvc.url & ": " & e.msg)
+      finally:
+        client.close()
+    return (errors.len == 0, errors, warnings, "built-in default fallback")
+
+  var allErrors: seq[string] = @[]
+  var allWarnings: seq[string] = @[]
+  var allValid = true
+
+  var accQuestionIds: seq[string] = @[]
+  var accQuestionOptions: Table[string, seq[string]] = initTable[string, seq[string]]()
+
+  for idx, f in fileChain:
+    let isOver = f.contains(".local.") or idx > 0
+    let (v, e, w) = lintRoutesConfigFile(f, checkService = false, isOverlay = isOver,
+                                         inheritedQuestionIds = accQuestionIds,
+                                         inheritedQuestionOptions = accQuestionOptions)
+    if not v: allValid = false
+    for err in e: allErrors.add("[" & f.extractFilename & "] " & err)
+    for warn in w: allWarnings.add("[" & f.extractFilename & "] " & warn)
+
+    # Accumulate questions declared in this file for downstream overlays
     try:
-      var baseCfg = parseRoutesConfig(readFile(basePath), basePath)
-      let localCfg = parseRoutesConfig(readFile(localPath), localPath)
-      mergeRoutingConfigs(baseCfg, localCfg)
+      let doc = loadToJson(readFile(f))
+      if doc.len > 0 and doc[0] != nil and doc[0].kind == JObject and doc[0].hasKey("questions") and doc[0]["questions"].kind == JObject:
+        for qid, qNode in doc[0]["questions"]:
+          if qid notin accQuestionIds:
+            accQuestionIds.add(qid)
+          if qNode.kind == JObject and qNode.hasKey("options") and qNode["options"].kind == JArray:
+            var opts: seq[string] = @[]
+            for opt in qNode["options"]:
+              if opt.kind == JString: opts.add(opt.getStr())
+            accQuestionOptions[qid] = opts
+    except CatchableError: discard
 
-      if checkService:
-        var client = newHttpClient(timeout = 3000)
-        if baseCfg.service.apiKey.len > 0:
-          client.headers = newHttpHeaders({"Authorization": "Bearer " & baseCfg.service.apiKey})
-        try:
-          var resp = client.get(baseCfg.service.url & "/healthz")
+  if allValid and checkService:
+    try:
+      let effective = loadEffectiveRoutesConfig("")
+      var client = newHttpClient(timeout = 3000)
+      if effective.service.apiKey.len > 0:
+        client.headers = newHttpHeaders({"Authorization": "Bearer " & effective.service.apiKey})
+      try:
+        var resp = client.get(effective.service.url & "/healthz")
+        if resp.code != Http200:
+          resp = client.get(effective.service.url & "/v1/models")
           if resp.code != Http200:
-            resp = client.get(baseCfg.service.url & "/v1/models")
-            if resp.code != Http200:
-              resp = client.get(baseCfg.service.url & "/")
-              if resp.code != Http200 and resp.code != Http404 and resp.code != Http405:
-                allErrors.add("System 1 service at " & baseCfg.service.url & " returned HTTP " & $resp.code)
-        except CatchableError as e:
-          allErrors.add("Cannot connect to System 1 service at " & baseCfg.service.url & ": " & e.msg)
-        finally:
-          client.close()
+            resp = client.get(effective.service.url & "/")
+            if resp.code != Http200 and resp.code != Http404 and resp.code != Http405:
+              allErrors.add("System 1 service at " & effective.service.url & " returned HTTP " & $resp.code)
+      except CatchableError as e:
+        allErrors.add("Cannot connect to System 1 service at " & effective.service.url & ": " & e.msg)
+      finally:
+        client.close()
     except CatchableError as e:
-      allErrors.add("Failed to merge local route overlay: " & e.msg)
+      allErrors.add("Failed to evaluate effective merged routes: " & e.msg)
 
-    let pathDesc = basePath & " (+ " & localPath.extractFilename & ")"
-    return (allErrors.len == 0 and vBase, allErrors, allWarnings, pathDesc)
-  elif basePath.len > 0:
-    let (v, e, w) = lintRoutesConfigFile(basePath, checkService)
-    return (v, e, w, basePath)
-  elif localPath.len > 0:
-    let (v, e, w) = lintRoutesConfigFile(localPath, checkService)
-    return (v, e, w, localPath)
-  else:
-    return (false, @["Route configuration not found (checked ./rhizo-routes.yaml, .rhizo/routes.yaml)"], @[], "")
+  let pathDesc = pathDescriptions.join(" -> ")
+  return (allErrors.len == 0 and allValid, allErrors, allWarnings, pathDesc)
 
 # Split oversized input into chunks respecting limits
 proc splitIntoChunks*(text: string, limits: RoutingLimits): seq[string] =

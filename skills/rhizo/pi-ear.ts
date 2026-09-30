@@ -5,9 +5,9 @@
  * via jiti without compilation.
  *
  * Responsibilities:
- * 1. Automatically binds Pi session ID to Locutus agent identity ("pi:<sessionId>" -> "<agent>").
- * 2. Injects LOCUTUS_SESSION_ID and LOCUTUS_AGENT_NAME into tool execution environments.
- * 3. Runs an asynchronous background ear streaming `locutus listen <agent> 0`.
+ * 1. Automatically binds Pi session ID to Rhizo agent identity ("pi:<sessionId>" -> "<agent>").
+ * 2. Injects RHIZO_SESSION_ID and RHIZO_AGENT_NAME into tool execution environments.
+ * 3. Runs an asynchronous background ear streaming `rhizo listen <agent> 0`.
  * 4. Stimulates Pi's conversation turn loop when messages arrive.
  * 5. Handles urgent in-flight preemption for `--immediate` tasks.
  */
@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import process from "node:process"
 
-export interface LocutusMessagePayload {
+export interface RhizoMessagePayload {
   id: string
   from: string
   to: string
@@ -29,30 +29,32 @@ export interface LocutusMessagePayload {
   timestamp?: string
 }
 
-export function getLocutusBin(): string {
-  if (process.env.LOCUTUS_BIN && existsSync(process.env.LOCUTUS_BIN)) {
-    return process.env.LOCUTUS_BIN
+export function getRhizoBin(): string {
+  if (process.env.RHIZO_BIN && existsSync(process.env.RHIZO_BIN)) {
+    return process.env.RHIZO_BIN
   }
   const home = process.env.HOME || process.env.USERPROFILE || ""
   const candidates = [
-    join(home, ".local", "bin", "locutus"),
-    join(home, ".nimble", "bin", "locutus"),
-    "/opt/homebrew/bin/locutus",
-    "/usr/local/bin/locutus",
+    join(home, ".local", "bin", "rhizo"),
+    join(home, ".nimble", "bin", "rhizo"),
+    "/opt/homebrew/bin/rhizo",
+    "/usr/local/bin/rhizo",
   ]
   for (const p of candidates) {
     if (existsSync(p)) return p
   }
-  return "locutus"
+  return "rhizo"
 }
 
 export function getSessionsFile(): string {
   const home = process.env.HOME || process.env.USERPROFILE || ""
-  const dir = join(home, ".config", "locutus")
+  const rhizoDir = join(home, ".config", "rhizo")
+  const rhizoFile = join(rhizoDir, "sessions.json")
+  if (existsSync(rhizoFile)) return rhizoFile
   try {
-    mkdirSync(dir, { recursive: true })
+    mkdirSync(rhizoDir, { recursive: true })
   } catch {}
-  return join(dir, "sessions.json")
+  return rhizoFile
 }
 
 export function loadLocalSessionMap(): Record<string, any> {
@@ -75,7 +77,7 @@ export function saveLocalSessionMapping(sessionKey: string, agentName: string): 
   try {
     writeFileSync(file, JSON.stringify(map, null, 2))
   } catch (err: any) {
-    console.error(`[locutus-pi-ear] could not save session mapping: ${err?.message}`)
+    console.error(`[rhizo-pi-ear] could not save session mapping: ${err?.message}`)
   }
 }
 
@@ -87,7 +89,7 @@ export function removeLocalSessionMapping(sessionKey: string): void {
     try {
       writeFileSync(file, JSON.stringify(map, null, 2))
     } catch (err: any) {
-      console.error(`[locutus-pi-ear] could not remove session mapping: ${err?.message}`)
+      console.error(`[rhizo-pi-ear] could not remove session mapping: ${err?.message}`)
     }
   }
 }
@@ -98,7 +100,8 @@ export function sanitizeAgentName(name: string): string {
 }
 
 export function resolveSessionAgent(sessionId: string, fallbackTitle?: string): string {
-  if (process.env.LOCUTUS_AGENT_NAME) return process.env.LOCUTUS_AGENT_NAME
+  const envAgent = process.env.RHIZO_AGENT_NAME
+  if (envAgent) return envAgent
   const sessionKey = `pi:${sessionId}`
   const map = loadLocalSessionMap()
   if (map[sessionKey]) {
@@ -139,7 +142,7 @@ export async function deliverPiPrompt(pi: any, text: string): Promise<void> {
 }
 
 export async function interruptPiIfBusy(pi: any): Promise<void> {
-  if (process.env.LOCUTUS_INTERRUPT === "0") return
+  if (process.env.RHIZO_INTERRUPT === "0") return
   try {
     if (typeof pi?.abort === "function") {
       await pi.abort()
@@ -147,7 +150,7 @@ export async function interruptPiIfBusy(pi: any): Promise<void> {
       await pi.session.abort()
     }
   } catch (err: any) {
-    console.error(`[locutus-pi-ear] could not abort Pi session: ${err?.message}`)
+    console.error(`[rhizo-pi-ear] could not abort Pi session: ${err?.message}`)
   }
 }
 
@@ -155,42 +158,45 @@ export async function interruptPiIfBusy(pi: any): Promise<void> {
  * Main Pi Extension entrypoint.
  * Registered by Pi during startup.
  */
-export default function LocutusPiExtension(pi: any) {
-  if (process.env.LOCUTUS_EAR_DISABLED === "1") return {}
+export function RhizoPiExtension(pi: any) {
+  if (process.env.RHIZO_EAR_DISABLED === "1") return {}
 
-  const locutusBin = getLocutusBin()
+  const rhizoBin = getRhizoBin()
   let activeProc: any = null
   let running = true
 
-  // 1. Register locutus CLI tool natively in Pi
+  // 1. Register rhizo CLI tool natively in Pi
   if (typeof pi?.registerTool === "function") {
-    pi.registerTool({
-      name: "locutus",
-      description: "Inter-agent communication bus, distributed locks, queues, and task dispatch over Redis.",
-      parameters: {
-        type: "object",
-        properties: {
-          subcommand: {
-            type: "string",
-            description: "Subcommand to execute (open, send, reply, broadcast, request, claim, ack, status, who)",
-          },
-          args: {
-            type: "array",
-            items: { type: "string" },
-            description: "Arguments to pass to locutus CLI",
-          },
+    const toolParams = {
+      type: "object",
+      properties: {
+        subcommand: {
+          type: "string",
+          description: "Subcommand to execute (open, send, reply, broadcast, request, claim, ack, status, who)",
         },
-        required: ["subcommand"],
+        args: {
+          type: "array",
+          items: { type: "string" },
+          description: "Arguments to pass to rhizo CLI",
+        },
       },
-      execute: async ({ subcommand, args = [] }: { subcommand: string; args?: string[] }) => {
-        const fullArgs = [subcommand, ...args]
-        const res = spawnSync(locutusBin, fullArgs, { encoding: "utf8" })
-        return {
-          stdout: res.stdout,
-          stderr: res.stderr,
-          exitCode: res.status,
-        }
-      },
+      required: ["subcommand"],
+    }
+    const toolExec = async ({ subcommand, args = [] }: { subcommand: string; args?: string[] }) => {
+      const fullArgs = [subcommand, ...args]
+      const res = spawnSync(rhizoBin, fullArgs, { encoding: "utf8" })
+      return {
+        stdout: res.stdout,
+        stderr: res.stderr,
+        exitCode: res.status,
+      }
+    }
+
+    pi.registerTool({
+      name: "rhizo",
+      description: "Inter-agent communication bus, distributed locks, queues, and task dispatch over Redis.",
+      parameters: toolParams,
+      execute: toolExec,
     })
   }
 
@@ -201,8 +207,8 @@ export default function LocutusPiExtension(pi: any) {
     const agentName = resolveSessionAgent(sessionId, title)
 
     // Set process environment for child tools
-    process.env.LOCUTUS_SESSION_ID = `pi:${sessionId}`
-    process.env.LOCUTUS_AGENT_NAME = agentName
+    process.env.RHIZO_SESSION_ID = `pi:${sessionId}`
+    process.env.RHIZO_AGENT_NAME = agentName
 
     // Start background listener fiber
     if (activeProc) {
@@ -213,7 +219,7 @@ export default function LocutusPiExtension(pi: any) {
     const startListener = async () => {
       while (running) {
         try {
-          const child = spawn(locutusBin, ["listen", agentName, "0"], {
+          const child = spawn(rhizoBin, ["listen", agentName, "0"], {
             stdio: ["ignore", "pipe", "pipe"],
           })
           activeProc = child
@@ -231,7 +237,7 @@ export default function LocutusPiExtension(pi: any) {
                   if (urgency === "immediate") {
                     await interruptPiIfBusy(pi)
                   }
-                  let promptText = `[locutus:${agentName}] ${line}`
+                  let promptText = `[rhizo:${agentName}] ${line}`
                   try {
                     const parsed = JSON.parse(line)
                     const from = parsed.from || "unknown"
@@ -239,7 +245,7 @@ export default function LocutusPiExtension(pi: any) {
                     const subj = parsed.subject ? ` (subject: "${parsed.subject}")` : ""
                     const urg = (parsed.urgency === "immediate") ? " [URGENT: IMMEDIATE]" : ""
                     const body = parsed.body || ""
-                    promptText = `[LOCUTUS BUS message for @${agentName} from @${from}${host}${subj}${urg}]:\n${body}`
+                    promptText = `[RHIZO BUS message for @${agentName} from @${from}${host}${subj}${urg}]:\n${body}`
                   } catch {}
                   await deliverPiPrompt(pi, promptText)
                 })()
@@ -272,8 +278,9 @@ export default function LocutusPiExtension(pi: any) {
       if (activeProc) {
         try { activeProc.kill() } catch {}
       }
-      if (process.env.LOCUTUS_SESSION_ID) {
-        removeLocalSessionMapping(process.env.LOCUTUS_SESSION_ID)
+      const sid = process.env.RHIZO_SESSION_ID
+      if (sid) {
+        removeLocalSessionMapping(sid)
       }
     })
   }
@@ -284,7 +291,7 @@ export default function LocutusPiExtension(pi: any) {
   }
 
   return {
-    name: "locutus-pi-ear",
+    name: "rhizo-pi-ear",
     cleanup: () => {
       running = false
       if (activeProc) {
@@ -293,3 +300,6 @@ export default function LocutusPiExtension(pi: any) {
     }
   }
 }
+
+export default RhizoPiExtension
+

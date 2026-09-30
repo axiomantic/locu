@@ -3,12 +3,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test"
 import { getOrientationReminder } from "../src/orientation"
+import { getSessionsPath } from "../src/sessions"
 import { writeFileSync, unlinkSync, existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 describe("orientation module", () => {
-  const home = process.env.HOME || process.env.USERPROFILE || ""
-  const sessionsPath = join(home, ".config", "locutus", "sessions.json")
+  const sessionsPath = getSessionsPath()
   let originalContent: string | null = null
 
   beforeEach(() => {
@@ -29,8 +29,8 @@ describe("orientation module", () => {
 
   it("returns neutral orientation notice when no active session is provided", () => {
     const notice = getOrientationReminder()
-    expect(notice).toContain("LOCUTUS NOTICE")
-    expect(notice).toContain("braid list")
+    expect(notice).toContain("RHIZO NOTICE")
+    expect(notice).toContain("vine list")
     expect(notice).toContain("canonical repository root")
   })
 
@@ -47,7 +47,7 @@ describe("orientation module", () => {
     writeFileSync(sessionsPath, JSON.stringify(map, null, 2))
 
     const anchor = getOrientationReminder(testSessionId)
-    expect(anchor).toContain("LOCUTUS CONTEXT ANCHOR")
+    expect(anchor).toContain("RHIZO CONTEXT ANCHOR")
     expect(anchor).toContain("T-1049")
     expect(anchor).toContain("/Users/test/workspaces/PebbleOS/T-1049")
     expect(anchor).toContain("Do not commit changes to the canonical repository root")
@@ -66,7 +66,7 @@ describe("orientation module", () => {
     writeFileSync(sessionsPath, JSON.stringify(map, null, 2))
 
     const anchor = getOrientationReminder(testSessionId)
-    expect(anchor).toContain("LOCUTUS CONTEXT ANCHOR")
+    expect(anchor).toContain("RHIZO CONTEXT ANCHOR")
     expect(anchor).toContain("T-1049")
     expect(anchor).toContain("/Users/test/worktrees/PebbleOS/T-1049")
     expect(anchor).toContain("Do not commit changes to the canonical repository root")
@@ -85,7 +85,7 @@ describe("orientation module", () => {
     writeFileSync(sessionsPath, JSON.stringify(map, null, 2))
 
     const notice = getOrientationReminder(testSessionId)
-    expect(notice).toContain("LOCUTUS NOTICE")
-    expect(notice).not.toContain("LOCUTUS CONTEXT ANCHOR")
+    expect(notice).toContain("RHIZO NOTICE")
+    expect(notice).not.toContain("RHIZO CONTEXT ANCHOR")
   })
 })

@@ -2,7 +2,7 @@
 """
 Multi-Agent Autonomous Ping-Pong Integration Test.
 Simulates two cooperating assistants communicating over Redis via Locutus:
-1. Agent 'alice' (Requester) registers in project 'locutus' and sends a task to 'bob' requesting '15 * 15'.
+1. Agent 'alice' (Requester) registers in project 'rhizo' and sends a task to 'bob' requesting '15 * 15'.
 2. Agent 'bob' (Worker, running via local Ollama LLM) registers with tag 'calc', retrieves the task
    from his inbox, solves the math problem, and sends a threaded reply to 'alice' with reply_to = task_id.
 3. 'alice' receives the reply from her inbox.
@@ -31,13 +31,13 @@ def run_bash(cmd: str, role: str = "AGENT") -> str:
     print(f"\n[{role} BASH EXEC]: {cmd}")
     try:
         env = dict(os.environ)
-        env.setdefault("LOCUTUS_REDIS_URL", "redis://127.0.0.1:6379")
+        env.setdefault("RHIZO_REDIS_URL", "redis://127.0.0.1:6379")
         bin_dir = os.path.abspath("bin")
         local_bin = os.path.expanduser("~/.local/bin")
         env["PATH"] = f"{bin_dir}:{local_bin}:{env.get('PATH', '')}"
-        env.setdefault("LOCUTUS_REDIS_PREFIX", "locutus:")
-        env.setdefault("LOCUTUS_PROJECT", "locutus")
-        env.setdefault("LOCUTUS_SCRIPTS_DIR", os.path.abspath("scripts"))
+        env.setdefault("RHIZO_REDIS_PREFIX", "rhizo:")
+        env.setdefault("RHIZO_PROJECT", "locutus")
+        env.setdefault("RHIZO_SCRIPTS_DIR", os.path.abspath("scripts"))
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, env=env)
         output = (res.stdout + res.stderr).strip()
         print(f"[OUTPUT]: {output[:300]}")
@@ -46,7 +46,7 @@ def run_bash(cmd: str, role: str = "AGENT") -> str:
         print(f"[ERROR]: {e}")
         return f"Execution error: {e}"
 
-REDIS_URL = os.environ.get("LOCUTUS_REDIS_URL", os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
+REDIS_URL = os.environ.get("RHIZO_REDIS_URL", os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
 
 def redis_cmd(*args):
     return subprocess.run(["redis-cli", "-u", REDIS_URL] + list(args), capture_output=True, text=True).stdout.strip()
@@ -71,19 +71,19 @@ class TestLocutusMultiAgentPingPong(unittest.TestCase):
         # 3. Reset Redis state for alice and bob
         redis_cmd(
             "DEL",
-            "locutus:inbox:alice",
-            "locutus:inbox:bob",
-            "locutus:heartbeat:alice",
-            "locutus:heartbeat:bob",
-            "locutus:agent:alice",
-            "locutus:agent:bob",
-            "locutus:tag:calc",
-            "locutus:tag:lead"
+            "rhizo:inbox:alice",
+            "rhizo:inbox:bob",
+            "rhizo:heartbeat:alice",
+            "rhizo:heartbeat:bob",
+            "rhizo:agent:alice",
+            "rhizo:agent:bob",
+            "rhizo:tag:calc",
+            "rhizo:tag:lead"
         )
 
         # Negative control: verify inboxes are empty before test starts
-        alice_initial_len = int(redis_cmd("LLEN", "locutus:inbox:alice") or 0)
-        bob_initial_len = int(redis_cmd("LLEN", "locutus:inbox:bob") or 0)
+        alice_initial_len = int(redis_cmd("LLEN", "rhizo:inbox:alice") or 0)
+        bob_initial_len = int(redis_cmd("LLEN", "rhizo:inbox:bob") or 0)
         self.assertEqual(alice_initial_len, 0, "Alice inbox should be empty at start")
         self.assertEqual(bob_initial_len, 0, "Bob inbox should be empty at start")
 
@@ -91,23 +91,23 @@ class TestLocutusMultiAgentPingPong(unittest.TestCase):
 
         # 4. Phase 1: Alice Registers and Dispatches Task
         print("\n--- Phase 1: Alice Registers and Dispatches Task ---")
-        run_bash("locutus open alice lead", role="ALICE")
+        run_bash("rhizo open alice lead", role="ALICE")
 
         # Verify Alice registration & heartbeat
-        alice_hb = redis_cmd("GET", "locutus:heartbeat:alice")
+        alice_hb = redis_cmd("GET", "rhizo:heartbeat:alice")
         self.assertEqual(alice_hb, "1", f"Expected Alice heartbeat '1', got '{alice_hb}'")
 
         task_id = f"task_{int(time.time())}_alice_{os.getpid()}"
         run_bash(
-            f'locutus send --to bob --id "{task_id}" --subject "Compute Product" --body "Please compute 15 * 15"',
+            f'rhizo send --to bob --id "{task_id}" --subject "Compute Product" --body "Please compute 15 * 15"',
             role="ALICE"
         )
 
         # Verify task waiting in Bob's inbox without dequeuing
-        bob_len = int(redis_cmd("LLEN", "locutus:inbox:bob") or 0)
+        bob_len = int(redis_cmd("LLEN", "rhizo:inbox:bob") or 0)
         self.assertEqual(bob_len, 1, f"Expected Bob inbox to have 1 task, got {bob_len}")
 
-        raw_task = redis_cmd("LINDEX", "locutus:inbox:bob", "0")
+        raw_task = redis_cmd("LINDEX", "rhizo:inbox:bob", "0")
         self.assertTrue(bool(raw_task), "Failed to read queued task from Bob inbox")
 
         # Validate task wire envelope and schema
@@ -123,7 +123,7 @@ class TestLocutusMultiAgentPingPong(unittest.TestCase):
 
         # 5. Phase 2: Bob (autonomous Ollama Agent or deterministic simulation) runs
         print("\n--- Phase 2: Bob (Autonomous Worker) Processes & Replies ---")
-        bob_system = f"""You are agent 'bob' on a Unix system running the Locutus inter-agent protocol.
+        bob_system = f"""You are agent 'bob' on a Unix system running the Rhizo inter-agent protocol.
 You have the `execute_bash` tool available.
 CRITICAL INSTRUCTION: You MUST execute all actions by calling the `execute_bash` tool.
 
@@ -136,13 +136,13 @@ PROTOCOL SPECIFICATION:
             {
                 "role": "user",
                 "content": (
-                    "You are agent 'bob' with tag 'calc' in project 'locutus'.\n"
+                    "You are agent 'bob' with tag 'calc' in project 'rhizo'.\n"
                     "A task is waiting in your inbox from 'alice'.\n"
                     "Execute the following steps by calling the `execute_bash` tool:\n"
-                    "1. Register as 'bob' with tag 'calc' using `locutus open bob calc`.\n"
-                    "2. Read your incoming task using `locutus drain 1`.\n"
+                    "1. Register as 'bob' with tag 'calc' using `rhizo open bob calc`.\n"
+                    "2. Read your incoming task using `rhizo drain 1`.\n"
                     "3. Solve the math problem in the task (compute 15 * 15 = 225).\n"
-                    f"4. Send a reply to 'alice' using `locutus send --to alice --type reply --subject \"Re: Compute Product\" --body \"225\" --reply-to {task_id}`.\n"
+                    f"4. Send a reply to 'alice' using `rhizo send --to alice --type reply --subject \"Re: Compute Product\" --body \"225\" --reply-to {task_id}`.\n"
                     "Call execute_bash to run these commands now."
                 )
             }
@@ -152,15 +152,15 @@ PROTOCOL SPECIFICATION:
         simulated_turns = [
             (
                 {"role": "assistant", "content": ""},
-                [{"id": "call_1", "function": {"name": "execute_bash", "arguments": {"command": "locutus open bob calc"}}}]
+                [{"id": "call_1", "function": {"name": "execute_bash", "arguments": {"command": "rhizo open bob calc"}}}]
             ),
             (
                 {"role": "assistant", "content": ""},
-                [{"id": "call_2", "function": {"name": "execute_bash", "arguments": {"command": "locutus drain 1"}}}]
+                [{"id": "call_2", "function": {"name": "execute_bash", "arguments": {"command": "rhizo drain 1"}}}]
             ),
             (
                 {"role": "assistant", "content": ""},
-                [{"id": "call_3", "function": {"name": "execute_bash", "arguments": {"command": f'locutus send --to alice --type reply --subject "Re: Compute Product" --body "225" --reply-to {task_id}'}}}]
+                [{"id": "call_3", "function": {"name": "execute_bash", "arguments": {"command": f'rhizo send --to alice --type reply --subject "Re: Compute Product" --body "225" --reply-to {task_id}'}}}]
             ),
             (
                 {"role": "assistant", "content": "I solved the task and replied with 225."},
@@ -221,10 +221,10 @@ PROTOCOL SPECIFICATION:
 
         # 6. Phase 3: Alice receives and validates reply
         print("\n--- Phase 3: Alice Verifies Bob's Reply ---")
-        alice_len = int(redis_cmd("LLEN", "locutus:inbox:alice") or 0)
+        alice_len = int(redis_cmd("LLEN", "rhizo:inbox:alice") or 0)
         self.assertGreater(alice_len, 0, "Alice inbox is empty! Bob did not reply.")
 
-        raw_reply = redis_cmd("RPOP", "locutus:inbox:alice")
+        raw_reply = redis_cmd("RPOP", "rhizo:inbox:alice")
         self.assertTrue(bool(raw_reply), "Failed to retrieve raw reply from Alice inbox")
 
         # Wire envelope validation
@@ -248,10 +248,10 @@ PROTOCOL SPECIFICATION:
             tampered = dict(reply_env)
             tampered["body"] = "999_tampered_payload"
             with self.assertRaises(LocutusSchemaError):
-                LocutusPlugin.validate_wire_envelope(tampered, secret=os.environ.get("LOCUTUS_SECRET", "test_secret"))
+                LocutusPlugin.validate_wire_envelope(tampered, secret=os.environ.get("RHIZO_SECRET", "test_secret"))
 
         # Verify Bob's registration and heartbeat in Redis
-        bob_hb = redis_cmd("GET", "locutus:heartbeat:bob")
+        bob_hb = redis_cmd("GET", "rhizo:heartbeat:bob")
         self.assertEqual(bob_hb, "1", f"Expected Bob heartbeat to be '1', got '{bob_hb}'")
 
 if __name__ == "__main__":

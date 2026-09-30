@@ -1,5 +1,5 @@
 # tests/test_config.py
-# Automated tests for Locutus configuration and locutus.toml parsing.
+# Automated tests for Rhizo configuration and rhizo.toml parsing.
 
 import subprocess
 import tempfile
@@ -9,11 +9,11 @@ from pathlib import Path
 
 RHIZO_BIN = Path(__file__).parent.parent / "bin" / "rhizo"
 
-def run_locutus(*args, cwd=None, env=None):
+def run_rhizo(*args, cwd=None, env=None):
     cmd = [str(RHIZO_BIN)] + list(args)
     run_env = os.environ.copy()
     for k in list(run_env.keys()):
-        if k.startswith("LOCUTUS_") or k.startswith("RHIZO_"):
+        if k.startswith("RHIZO_"):
             del run_env[k]
     if env:
         run_env.update(env)
@@ -23,7 +23,7 @@ def run_locutus(*args, cwd=None, env=None):
 def test_config_defaults():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Isolate from user's global ~/.config/rhizo/config.toml
-        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        code, out, err = run_rhizo("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["redis_url"]["value"] == "redis://127.0.0.1:6379"
@@ -32,10 +32,10 @@ def test_config_defaults():
         assert data["listen_timeout"]["value"] == "0"
         assert data["message_ttl"]["value"] == "604800"
 
-def test_config_reads_locutus_toml():
+def test_config_reads_rhizo_toml():
     with tempfile.TemporaryDirectory() as tmpdir:
-        toml_path = Path(tmpdir) / "locutus.toml"
-        toml_content = """# locutus.toml - Custom Project Configuration
+        toml_path = Path(tmpdir) / "rhizo.toml"
+        toml_content = """# rhizo.toml - Custom Project Configuration
 redis_url = "redis://redis.internal:6379"
 prefix = "mycustom:"
 project = "custom-project"
@@ -44,12 +44,12 @@ heartbeat_ttl = 120
 
 [profiles.staging]
 redis_url = "rediss://staging.internal:6380"
-prefix = "stg:locutus:"
+prefix = "stg:rhizo:"
 """
         toml_path.write_text(toml_content)
 
         # Default profile from toml
-        code, out, err = run_locutus("config", "show", "--config", str(toml_path), "--format", "json")
+        code, out, err = run_rhizo("config", "show", "--config", str(toml_path), "--format", "json")
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         
@@ -60,14 +60,14 @@ prefix = "stg:locutus:"
         assert data["heartbeat_ttl"]["value"] == "120"
 
         # Staging profile from toml
-        code2, out2, err2 = run_locutus("config", "show", "--config", str(toml_path), "--profile", "staging", "--format", "json")
+        code2, out2, err2 = run_rhizo("config", "show", "--config", str(toml_path), "--profile", "staging", "--format", "json")
         assert code2 == 0, f"Error: {err2}"
         data2 = json.loads(out2)
         assert data2["redis_url"]["value"] == "rediss://staging.internal:6380"
-        assert data2["prefix"]["value"] == "stg:locutus:"
+        assert data2["prefix"]["value"] == "stg:rhizo:"
 
 def test_config_cli_overrides():
-    code, out, err = run_locutus(
+    code, out, err = run_rhizo(
         "config", "show",
         "--redis-url", "redis://cli-override:6379",
         "--prefix", "cli:",
@@ -89,7 +89,7 @@ RHIZO_PROJECT=dotenv-project
 RHIZO_REDIS_URL="redis://dotenv.internal:6379"
 export RHIZO_PREFIX="env_pfx:"
 """)
-        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        code, out, err = run_rhizo("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["project"]["value"] == "dotenv-project"
@@ -107,7 +107,7 @@ RHIZO_REDIS_URL=redis://base.internal:6379
         dotenv_local.write_text("""
 RHIZO_REDIS_URL=redis://local-override.internal:6379
 """)
-        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        code, out, err = run_rhizo("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["project"]["value"] == "base-project"
@@ -120,7 +120,7 @@ def test_config_process_env_overrides_dotenv():
 RHIZO_PROJECT=dotenv-project
 RHIZO_REDIS_URL=redis://dotenv:6379
 """)
-        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={
+        code, out, err = run_rhizo("config", "show", "--format", "json", cwd=tmpdir, env={
             "XDG_CONFIG_HOME": tmpdir,
             "HOME": tmpdir,
             "RHIZO_PROJECT": "process-env-project"
@@ -143,7 +143,7 @@ encrypt = true
 redis_url = "redis://my-dev-box:6379"
 prefix = "my-dev:"
 """)
-        code, out, err = run_locutus("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
+        code, out, err = run_rhizo("config", "show", "--format", "json", cwd=tmpdir, env={"XDG_CONFIG_HOME": tmpdir, "HOME": tmpdir})
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["project"]["value"] == "base-team-project"

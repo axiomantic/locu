@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-hook_utils.py - Shared utilities for Locutus lifecycle hooks.
-Resolves session mappings, locates the locutus binary, and checks/drains inboxes.
+hook_utils.py - Shared utilities for Rhizo lifecycle hooks.
+Resolves session mappings, locates the rhizo binary, and checks/drains inboxes.
 """
 
 import json
@@ -12,34 +12,34 @@ import sys
 from pathlib import Path
 
 
-def find_locutus_bin() -> str:
-    """Locates the locutus binary in PATH or common install directories."""
-    env_bin = os.environ.get("LOCUTUS_BIN")
+def find_rhizo_bin() -> str:
+    """Locates the rhizo binary in PATH or common install directories."""
+    env_bin = os.environ.get("RHIZO_BIN")
     if env_bin and os.path.exists(env_bin):
         return env_bin
 
-    which_bin = shutil.which("locutus")
+    which_bin = shutil.which("rhizo")
     if which_bin:
         return which_bin
 
     home = Path.home()
     candidates = [
-        home / ".local" / "bin" / "locutus",
-        home / ".nimble" / "bin" / "locutus",
-        Path("/opt/homebrew/bin/locutus"),
-        Path("/usr/local/bin/locutus"),
-        Path(__file__).resolve().parent.parent.parent.parent / "bin" / "locutus",
+        home / ".local" / "bin" / "rhizo",
+        home / ".nimble" / "bin" / "rhizo",
+        Path("/opt/homebrew/bin/rhizo"),
+        Path("/usr/local/bin/rhizo"),
+        Path(__file__).resolve().parent.parent.parent.parent / "bin" / "rhizo",
     ]
     for c in candidates:
         if c.exists() and os.access(c, os.X_OK):
             return str(c)
 
-    return "locutus"
+    return "rhizo"
 
 
 def get_sessions_file() -> Path:
-    """Returns ~/.config/locutus/sessions.json."""
-    return Path.home() / ".config" / "locutus" / "sessions.json"
+    """Returns ~/.config/rhizo/sessions.json."""
+    return Path.home() / ".config" / "rhizo" / "sessions.json"
 
 
 def load_sessions_map() -> dict:
@@ -79,16 +79,20 @@ def remove_session_mapping(session_key: str):
 def resolve_agent_name(session_id: str = "", runtime_prefix: str = "") -> str:
     """
     Resolves agent identity in order:
-    1. LOCUTUS_AGENT_NAME / A2A_NAME env vars
+    1. RHIZO_AGENT_NAME / A2A_NAME env vars
     2. Local session mapping (<runtime_prefix>:<session_id>)
-    3. Locutus CLI session get
+    3. Rhizo CLI session get
     4. Fallback default
     """
-    env_name = os.environ.get("LOCUTUS_AGENT_NAME") or os.environ.get("A2A_NAME") or os.environ.get("MY_NAME")
+    env_name = (
+        os.environ.get("RHIZO_AGENT_NAME")
+        or os.environ.get("A2A_NAME")
+        or os.environ.get("MY_NAME")
+    )
     if env_name:
         return env_name.strip()
 
-    locutus_bin = find_locutus_bin()
+    bin_path = find_rhizo_bin()
 
     if session_id:
         key = f"{runtime_prefix}:{session_id}" if runtime_prefix and not session_id.startswith(f"{runtime_prefix}:") else session_id
@@ -100,9 +104,9 @@ def resolve_agent_name(session_id: str = "", runtime_prefix: str = "") -> str:
             elif isinstance(entry, str):
                 return entry
 
-        # Try query locutus session get
+        # Try query session get
         try:
-            res = subprocess.run([locutus_bin, "session", "get", key], capture_output=True, text=True, timeout=2)
+            res = subprocess.run([bin_path, "session", "get", key], capture_output=True, text=True, timeout=2)
             if res.returncode == 0 and res.stdout.strip():
                 return res.stdout.strip()
         except Exception:
@@ -112,12 +116,12 @@ def resolve_agent_name(session_id: str = "", runtime_prefix: str = "") -> str:
 
 
 def check_inbox(agent_name: str) -> int:
-    """Calls locutus check-inbox and returns unread count."""
+    """Calls rhizo check-inbox and returns unread count."""
     if not agent_name:
         return 0
-    locutus_bin = find_locutus_bin()
+    bin_path = find_rhizo_bin()
     try:
-        res = subprocess.run([locutus_bin, "check-inbox", agent_name], capture_output=True, text=True, timeout=3)
+        res = subprocess.run([bin_path, "check-inbox", agent_name], capture_output=True, text=True, timeout=3)
         if res.returncode == 0:
             return int(res.stdout.strip() or "0")
     except Exception:
@@ -126,12 +130,12 @@ def check_inbox(agent_name: str) -> int:
 
 
 def drain_inbox(agent_name: str, format_type: str = "hook", count: int = 50) -> str:
-    """Drains inbox using locutus drain."""
+    """Drains inbox using rhizo drain."""
     if not agent_name:
         return ""
-    locutus_bin = find_locutus_bin()
+    bin_path = find_rhizo_bin()
     try:
-        args = [locutus_bin, "drain", str(count), agent_name]
+        args = [bin_path, "drain", str(count), agent_name]
         if format_type == "hook":
             args.append("--hook")
         elif format_type == "raw":
@@ -144,3 +148,4 @@ def drain_inbox(agent_name: str, format_type: str = "hook", count: int = 50) -> 
     except Exception:
         pass
     return ""
+

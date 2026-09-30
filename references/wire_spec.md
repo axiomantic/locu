@@ -1,12 +1,12 @@
-# Locutus Wire Protocol & Schema Specification
+# Rhizo Wire Protocol & Schema Specification
 
-This document provides the formal reference specification for messages transmitted across the Redis Locutus inter-assistant bus.
+This document provides the formal reference specification for messages transmitted across the Redis Rhizo inter-assistant bus.
 
 ---
 
 ## 1. Envelope Schema (JSON)
 
-Every message stored in an agent inbox (`${LOCUTUS_REDIS_PREFIX}inbox:<recipient>`) must be a valid JSON object matching this schema:
+Every message stored in an agent inbox (`${RHIZO_REDIS_PREFIX}inbox:<recipient>`) must be a valid JSON object matching this schema:
 
 ```json
 {
@@ -15,7 +15,7 @@ Every message stored in an agent inbox (`${LOCUTUS_REDIS_PREFIX}inbox:<recipient
   "to": "bob",
   "type": "task",
   "reply_to": null,
-  "tags": ["locutus", "ticket-104"],
+  "tags": ["rhizo", "ticket-104"],
   "subject": "Review auth parser changes",
   "body": "Please inspect src/auth.ts and verify if token expiry handles leap years.",
   "timestamp": "2026-09-19T00:17:36Z",
@@ -30,7 +30,7 @@ Every message stored in an agent inbox (`${LOCUTUS_REDIS_PREFIX}inbox:<recipient
 | :--- | :--- | :--- | :--- |
 | `id` | `string` | **Yes** | Unique message identifier. Recommended format: `msg_<unix_ts>_<sender>_<random>`. |
 | `from` | `string` | **Yes** | Ephemeral identity name of the sending agent. |
-| `to` | `string` | **Yes** | Direct recipient name (e.g. `bob`), multicast tag (e.g. `@locutus,qa`), or global broadcast (`*`). |
+| `to` | `string` | **Yes** | Direct recipient name (e.g. `bob`), multicast tag (e.g. `@rhizo,qa`), or global broadcast (`*`). |
 | `type` | `string` | **Yes** | One of: `"task"`, `"query"`, `"reply"`, `"status"`. |
 | `reply_to` | `string` \| `null` | **Yes** | ID of the previous message being replied to, or `null` if initiating a conversation. |
 | `tags` | `array[string]` | **Yes** | Routing, project, or ticket tags. |
@@ -61,25 +61,25 @@ Every message stored in an agent inbox (`${LOCUTUS_REDIS_PREFIX}inbox:<recipient
 
 ## 3. Cryptographic Security & Prompt-Injection Firewall
 
-Locutus employs an out-of-band cryptographic security model to protect coding assistants from forged tasks, unauthorized cluster access, and prompt injection attacks:
+Rhizo employs an out-of-band cryptographic security model to protect coding assistants from forged tasks, unauthorized cluster access, and prompt injection attacks:
 
 ### Secret Key Storage
-- Secret key stored at `~/.config/locutus/secret` with `0600` permissions (read/write by owner only).
+- Secret key stored at `~/.config/rhizo/secret` (or `~/.config/locutus/secret`) with `0600` permissions (read/write by owner only).
 - Auto-generated on first run with 256-bit cryptographically secure entropy (`openssl rand -hex 32`).
 - The secret key **never enters the assistant's LLM context window**, is never passed as a prompt argument, and is never transmitted across Redis.
 
 ### HMAC-SHA256 Signature Verification
-- Senders sign outgoing messages automatically using `locutus send` or `locutus broadcast`.
+- Senders sign outgoing messages automatically using `rhizo send` or `rhizo broadcast`.
 - Signature covers canonical concatenation: `id|from|to|type|subject|body|timestamp`.
-- Receiving agents verify signatures automatically via `locutus listen`.
+- Receiving agents verify signatures automatically via `rhizo listen`.
 
 ### Prompt-Injection Firewall (Air-Gap Invariant)
-- Forged, tampered, or unsigned messages are dropped **at the process boundary** by `locutus listen` before entering stdout.
-- Dropped messages are logged to stderr only (`[LOCUTUS SECURITY] WARNING: Dropping unauthenticated/tampered message`). The assistant never receives malicious or forged content into its context window, neutralizing prompt injection attacks before they can execute.
+- Forged, tampered, or unsigned messages are dropped **at the process boundary** by `rhizo listen` before entering stdout.
+- Dropped messages are logged to stderr only (`[RHIZO SECURITY] WARNING: Dropping unauthenticated/tampered message`). The assistant never receives malicious or forged content into its context window, neutralizing prompt injection attacks before they can execute.
 
 ```mermaid
 flowchart TD
-    subgraph Host["Host Boundary (locutus listen)"]
+    subgraph Host["Host Boundary (rhizo listen)"]
         Raw["Raw Inbound Redis JSON"] --> Parse{"Valid JSON &<br/>Required Fields?"}
         Parse -->|No| Drop1["❌ Reject & Log to Stderr"]
         Parse -->|Yes| Canon["Reconstruct Canonical String<br/><code>id|from|to|type|subject|body|timestamp</code>"]
@@ -99,9 +99,9 @@ flowchart TD
 ```
 
 ### Optional End-to-End Encryption (E2EE)
-- Setting `LOCUTUS_ENCRYPT=1` encrypts the `body` using AES-256-CBC PBKDF2.
+- Setting `RHIZO_ENCRYPT=1` (or `LOCUTUS_ENCRYPT=1`) encrypts the `body` using AES-256-CBC PBKDF2.
 - Plaintext payload never touches the Redis keyspace.
-- `locutus listen` automatically detects `encrypted: true` and decrypts before delivering to the agent.
+- `rhizo listen` automatically detects `encrypted: true` and decrypts before delivering to the agent.
 
 ---
 
@@ -113,7 +113,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class LocutusMessage(BaseModel):
+class RhizoMessage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(..., min_length=3, description="Unique message ID")
@@ -147,47 +147,49 @@ class LocutusMessage(BaseModel):
         return v
 
 
-# Backwards compatibility alias
-A2AMessage = LocutusMessage
+# Backwards compatibility aliases
+LocutusMessage = RhizoMessage
+A2AMessage = RhizoMessage
 ```
 
 ---
 
 ## 5. Advanced Coordination & Bus Primitives
 
-Locutus extends standard direct and broadcast messaging with five primitives for multi-agent workflows:
+Rhizo extends standard direct and broadcast messaging with five primitives for multi-agent workflows:
 
-### 1. Synchronous RPC (`locutus request`)
-- **Key Pattern**: `${LOCUTUS_REDIS_PREFIX}inbox:reply:<request_id>`
+### 1. Synchronous RPC (`rhizo request`)
+- **Key Pattern**: `${RHIZO_REDIS_PREFIX}inbox:reply:<request_id>`
 - **Workflow**:
   1. Caller generates unique `req_id` and sets `reply_to: "reply:<req_id>"`.
-  2. Caller dispatches task to recipient and immediately blocks on `BRPOP ${LOCUTUS_REDIS_PREFIX}inbox:reply:<req_id> <timeout>`.
+  2. Caller dispatches task to recipient and immediately blocks on `BRPOP ${RHIZO_REDIS_PREFIX}inbox:reply:<req_id> <timeout>`.
   3. Recipient processes task and sends reply unicast to `reply:<req_id>`.
   4. Caller authenticates HMAC signature, decrypts if encrypted, and outputs result.
 
-### 2. Competing-Consumers Work Queues (`locutus enqueue` / `locutus work`)
-- **Key Pattern**: `${LOCUTUS_REDIS_PREFIX}queue:<queue_name>`
+### 2. Competing-Consumers Work Queues (`rhizo enqueue` / `rhizo work`)
+- **Key Pattern**: `${RHIZO_REDIS_PREFIX}queue:<queue_name>`
 - **Workflow**:
-  - Producers run `locutus enqueue <queue_name> ...` which executes `LPUSH` + `EXPIRE`.
-  - Any number of worker agents run `locutus work <queue_name> [timeout]`.
+  - Producers run `rhizo enqueue <queue_name> ...` which executes `LPUSH` + `EXPIRE`.
+  - Any number of worker agents run `rhizo work <queue_name> [timeout]`.
   - Redis `BRPOP` atomically pops exactly one task to exactly one worker (competing-consumers pattern with zero race conditions).
 
-### 3. Distributed Mutex / Lock (`locutus lock` / `locutus unlock`)
-- **Key Pattern**: `${LOCUTUS_REDIS_PREFIX}lock:<lock_name>`
+### 3. Distributed Mutex / Lock (`rhizo lock` / `rhizo unlock`)
+- **Key Pattern**: `${RHIZO_REDIS_PREFIX}lock:<lock_name>`
 - **Workflow**:
-  - `locutus lock <name> [ttl]`: Atomically executes `SET key owner NX EX ttl`. Returns success (0) if acquired, error (1) if already held.
-  - `locutus unlock <name>`: Atomically verifies current owner matches caller before deleting key via Lua.
+  - `rhizo lock <name> [ttl] --fencing`: Atomically executes SET key owner NX EX ttl and returns monotonic fencing token.
+  - `rhizo unlock <name>`: Atomically verifies current owner matches caller before deleting key via Lua.
 
 ### 4. Agent Operational State & Activity Tracking
-- **Key Pattern**: `${LOCUTUS_REDIS_PREFIX}agent:<agent_name>` (Hash)
+- **Key Pattern**: `${RHIZO_REDIS_PREFIX}agent:<agent_name>` (Hash)
 - **Fields**: `state` (`idle`, `busy`, `error`), `activity` (arbitrary descriptive text), `last_seen`.
 - **Workflow**:
-  - Agents announce status via `locutus status <state> [activity]`.
-  - Cluster peers view state and live activity in `locutus who` output.
+  - Agents announce status via `rhizo status <state> [activity]`.
+  - Cluster peers view state and live activity in `rhizo who` output.
 
-### 5. Ephemeral Pub/Sub Streaming (`locutus pub` / `locutus sub`)
-- **Channel Pattern**: `${LOCUTUS_REDIS_PREFIX}channel:<channel_name>`
+### 5. Ephemeral Pub/Sub Streaming (`rhizo pub` / `rhizo sub`)
+- **Channel Pattern**: `${RHIZO_REDIS_PREFIX}channel:<channel_name>`
 - **Workflow**:
-  - `locutus pub <channel> <message>`: Fires real-time Redis `PUBLISH` to active subscribers with zero queue storage overhead.
-  - `locutus sub <channel> [timeout]`: Listens for live broadcasts, exiting upon message receipt or timeout.
+  - `rhizo pub <channel> <message>`: Fires real-time Redis `PUBLISH` to active subscribers with zero queue storage overhead.
+  - `rhizo sub <channel> [timeout]`: Listens for live broadcasts, exiting upon message receipt or timeout.
+
 

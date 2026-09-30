@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-claude_stop_hook.py - Claude Code `Stop` Lifecycle Hook for Locutus.
+claude_stop_hook.py - Claude Code `Stop` Lifecycle Hook for Rhizo.
 
 Runs at the end of a Claude Code response turn.
-If messages are waiting in the Locutus inbox:
+If messages are waiting in the Rhizo inbox:
   - Drains them atomically
   - Returns `{"decision": "block", ...}` with `additionalContext`
   - Forces Claude Code to immediately continue into a new response turn.
@@ -31,7 +31,7 @@ def main():
     agent_name = resolve_agent_name(session_id, runtime_prefix="claude")
 
     if not agent_name:
-        # Agent not registered on Locutus bus; pass through silently
+        # Agent not registered on Rhizo bus; pass through silently
         print("{}")
         return
 
@@ -49,7 +49,7 @@ def main():
 
     output = {
         "decision": "block",
-        "reason": f"Received {count} new Locutus bus message(s)",
+        "reason": f"Received {count} new Rhizo bus message(s)",
         "hookSpecificOutput": {
             "hookEventName": "Stop",
             "additionalContext": messages_text

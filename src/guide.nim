@@ -49,6 +49,11 @@ No Double-Daemons: Inside background subagents, 'rhizo listen' must run as a syn
 <INVARIANT>
 Always negotiate leases when claiming tasks: 'rhizo claim <queue> --lease <sec>'. Acquire fencing tokens before modifying shared resources: 'rhizo lock <resource> --fencing'. Acknowledge completion with 'rhizo ack' only after verification.
 </INVARIANT>
+
+### 4. Task Routing & Optional System 1
+<INVARIANT>
+System 1 Routing is strictly optional. All core primitives (messaging, locking, explicit queues 'rhizo enqueue <queue>') require zero ML models and zero configuration files. Semantic routing ('rhizo enqueue --route <text>') is an optional triage accelerator; it resolves cascading rules starting from a machine-wide global configuration (~/.config/rhizo/rhizo-routes.yaml or routes.yaml, created via 'rhizo route init --global') down through repo-root and subdirectory rhizo-routes.yaml files (scaffold via 'rhizo route init'). All projects inherit global rules unless overridden.
+</INVARIANT>
 <!-- END RHIZO GUIDE -->"""
 
 type GuideStatus* = enum

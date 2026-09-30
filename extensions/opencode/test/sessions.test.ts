@@ -8,14 +8,14 @@ import {
   setMappedAgent,
   closeSessionAgent,
   removeMappedAgent,
-  readLocalSessionMap
+  readLocalSessionMap,
+  getSessionsPath
 } from "../src/sessions"
 import { writeFileSync, unlinkSync, existsSync } from "node:fs"
 import { join } from "node:path"
 
 describe("sessions module", () => {
-  const home = process.env.HOME || process.env.USERPROFILE || ""
-  const sessionsPath = join(home, ".config", "locutus", "sessions.json")
+  const sessionsPath = getSessionsPath()
   let originalContent: string | null = null
 
   beforeEach(() => {

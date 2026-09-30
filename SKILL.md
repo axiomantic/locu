@@ -36,26 +36,38 @@ Rhizo uses layered configuration so local developer settings and API keys are ne
 - **Local Overrides**: `.rhizo.local.toml` (git-ignored host/prefix settings)
 - **Environment Secrets**: `.env.local` / `.env` (git-ignored API keys and service URLs)
 
-### C. System 1 Decision Engine Setup
-Rhizo employs fast, calibrated **System 1 Decision Models** to route natural language directives into typed queues without generative decoding bottlenecks:
-1. **Choose a Provider**:
-   - **Local Daemon (Recommended)**: Use [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone) (install directly from GitHub) to run ModernBERT Laya, Ollama, or local GGUF models at `http://127.0.0.1:8100` with macOS launchd and Linux systemd background daemon support. Offline, zero cost, <40ms latency.
-   - **Cloud API**: TypeSafe Jev at `https://api.typesafe.ai`. Configure `RHIZO_API_KEY` (or `JEV_API_KEY`) and optional `RHIZO_MODEL="jev-1"`.
-2. **Configure Endpoint**:
-   Add to uncommitted `.env.local` or `rhizo-routes.local.yaml`:
+### C. Task Routing & Optional System 1 Decision Engine
+> [!NOTE]
+> **System 1 Routing is strictly OPTIONAL.**
+> All core Rhizo coordination (messaging `rhizo open/send/listen`, distributed locking `rhizo lock --fencing`, explicit task queues `rhizo enqueue <queue>`, roundtable floor control, consensus ballots, and leader election) operates directly over Redis and requires **zero ML models, zero Python runtimes, and zero configuration files**.
+
+When you have a high-throughput firehose of raw, untyped natural language tasks (e.g. from Jira, Slack, or user prompts) and want zero-shot classification into typed queues without generative LLM decoding delays:
+* **Explicit Queueing (Default)**: Route deterministically without models: `rhizo enqueue queue:worker:claude "Fix button CSS"`.
+* **Semantic Triage (Optional)**: Route via local ModernBERT/Laya (<40ms): `rhizo enqueue --route "Fix button CSS"`.
+
+#### Cascading Routing Hierarchy & Scaffolding
+When using semantic routing (`--route`), Rhizo resolves rules in a cascading hierarchy where more specific scopes override broader ones:
+1. **Built-in Baseline**: Zero config needed; automatically classifies into standard domains (`backend`, `frontend`, `database`, `devops`, `firmware`, `docs`) routing to `queue:swarm:{{ domain.choice }}`.
+2. **Global User Config**: `~/.config/rhizo/rhizo-routes.yaml` or `~/.config/rhizo/routes.yaml` (machine-wide configuration that applies across all projects on the system).
+3. **Repo Root Config**: `<git-root>/rhizo-routes.yaml` (project canonical rules layering on top of global).
+4. **Subdirectory Config**: `<repo>/packages/*/rhizo-routes.yaml` (monorepo subproject rules).
+5. **Local Uncommitted Overrides**: `rhizo-routes.local.yaml` (developer scratch overrides).
+
+Initialize routes anytime:
+```bash
+rhizo route init           # Scaffold project rhizo-routes.yaml
+rhizo route init --global  # Scaffold machine-wide ~/.config/rhizo/rhizo-routes.yaml (applies across all projects)
+rhizo route lint --check-service  # Validate rules & verify daemon connectivity
+```
+
+#### Local System 1 Daemon Setup (Optional)
+1. **Install Daemon**: Use [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone) (Python 3.10+):
    ```bash
-   # .env.local
-   RHIZO_SERVICE_URL="http://127.0.0.1:8100"
-   # Or for Cloud API:
-   # RHIZO_SERVICE_URL="https://api.typesafe.ai"
-   # RHIZO_API_KEY="jev_live_sec_..."
-   # RHIZO_MODEL="jev-1"
+   pip install "git+https://github.com/axiomantic/local-systemone.git#egg=local-systemone[full]"
+   local-systemone --install-daemon   # macOS launchd or Linux systemd daemon on port 8100
    ```
-3. **Verify Routing & Model Health**:
-   ```bash
-   rhizo route lint --check-service
-   ```
-   *For detailed service setup, macOS (launchd / Metal) & Linux (systemd / CUDA / CPU) deployment instructions, and schema definitions, see [references/system_one_setup.md](references/system_one_setup.md).*
+2. **Cloud Alternative**: TypeSafe Jev API at `https://api.typesafe.ai` with `RHIZO_API_KEY`.
+   *For detailed service setup, macOS Metal & Linux deployment instructions, and schema definitions, see [references/system_one_setup.md](references/system_one_setup.md).*
 
 ---
 
@@ -74,7 +86,7 @@ Inside background subagents, 'rhizo listen' must execute as a synchronous, block
 </INVARIANT>
 
 <INVARIANT>
-Identity Allocation: Agent identity must be unique and collision-free across projects. Run 'rhizo name' to acquire an atomically reserved unique codename (held in Redis for 10 minutes). Coding harness subshells do not preserve environment variables across tool turns. Record the literal name output from 'rhizo name' (e.g. 'locutus-sequoia') in your reasoning context and pass it explicitly in all subsequent commands: 'rhizo open <name>', 'rhizo listen <name>'.
+Identity Allocation: Agent identity must be unique and collision-free across projects. Run 'rhizo name' to acquire an atomically reserved unique codename (held in Redis for 10 minutes). Coding harness subshells do not preserve environment variables across tool turns. Record the literal name output from 'rhizo name' (e.g. 'rhizo-sequoia') in your reasoning context and pass it explicitly in all subsequent commands: 'rhizo open <name>', 'rhizo listen <name>'.
 </INVARIANT>
 
 <INVARIANT>
@@ -133,13 +145,13 @@ Coding harness tools execute in isolated subshells (`bash -c` / `zsh -c`) that d
 1. Acquire an atomically held unique codename:
 ```bash
 rhizo name
-# Stdout: locutus-sequoia
+# Stdout: rhizo-sequoia
 ```
-2. Note the returned codename in your reasoning context (`"My assigned name is locutus-sequoia"`).
+2. Note the returned codename in your reasoning context (`"My assigned name is rhizo-sequoia"`).
 3. Pass that literal name in all subsequent tool calls:
 ```bash
-rhizo open locutus-sequoia "backend,worker"
-rhizo listen locutus-sequoia
+rhizo open rhizo-sequoia "backend,worker"
+rhizo listen rhizo-sequoia
 ```
 
 ### B. Distributed Locking with Monotonic Fencing

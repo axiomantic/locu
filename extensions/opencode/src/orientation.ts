@@ -14,7 +14,7 @@ export function getOrientationReminder(sessionId?: string | null): string {
       if (workspacePath) {
         const taskLabel = entry.task_id ? `for task '${entry.task_id}' ` : ""
         return (
-          `[LOCUTUS CONTEXT ANCHOR: You have an active isolated workspace/strand ${taskLabel}at: ` +
+          `[RHIZO CONTEXT ANCHOR: You have an active isolated workspace/strand ${taskLabel}at: ` +
           `${workspacePath}. Do not commit changes to the canonical repository root. ` +
           `Verify with 'git status' inside your workspace.]`
         )
@@ -23,8 +23,8 @@ export function getOrientationReminder(sessionId?: string | null): string {
   }
 
   return (
-    `[LOCUTUS NOTICE: If this task was operating in an isolated workspace/strand, inspect active workspaces ` +
-    `(e.g., via 'braid list' or checking ~/Development/workspaces/) and .braid.json to reorient ` +
+    `[RHIZO NOTICE: If this task was operating in an isolated workspace/strand, inspect active workspaces ` +
+    `(e.g., via 'vine list' or checking ~/Development/workspaces/) and .vine.json to reorient ` +
     `yourself before making edits in the canonical repository root.]`
   )
 }

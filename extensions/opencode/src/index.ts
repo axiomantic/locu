@@ -1,8 +1,8 @@
 // extensions/opencode/src/index.ts
-// Main entry point for OpenCode Locutus Ear plugin.
+// Main entry point for OpenCode Rhizo Ear plugin.
 
 import {
-  getLocutusBin,
+  getRhizoBin,
   sanitizeAgentName,
   isSessionSupposedToListen,
   resolveSessionAgent,
@@ -26,34 +26,35 @@ import type { PluginContext, OpenCodeEvent } from "./types"
 
 const armedDirectories = new Set<string>()
 
-export const LocutusEar = async (ctx: PluginContext) => {
-  if (process.env.LOCUTUS_EAR_DISABLED === "1") return {}
+export const RhizoEar = async (ctx: PluginContext) => {
+  if (process.env.RHIZO_EAR_DISABLED === "1") return {}
   const client = ctx.client
   const directory = ctx.directory || process.cwd()
-  console.error("[locutus-ear] init directory:", directory)
+  console.error("[rhizo-ear] init directory:", directory)
 
   if (!armedDirectories.has(directory)) {
     armedDirectories.add(directory)
-    // Initial bootstrap: if global LOCUTUS_AGENT_NAME is set, listen for it
-    if (process.env.LOCUTUS_AGENT_NAME) {
-      startAgentListener(client, process.env.LOCUTUS_AGENT_NAME, directory, null)
+    // Initial bootstrap: if global RHIZO_AGENT_NAME is set, listen for it
+    const envAgent = process.env.RHIZO_AGENT_NAME
+    if (envAgent) {
+      startAgentListener(client, envAgent, directory, null)
     }
     // Discover live sessions and arm listener for active registered sessions
-    syncSessions(client, directory).catch((e) => console.error("[locutus-ear]", e))
+    syncSessions(client, directory).catch((e) => console.error("[rhizo-ear]", e))
   }
 
   return {
     "shell.env": async ({ sessionID }: { sessionID?: string }, output: { env?: Record<string, string> }) => {
       if (sessionID && output && output.env) {
         const sessionKey = `opencode:${sessionID}`
-        output.env.LOCUTUS_SESSION_ID = sessionKey
+        output.env.RHIZO_SESSION_ID = sessionKey
         let name = isSessionSupposedToListen(sessionID)
         if (!name) {
           // Auto-resolve or register for active command execution session
           name = resolveSessionAgent(sessionID)
         }
         if (name) {
-          output.env.LOCUTUS_AGENT_NAME = name
+          output.env.RHIZO_AGENT_NAME = name
           verifyAndEnsureListener(client, sessionID, directory)
         }
       }
@@ -95,17 +96,23 @@ export const LocutusEar = async (ctx: PluginContext) => {
   }
 }
 
-// Attach static helpers for backwards compatibility with tests and callers
-(LocutusEar as any).getLocutusBin = getLocutusBin;
-(LocutusEar as any).sanitizeAgentName = sanitizeAgentName;
-(LocutusEar as any).interruptSessionIfBusy = interruptSessionIfBusy;
-(LocutusEar as any).deliverPrompt = deliverPrompt;
-(LocutusEar as any).resolveMessageUrgency = resolveMessageUrgency;
-(LocutusEar as any).isSessionSupposedToListen = isSessionSupposedToListen;
-(LocutusEar as any).verifyAndEnsureListener = verifyAndEnsureListener;
-(LocutusEar as any).closeSessionAgent = closeSessionAgent;
-(LocutusEar as any).isListenerAlive = isListenerAlive;
-(LocutusEar as any).setMappedAgent = setMappedAgent;
-(LocutusEar as any).getOrientationReminder = getOrientationReminder;
+// Attach static helpers for tests and callers
+const attachHelpers = (fn: any) => {
+  fn.getRhizoBin = getRhizoBin;
+  fn.sanitizeAgentName = sanitizeAgentName;
+  fn.interruptSessionIfBusy = interruptSessionIfBusy;
+  fn.deliverPrompt = deliverPrompt;
+  fn.resolveMessageUrgency = resolveMessageUrgency;
+  fn.isSessionSupposedToListen = isSessionSupposedToListen;
+  fn.verifyAndEnsureListener = verifyAndEnsureListener;
+  fn.closeSessionAgent = closeSessionAgent;
+  fn.isListenerAlive = isListenerAlive;
+  fn.setMappedAgent = setMappedAgent;
+  fn.getOrientationReminder = getOrientationReminder;
+  return fn;
+};
 
-export default LocutusEar
+attachHelpers(RhizoEar);
+
+export default RhizoEar
+

@@ -1,9 +1,9 @@
 {
-  "name": "@locutus/opencode-ear",
+  "name": "@axiomantic/rhizo-opencode-ear",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.ts --outfile ../../skills/locutus/opencode-ear.js --target bun",
+    "build": "bun build src/index.ts --outfile ../../skills/rhizo/opencode-ear.js --target bun",
     "test": "bun test"
   }
 }

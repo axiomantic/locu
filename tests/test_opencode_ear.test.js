@@ -5,15 +5,17 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test"
 import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import LocutusEar from "../skills/locutus/opencode-ear.js"
+import RhizoEar from "../skills/rhizo/opencode-ear.js"
+
+const Ear = RhizoEar
 
 describe("opencode-ear plugin", () => {
   let tempHome
   let originalHome
 
   beforeEach(() => {
-    tempHome = join(tmpdir(), "locutus-test-home-" + Math.random().toString(36).slice(2))
-    mkdirSync(join(tempHome, ".config", "locutus"), { recursive: true })
+    tempHome = join(tmpdir(), "rhizo-test-home-" + Math.random().toString(36).slice(2))
+    mkdirSync(join(tempHome, ".config", "rhizo"), { recursive: true })
     originalHome = process.env.HOME
     process.env.HOME = tempHome
   })
@@ -25,22 +27,22 @@ describe("opencode-ear plugin", () => {
     } catch {}
   })
 
-  it("exports a default function and handles LOCUTUS_EAR_DISABLED", async () => {
-    expect(typeof LocutusEar).toBe("function")
-    const prev = process.env.LOCUTUS_EAR_DISABLED
+  it("exports a default function and handles RHIZO_EAR_DISABLED", async () => {
+    expect(typeof Ear).toBe("function")
+    const prev = process.env.RHIZO_EAR_DISABLED
     try {
-      process.env.LOCUTUS_EAR_DISABLED = "1"
-      const res = await LocutusEar({ client: {}, directory: tempHome })
+      process.env.RHIZO_EAR_DISABLED = "1"
+      const res = await Ear({ client: {}, directory: tempHome })
       expect(res).toEqual({})
     } finally {
-      if (prev === undefined) delete process.env.LOCUTUS_EAR_DISABLED
-      else process.env.LOCUTUS_EAR_DISABLED = prev
+      if (prev === undefined) delete process.env.RHIZO_EAR_DISABLED
+      else process.env.RHIZO_EAR_DISABLED = prev
     }
   })
 
-  it("injects LOCUTUS_SESSION_ID and LOCUTUS_AGENT_NAME via shell.env hook", async () => {
+  it("injects RHIZO_SESSION_ID and RHIZO_AGENT_NAME via shell.env hook", async () => {
     // Pre-populate a session mapping
-    const sessionsPath = join(tempHome, ".config", "locutus", "sessions.json")
+    const sessionsPath = join(tempHome, ".config", "rhizo", "sessions.json")
     const initialSessions = {
       "opencode:ses_test_abc": {
         agent: "lead-dev",
@@ -55,30 +57,30 @@ describe("opencode-ear plugin", () => {
       }
     }
 
-    const hooks = await LocutusEar({ client: mockClient, directory: tempHome })
+    const hooks = await Ear({ client: mockClient, directory: tempHome })
     expect(typeof hooks["shell.env"]).toBe("function")
 
     const output = { env: {} }
     await hooks["shell.env"]({ sessionID: "ses_test_abc" }, output)
 
-    expect(output.env.LOCUTUS_SESSION_ID).toBe("opencode:ses_test_abc")
-    expect(output.env.LOCUTUS_AGENT_NAME).toBe("lead-dev")
+    expect(output.env.RHIZO_SESSION_ID).toBe("opencode:ses_test_abc")
+    expect(output.env.RHIZO_AGENT_NAME).toBe("lead-dev")
   })
 
   it("auto-assigns agent name for unmapped sessions and cleans up on session.deleted", async () => {
-    const sessionsPath = join(tempHome, ".config", "locutus", "sessions.json")
+    const sessionsPath = join(tempHome, ".config", "rhizo", "sessions.json")
     const mockClient = {
       session: {
         list: async () => []
       }
     }
 
-    const hooks = await LocutusEar({ client: mockClient, directory: tempHome })
+    const hooks = await Ear({ client: mockClient, directory: tempHome })
     const output = { env: {} }
     await hooks["shell.env"]({ sessionID: "ses_new_999" }, output)
 
-    expect(output.env.LOCUTUS_SESSION_ID).toBe("opencode:ses_new_999")
-    expect(output.env.LOCUTUS_AGENT_NAME).toBe("opencode-_new_999")
+    expect(output.env.RHIZO_SESSION_ID).toBe("opencode:ses_new_999")
+    expect(output.env.RHIZO_AGENT_NAME).toBe("opencode-_new_999")
 
     // Verify it was written to global sessions.json
     expect(existsSync(sessionsPath)).toBe(true)
@@ -98,7 +100,7 @@ describe("opencode-ear plugin", () => {
     expect(afterDelete["opencode:ses_new_999"]).toBeUndefined()
   })
 
-  it("interruptSessionIfBusy aborts busy session unless LOCUTUS_INTERRUPT=0", async () => {
+  it("interruptSessionIfBusy aborts busy session unless RHIZO_INTERRUPT=0", async () => {
     let abortedId = null
     let statusCallCount = 0
 
@@ -117,7 +119,7 @@ describe("opencode-ear plugin", () => {
     }
 
     // Default: when called on a busy session, aborts it
-    await LocutusEar.interruptSessionIfBusy(mockClient, "ses_busy_1")
+    await Ear.interruptSessionIfBusy(mockClient, "ses_busy_1")
     expect(abortedId).toBe("ses_busy_1")
 
     // Idle session: should NOT call abort
@@ -128,13 +130,13 @@ describe("opencode-ear plugin", () => {
         abort: async ({ path }) => { abortedId = path.id }
       }
     }
-    await LocutusEar.interruptSessionIfBusy(idleClient, "ses_idle_1")
+    await Ear.interruptSessionIfBusy(idleClient, "ses_idle_1")
     expect(abortedId).toBeNull()
 
-    // LOCUTUS_INTERRUPT=0 disables abort even when busy
-    const prevInterrupt = process.env.LOCUTUS_INTERRUPT
+    // RHIZO_INTERRUPT=0 disables abort even when busy
+    const prevInterrupt = process.env.RHIZO_INTERRUPT
     try {
-      process.env.LOCUTUS_INTERRUPT = "0"
+      process.env.RHIZO_INTERRUPT = "0"
       abortedId = null
       const busyClient = {
         session: {
@@ -142,11 +144,11 @@ describe("opencode-ear plugin", () => {
           abort: async ({ path }) => { abortedId = path.id }
         }
       }
-      await LocutusEar.interruptSessionIfBusy(busyClient, "ses_busy_2")
+      await Ear.interruptSessionIfBusy(busyClient, "ses_busy_2")
       expect(abortedId).toBeNull()
     } finally {
-      if (prevInterrupt === undefined) delete process.env.LOCUTUS_INTERRUPT
-      else process.env.LOCUTUS_INTERRUPT = prevInterrupt
+      if (prevInterrupt === undefined) delete process.env.RHIZO_INTERRUPT
+      else process.env.RHIZO_INTERRUPT = prevInterrupt
     }
   })
 
@@ -161,10 +163,10 @@ describe("opencode-ear plugin", () => {
       }
     }
 
-    await LocutusEar.deliverPrompt(modernClient, "ses_1", "Hello from Locutus")
+    await Ear.deliverPrompt(modernClient, "ses_1", "Hello from Rhizo")
     expect(promptAsyncCalled).toEqual({
       path: { id: "ses_1" },
-      body: { parts: [{ type: "text", text: "Hello from Locutus" }] }
+      body: { parts: [{ type: "text", text: "Hello from Rhizo" }] }
     })
     expect(promptCalled).toBeNull()
 
@@ -174,7 +176,7 @@ describe("opencode-ear plugin", () => {
         prompt: async (payload) => { promptCalled = payload }
       }
     }
-    await LocutusEar.deliverPrompt(legacyClient, "ses_2", "Fallback turn")
+    await Ear.deliverPrompt(legacyClient, "ses_2", "Fallback turn")
     expect(promptCalled).toEqual({
       path: { id: "ses_2" },
       body: { parts: [{ type: "text", text: "Fallback turn" }] }
@@ -182,18 +184,18 @@ describe("opencode-ear plugin", () => {
   })
 
   it("resolveMessageUrgency correctly parses immediate vs soon", () => {
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123","urgency":"immediate"}')).toBe("immediate")
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123","delivery":"immediate"}')).toBe("immediate")
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123","urgency":"now"}')).toBe("immediate")
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123","urgency":"urgent"}')).toBe("immediate")
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123","urgency":"soon"}')).toBe("soon")
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123","delivery":"soon"}')).toBe("soon")
-    expect(LocutusEar.resolveMessageUrgency('[locutus:agent] {"id":"123"}')).toBe("soon")
-    expect(LocutusEar.resolveMessageUrgency('raw text without json')).toBe("soon")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123","urgency":"immediate"}')).toBe("immediate")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123","delivery":"immediate"}')).toBe("immediate")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123","urgency":"now"}')).toBe("immediate")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123","urgency":"urgent"}')).toBe("immediate")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123","urgency":"soon"}')).toBe("soon")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123","delivery":"soon"}')).toBe("soon")
+    expect(Ear.resolveMessageUrgency('[rhizo:agent] {"id":"123"}')).toBe("soon")
+    expect(Ear.resolveMessageUrgency('raw text without json')).toBe("soon")
   })
 
   it("verifies and resumes listeners only for active sessions and ignores closed ones", async () => {
-    const sessionsPath = join(tempHome, ".config", "locutus", "sessions.json")
+    const sessionsPath = join(tempHome, ".config", "rhizo", "sessions.json")
     const testSessions = {
       "opencode:ses_active": {
         agent: "worker-active",
@@ -209,9 +211,9 @@ describe("opencode-ear plugin", () => {
     writeFileSync(sessionsPath, JSON.stringify(testSessions, null, 2))
 
     // isSessionSupposedToListen checks
-    expect(LocutusEar.isSessionSupposedToListen("ses_active")).toBe("worker-active")
-    expect(LocutusEar.isSessionSupposedToListen("ses_closed")).toBeNull()
-    expect(LocutusEar.isSessionSupposedToListen("ses_unregistered")).toBeNull()
+    expect(Ear.isSessionSupposedToListen("ses_active")).toBe("worker-active")
+    expect(Ear.isSessionSupposedToListen("ses_closed")).toBeNull()
+    expect(Ear.isSessionSupposedToListen("ses_unregistered")).toBeNull()
 
     const mockClient = {
       session: {
@@ -223,18 +225,18 @@ describe("opencode-ear plugin", () => {
       }
     }
 
-    const hooks = await LocutusEar({ client: mockClient, directory: tempHome })
+    const hooks = await Ear({ client: mockClient, directory: tempHome })
 
     // Closed session verification should return false and not spawn
-    const closedResult = LocutusEar.verifyAndEnsureListener(mockClient, "ses_closed", tempHome)
+    const closedResult = Ear.verifyAndEnsureListener(mockClient, "ses_closed", tempHome)
     expect(closedResult).toBe(false)
 
     // Unregistered session verification should return false
-    const unregResult = LocutusEar.verifyAndEnsureListener(mockClient, "ses_unregistered", tempHome)
+    const unregResult = Ear.verifyAndEnsureListener(mockClient, "ses_unregistered", tempHome)
     expect(unregResult).toBe(false)
 
     // Active session verification should return true
-    const activeResult = LocutusEar.verifyAndEnsureListener(mockClient, "ses_active", tempHome)
+    const activeResult = Ear.verifyAndEnsureListener(mockClient, "ses_active", tempHome)
     expect(activeResult).toBe(true)
 
     // Testing session.resumed event
@@ -246,21 +248,21 @@ describe("opencode-ear plugin", () => {
     })
 
     // Now close the active session explicitly
-    LocutusEar.closeSessionAgent("opencode:ses_active")
-    expect(LocutusEar.isSessionSupposedToListen("ses_active")).toBeNull()
-    const afterCloseResult = LocutusEar.verifyAndEnsureListener(mockClient, "ses_active", tempHome)
+    Ear.closeSessionAgent("opencode:ses_active")
+    expect(Ear.isSessionSupposedToListen("ses_active")).toBeNull()
+    const afterCloseResult = Ear.verifyAndEnsureListener(mockClient, "ses_active", tempHome)
     expect(afterCloseResult).toBe(false)
   })
 
   it("automatically arms listener and registers agent on session.created without waiting for shell.env", async () => {
-    const sessionsPath = join(tempHome, ".config", "locutus", "sessions.json")
+    const sessionsPath = join(tempHome, ".config", "rhizo", "sessions.json")
     const mockClient = {
       session: {
         list: async () => []
       }
     }
 
-    const hooks = await LocutusEar({ client: mockClient, directory: tempHome })
+    const hooks = await Ear({ client: mockClient, directory: tempHome })
 
     // Simulate brand new session created event in GUI
     await hooks.event({
@@ -278,7 +280,7 @@ describe("opencode-ear plugin", () => {
     expect(saved["opencode:ses_auto_arm_42"].status).toBe("active")
 
     // Verify isListenerAlive
-    expect(LocutusEar.isListenerAlive("refactor-work")).toBe(true)
+    expect(Ear.isListenerAlive("refactor-work")).toBe(true)
   })
 })
 

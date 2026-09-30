@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-codex_stop_hook.py - OpenAI Codex `Stop` Lifecycle Hook for Locutus.
+codex_stop_hook.py - OpenAI Codex `Stop` Lifecycle Hook for Rhizo.
 
 Runs at the end of a Codex response turn.
-If messages are waiting in the Locutus inbox:
+If messages are waiting in the Rhizo inbox:
   - Drains them atomically
   - Returns `{"decision": "block", "reason": "<messages_text>"}`
   - In Codex, `decision: "block"` on `Stop` creates a continuation prompt
@@ -32,7 +32,7 @@ def main():
     agent_name = resolve_agent_name(session_id, runtime_prefix="codex")
 
     if not agent_name:
-        # Agent not registered on Locutus bus; pass through silently
+        # Agent not registered on Rhizo bus; pass through silently
         print("{}")
         return
 

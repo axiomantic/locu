@@ -1,5 +1,5 @@
 # tests/test_routing.py
-# Automated tests for Locutus native task routing, route linter, and fail-fast behavior.
+# Automated tests for Rhizo native task routing, route linter, and fail-fast behavior.
 
 import subprocess
 import tempfile
@@ -11,16 +11,11 @@ import pytest
 import sys
 
 _bin_dir = Path(__file__).parent.parent / "bin"
-LOCUTUS_BIN = _bin_dir / ("rhizo.exe" if sys.platform == "win32" or (_bin_dir / "rhizo.exe").exists() else "rhizo")
-if not LOCUTUS_BIN.exists():
-    LOCUTUS_BIN = _bin_dir / ("locutus.exe" if sys.platform == "win32" or (_bin_dir / "locutus.exe").exists() else "locutus")
+RHIZO_BIN = _bin_dir / ("rhizo.exe" if sys.platform == "win32" or (_bin_dir / "rhizo.exe").exists() else "rhizo")
 
-def run_locutus(*args, cwd=None, env=None):
-    cmd = [str(LOCUTUS_BIN)] + list(args)
+def run_rhizo(*args, cwd=None, env=None):
+    cmd = [str(RHIZO_BIN)] + list(args)
     run_env = os.environ.copy()
-    for k in list(run_env.keys()):
-        if k.startswith("LOCUTUS_"):
-            del run_env[k]
     if env:
         run_env.update(env)
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, env=run_env)
@@ -28,7 +23,7 @@ def run_locutus(*args, cwd=None, env=None):
 
 def test_route_lint_valid_config():
     with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "locu-routes.yaml"
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
         routes_file.write_text("""
 version: "1.0"
 service:
@@ -61,7 +56,7 @@ routes:
       tags: ["firmware"]
       lease_seconds: 2400
 """)
-        code, out, err = run_locutus("route", "lint", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
         assert code == 0, f"Lint failed unexpectedly: {err}\n{out}"
         assert "valid" in out.lower()
         assert "db-route" in out
@@ -69,7 +64,7 @@ routes:
 
 def test_route_lint_catches_invalid_syntax_and_schema():
     with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "locu-routes.yaml"
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
         routes_file.write_text("""
 version: "1.0"
 questions:
@@ -84,19 +79,40 @@ routes:
     target:
       queue: "queue:swarm:api"
 """)
-        code, out, err = run_locutus("route", "lint", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
         assert code == 1
         assert "nonexistent" in err or "nonexistent" in out
 
-def test_route_fail_fast_on_missing_config():
+def test_route_fail_fast_on_explicit_missing_config():
     with tempfile.TemporaryDirectory() as tmpdir:
-        code, out, err = run_locutus("route", "some task", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "--routes-file=/nonexistent/routes.yaml", "some task", cwd=tmpdir)
         assert code == 1
         assert "not found" in err.lower() or "missing" in err.lower()
 
+def test_route_uses_builtin_fallback_when_no_config_present():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code, out, err = run_rhizo("route", "Fix database connection timeout", cwd=tmpdir, env={"HOME": tmpdir, "XDG_CONFIG_HOME": tmpdir})
+        assert code == 0
+        data = json.loads(out)
+        assert data["matched_rule"] == "default-domain-swarm"
+        assert "queue:swarm:" in data["target"]["queue"]
+        assert "database" in data["answers"]["domain"]["choice"]
+
+def test_route_init_scaffolds_valid_configuration():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code, out, err = run_rhizo("route", "init", cwd=tmpdir)
+        assert code == 0
+        assert "Initialized route configuration" in out
+        rf = Path(tmpdir) / "rhizo-routes.yaml"
+        assert rf.exists()
+        # Verify lint passes
+        l_code, l_out, l_err = run_rhizo("route", "lint", cwd=tmpdir)
+        assert l_code == 0
+        assert "Route configuration is valid" in l_out
+
 def test_route_fail_fast_when_laya_unreachable():
     with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "locu-routes.yaml"
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
         # Point to closed port 59999
         routes_file.write_text("""
 version: "1.0"
@@ -115,7 +131,7 @@ routes:
     target:
       queue: "queue:swarm:api"
 """)
-        code, out, err = run_locutus("route", "Fix database deadlock", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "Fix database deadlock", cwd=tmpdir)
         assert code == 1
         assert "unreachable" in err.lower() or "connection" in err.lower()
 
@@ -195,7 +211,7 @@ def mock_laya_server():
 def test_route_dry_run_and_enqueue_with_mock(mock_laya_server):
     """Test full routing triage and Redis enqueuing without skipping in CI."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "locu-routes.yaml"
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
         routes_file.write_text(f"""
 version: "1.0"
 service:
@@ -229,7 +245,7 @@ routes:
       lease_seconds: 1800
 """)
         # 1. Dry run inspection
-        code, out, err = run_locutus("route", "Slow SQL query on users table missing foreign key index", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "Slow SQL query on users table missing foreign key index", cwd=tmpdir)
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["matched_rule"] == "database-route"
@@ -237,7 +253,7 @@ routes:
         assert "sql" in data["target"]["tags"]
 
         # 2. Atomic enqueue --route
-        code, out, err = run_locutus("enqueue", "--route", "Slow SQL query on users table missing foreign key index", cwd=tmpdir)
+        code, out, err = run_rhizo("enqueue", "--route", "Slow SQL query on users table missing foreign key index", cwd=tmpdir)
         assert code == 0, f"Error: {err}"
         msg_id = out.strip()
         assert msg_id.startswith("msg_")
@@ -252,7 +268,7 @@ def test_route_live_dry_run_and_enqueue():
         return
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "locu-routes.yaml"
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
         routes_file.write_text("""
 version: "1.0"
 service:
@@ -278,7 +294,7 @@ routes:
       tags: ["db", "sql"]
       lease_seconds: 1800
 """)
-        code, out, err = run_locutus("route", "Slow SQL query on users table", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "Slow SQL query on users table", cwd=tmpdir)
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["matched_rule"] == "database-route"
@@ -304,7 +320,7 @@ routes:
       queue: "queue:swarm:database"
 """)
         # CLI overrides service-url, model, and api-key
-        code, out, err = run_locutus(
+        code, out, err = run_rhizo(
             "route", "Slow SQL query on users table",
             "--service-url", mock_laya_server,
             "--model", "kev-4b",
@@ -336,7 +352,7 @@ routes:
     target:
       queue: "queue:swarm:database"
 """)
-        code, out, err = run_locutus(
+        code, out, err = run_rhizo(
             "route", "Slow SQL query on users table",
             cwd=tmpdir,
             env={
@@ -384,7 +400,7 @@ routes:
       queue: "queue:worker:local-debug-worker"
 """)
         # 1. Test team rule routed through local service URL
-        code, out, err = run_locutus("route", "Slow SQL query on users table", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "Slow SQL query on users table", cwd=tmpdir)
         assert code == 0, f"Error: {err}"
         data = json.loads(out)
         assert data["matched_rule"] == "team-database-route"
@@ -392,7 +408,7 @@ routes:
         assert MockLayaHandler.last_model == "laya-local-v1"
 
         # 2. Test local intercepted rule takes priority
-        code2, out2, err2 = run_locutus("route", "Flash STM32 firmware on target board", cwd=tmpdir)
+        code2, out2, err2 = run_rhizo("route", "Flash STM32 firmware on target board", cwd=tmpdir)
         assert code2 == 0, f"Error: {err2}"
         data2 = json.loads(out2)
         assert data2["matched_rule"] == "local-intercept-route"
@@ -424,10 +440,59 @@ service:
   model: "kev-custom"
   api_key: "test-lint-key"
 """)
-        code, out, err = run_locutus("route", "lint", cwd=tmpdir)
+        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
         assert code == 0, f"Error: {err}"
         assert "valid" in out.lower()
         assert "rhizo-routes.local.yaml" in out
         assert "kev-custom" in out
         assert "configured" in out.lower()
+
+def test_route_uses_global_rhizo_routes_yaml_across_projects():
+    with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as project_dir:
+        # Create ~/.config/rhizo/rhizo-routes.yaml in global user config directory
+        cfg_dir = Path(fake_home) / ".config" / "rhizo"
+        cfg_dir.mkdir(parents=True)
+        global_routes = cfg_dir / "rhizo-routes.yaml"
+        global_routes.write_text("""
+version: "1.0"
+service:
+  url: "http://127.0.0.1:8100"
+questions:
+  domain:
+    type: "choice"
+    instructions: "Which subsystem handles this task?"
+    options: ["global-infra", "frontend", "general"]
+routes:
+  - name: "global-infra-rule"
+    match:
+      domain.choice: "global-infra"
+    target:
+      queue: "queue:swarm:global-infra"
+""")
+
+        # 1. In an empty project directory with no local rhizo-routes.yaml, global config applies
+        code, out, err = run_rhizo("route", "lint", cwd=project_dir, env={"HOME": fake_home, "XDG_CONFIG_HOME": fake_home})
+        assert code == 0, f"Error: {err}"
+        assert "valid" in out.lower()
+        assert str(global_routes) in out
+        assert "global-infra-rule" in out
+
+        # 2. When project has its own rhizo-routes.yaml, it layers on top of the global file
+        proj_routes = Path(project_dir) / "rhizo-routes.yaml"
+        proj_routes.write_text("""
+version: "1.0"
+routes:
+  - name: "project-special-rule"
+    match:
+      domain.choice: "frontend"
+    target:
+      queue: "queue:swarm:frontend"
+""")
+        code2, out2, err2 = run_rhizo("route", "lint", cwd=project_dir, env={"HOME": fake_home, "XDG_CONFIG_HOME": fake_home})
+        assert code2 == 0, f"Error: {err2}"
+        assert "valid" in out2.lower()
+        assert "project-special-rule" in out2
+        assert "global-infra-rule" in out2
+        assert " -> " in out2
+        assert "rhizo-routes.yaml" in out2
 

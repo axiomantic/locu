@@ -1,30 +1,30 @@
 // extensions/opencode/src/sessions.ts
-// Manages global session-to-agent mapping in ~/.config/locutus/sessions.json.
+// Manages global session-to-agent mapping in ~/.config/rhizo/sessions.json.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import type { SessionMap, SessionEntry } from "./types"
 
-export function getLocutusBin(): string {
-  if (process.env.LOCUTUS_BIN && existsSync(process.env.LOCUTUS_BIN)) {
-    return process.env.LOCUTUS_BIN
+export function getRhizoBin(): string {
+  if (process.env.RHIZO_BIN && existsSync(process.env.RHIZO_BIN)) {
+    return process.env.RHIZO_BIN
   }
   const home = process.env.HOME || process.env.USERPROFILE || ""
   const candidates = [
-    join(home, ".local", "bin", "locutus"),
-    join(home, ".nimble", "bin", "locutus"),
-    "/opt/homebrew/bin/locutus",
-    "/usr/local/bin/locutus",
+    join(home, ".local", "bin", "rhizo"),
+    join(home, ".nimble", "bin", "rhizo"),
+    "/opt/homebrew/bin/rhizo",
+    "/usr/local/bin/rhizo",
   ]
   for (const p of candidates) {
     if (existsSync(p)) return p
   }
-  return "locutus"
+  return "rhizo"
 }
 
 export function getSessionsPath(): string {
   const home = process.env.HOME || process.env.USERPROFILE || ""
-  return join(home, ".config", "locutus", "sessions.json")
+  return join(home, ".config", "rhizo", "sessions.json")
 }
 
 export function readLocalSessionMap(): SessionMap {
@@ -56,7 +56,8 @@ export function isSessionSupposedToListen(sessionId?: string | null): string | n
     return null
   }
 
-  if (process.env.LOCUTUS_AGENT_NAME) return process.env.LOCUTUS_AGENT_NAME
+  const envAgent = process.env.RHIZO_AGENT_NAME
+  if (envAgent) return envAgent
 
   if (!entry) return null
   const name = typeof entry === "string" ? entry : entry.agent
@@ -88,7 +89,7 @@ export function setMappedAgent(sessionKey: string, agentName: string, status = "
     writeFileSync(p, JSON.stringify(map, null, 2) + "\n")
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error("[locutus-ear] could not write session mapping:", msg)
+    console.error("[rhizo-ear] could not write session mapping:", msg)
   }
 }
 
@@ -111,7 +112,7 @@ export function closeSessionAgent(sessionKey: string): void {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error("[locutus-ear] could not close session mapping:", msg)
+    console.error("[rhizo-ear] could not close session mapping:", msg)
   }
 }
 
@@ -125,7 +126,7 @@ export function removeMappedAgent(sessionKey: string): void {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error("[locutus-ear] could not remove session mapping:", msg)
+    console.error("[rhizo-ear] could not remove session mapping:", msg)
   }
 }
 
@@ -144,7 +145,8 @@ export function resolveSessionAgent(sessionId?: string | null, fallbackName?: st
     const supposed = isSessionSupposedToListen(sessionId)
     if (supposed) return supposed
   }
-  if (process.env.LOCUTUS_AGENT_NAME) return process.env.LOCUTUS_AGENT_NAME
+  const envAgent = process.env.RHIZO_AGENT_NAME
+  if (envAgent) return envAgent
   if (sessionId) {
     const sanitized = sanitizeAgentName(fallbackName)
     const autoName = sanitized && sanitized.length >= 3 ? sanitized : `opencode-${sessionId.slice(-8)}`

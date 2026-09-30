@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-09-30
+
+### Added
+- **Global Route Configuration & Inheritance Across All Projects**:
+  - Added support for machine-wide global route configuration (`~/.config/rhizo/rhizo-routes.yaml` and `routes.yaml`) via `rhizo route init --global`.
+  - All projects on the machine automatically inherit global routing rules; project-specific and monorepo subdirectory `rhizo-routes.yaml` files cleanly layer on top, inheriting questions and limits while overriding or prepending custom routes.
+- **Hierarchical Cascading Route Resolution**:
+  - Added recursive directory chain discovery (`findRoutesConfigChain()`) in `src/routing.nim`.
+  - Discovers and merges routing configurations up the parent directory hierarchy to git root or filesystem boundaries (`rhizo-routes.yaml`, `rhizo-routes.local.yaml`, `.rhizo-routes.yaml`), layering child project rules over parent and global (`~/.config/rhizo/routes.yaml`) configurations.
+- **Embedded Route Scaffolding (`rhizo route init`)**:
+  - Added `rhizo route init [--force/-f] [--global/-g]` command to scaffold starter route configuration templates with domain classification, priority scoring, review triggers, and catch-all queues.
+- **Sensible Built-in Default Routing**:
+  - Added embedded fallback routing configuration (`defaultFallbackRoutingConfig()`) so routing commands function out of the box without requiring explicit project configuration files.
+
+### Removed
+- **Complete Purge of Legacy Locutus Backwards-Compatibility Fallbacks**:
+  - Purged all `LOCUTUS_*` environment variable fallbacks in favor of canonical `RHIZO_*` (`RHIZO_REDIS_URL`, `RHIZO_PREFIX`, `RHIZO_PROJECT`, `RHIZO_AGENT_NAME`, `RHIZO_SESSION_ID`, `RHIZO_SECRET`, `RHIZO_ENCRYPT`, `RHIZO_CLUSTER`, `RHIZO_QUIET`).
+  - Purged legacy `.locutus.toml`, `locutus.toml`, `.locutus.json`, and `~/.config/locutus` config search paths from `src/config.nim`.
+  - Removed legacy `bin/locutus` and `bin/locu` binary symlinks and `packaging/scoop/locutus.json`.
+  - Updated package names to `rhizo` across `pyproject.toml`, `package.json`, and `rhizo.nimble`.
+  - Purged all legacy `LocutusEar` class aliases and `[locutus-ear]` logs across OpenCode and Pi agent extensions.
+
+### Changed
+- **Harness Modernization & Rhizo Brand Alignment**:
+  - Modernized OpenCode listener extension to `@axiomantic/rhizo-opencode-ear` with `[rhizo-ear]` logging and `[RHIZO CONTEXT ANCHOR]` context markers.
+  - Modernized Pi agent extension (`skills/rhizo/pi-ear.ts`) and lifecycle hooks (`skills/rhizo/hooks/`).
+- **System 1 Optionality & Documentation**:
+  - Clarified across `README.md`, `SKILL.md`, `AGENTS.md`, and guides that System 1 (ModernBERT triage) is strictly optional. All core Redis coordination (pub/sub, work queues, distributed locking with fencing tokens, DAG workflows, blackboard, leader election) operates independently with zero ML requirements.
+  - Updated `references/system_one_setup.md` with GitHub source installation instructions for `local-systemone`.
+
 ## [0.1.10] - 2026-09-30
 
 ### Changed

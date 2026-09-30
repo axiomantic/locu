@@ -2,26 +2,26 @@
 // src/sessions.ts
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
-function getLocutusBin() {
-  if (process.env.LOCUTUS_BIN && existsSync(process.env.LOCUTUS_BIN)) {
-    return process.env.LOCUTUS_BIN;
+function getRhizoBin() {
+  if (process.env.RHIZO_BIN && existsSync(process.env.RHIZO_BIN)) {
+    return process.env.RHIZO_BIN;
   }
   const home = process.env.HOME || process.env.USERPROFILE || "";
   const candidates = [
-    join(home, ".local", "bin", "locutus"),
-    join(home, ".nimble", "bin", "locutus"),
-    "/opt/homebrew/bin/locutus",
-    "/usr/local/bin/locutus"
+    join(home, ".local", "bin", "rhizo"),
+    join(home, ".nimble", "bin", "rhizo"),
+    "/opt/homebrew/bin/rhizo",
+    "/usr/local/bin/rhizo"
   ];
   for (const p of candidates) {
     if (existsSync(p))
       return p;
   }
-  return "locutus";
+  return "rhizo";
 }
 function getSessionsPath() {
   const home = process.env.HOME || process.env.USERPROFILE || "";
-  return join(home, ".config", "locutus", "sessions.json");
+  return join(home, ".config", "rhizo", "sessions.json");
 }
 function readLocalSessionMap() {
   try {
@@ -39,8 +39,9 @@ function isSessionSupposedToListen(sessionId) {
   if (entry && typeof entry === "object" && (entry.status === "closed" || entry.disabled === true)) {
     return null;
   }
-  if (process.env.LOCUTUS_AGENT_NAME)
-    return process.env.LOCUTUS_AGENT_NAME;
+  const envAgent = process.env.RHIZO_AGENT_NAME;
+  if (envAgent)
+    return envAgent;
   if (!entry)
     return null;
   const name = typeof entry === "string" ? entry : entry.agent;
@@ -72,7 +73,7 @@ function setMappedAgent(sessionKey, agentName, status = "active") {
 `);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[locutus-ear] could not write session mapping:", msg);
+    console.error("[rhizo-ear] could not write session mapping:", msg);
   }
 }
 function closeSessionAgent(sessionKey) {
@@ -95,7 +96,7 @@ function closeSessionAgent(sessionKey) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[locutus-ear] could not close session mapping:", msg);
+    console.error("[rhizo-ear] could not close session mapping:", msg);
   }
 }
 function removeMappedAgent(sessionKey) {
@@ -109,7 +110,7 @@ function removeMappedAgent(sessionKey) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[locutus-ear] could not remove session mapping:", msg);
+    console.error("[rhizo-ear] could not remove session mapping:", msg);
   }
 }
 function sanitizeAgentName(name) {
@@ -128,8 +129,9 @@ function resolveSessionAgent(sessionId, fallbackName) {
     if (supposed)
       return supposed;
   }
-  if (process.env.LOCUTUS_AGENT_NAME)
-    return process.env.LOCUTUS_AGENT_NAME;
+  const envAgent = process.env.RHIZO_AGENT_NAME;
+  if (envAgent)
+    return envAgent;
   if (sessionId) {
     const sanitized = sanitizeAgentName(fallbackName);
     const autoName = sanitized && sanitized.length >= 3 ? sanitized : `opencode-${sessionId.slice(-8)}`;
@@ -161,7 +163,7 @@ function isListenerAlive(agentName) {
 }
 async function* listenLines(name, cwd, state) {
   let firstSpawnFailure = true;
-  const bin = getLocutusBin();
+  const bin = getRhizoBin();
   for (;; ) {
     if (state?.aborted)
       break;
@@ -178,7 +180,7 @@ async function* listenLines(name, cwd, state) {
     } catch (err) {
       if (firstSpawnFailure) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error("[locutus-ear] could not spawn `" + bin + " listen`: " + msg);
+        console.error("[rhizo-ear] could not spawn `" + bin + " listen`: " + msg);
         firstSpawnFailure = false;
       }
       await new Promise((r) => setTimeout(r, 500));
@@ -225,7 +227,7 @@ async function* listenLines(name, cwd, state) {
   }
 }
 async function interruptSessionIfBusy(client, sessionId) {
-  if (process.env.LOCUTUS_INTERRUPT === "0")
+  if (process.env.RHIZO_INTERRUPT === "0")
     return;
   if (!client?.session)
     return;
@@ -240,7 +242,7 @@ async function interruptSessionIfBusy(client, sessionId) {
       }
     }
     if (isBusy && typeof client.session.abort === "function") {
-      console.error(`[locutus-ear] session ${sessionId} is busy; aborting to deliver Locutus message...`);
+      console.error(`[rhizo-ear] session ${sessionId} is busy; aborting to deliver Rhizo message...`);
       await client.session.abort({ path: { id: sessionId } });
       for (let i = 0;i < 7; i++) {
         await new Promise((r) => setTimeout(r, 50));
@@ -254,7 +256,7 @@ async function interruptSessionIfBusy(client, sessionId) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[locutus-ear] could not interrupt session ${sessionId}:`, msg);
+    console.error(`[rhizo-ear] could not interrupt session ${sessionId}:`, msg);
   }
 }
 async function deliverPrompt(client, sessionId, text) {
@@ -342,8 +344,9 @@ function startAgentListener(client, name, cwd, targetSessionId) {
       if (!id)
         throw new Error("no opencode session");
       let isImmediate = false;
-      if (process.env.LOCUTUS_INTERRUPT !== "0") {
-        if (process.env.LOCUTUS_ABORT_ON_BUSY === "1" || process.env.LOCUTUS_INTERRUPT === "1") {
+      const allowInterrupt = process.env.RHIZO_INTERRUPT !== "0";
+      if (allowInterrupt) {
+        if (process.env.RHIZO_ABORT_ON_BUSY === "1" || process.env.RHIZO_INTERRUPT === "1") {
           isImmediate = true;
         } else {
           isImmediate = resolveMessageUrgency(text) === "immediate";
@@ -371,16 +374,16 @@ function startAgentListener(client, name, cwd, targetSessionId) {
     busy = true;
     run(text, 0);
   }
-  console.error(`[locutus-ear] armed for ${name} (bin: ${getLocutusBin()})`);
+  console.error(`[rhizo-ear] armed for ${name} (bin: ${getRhizoBin()})`);
   (async () => {
     try {
       for await (const line of listenLines(name, cwd, state)) {
         if (state.aborted)
           break;
-        offer(`[locutus:${name}] ${line}`);
+        offer(`[rhizo:${name}] ${line}`);
       }
     } catch (e) {
-      console.error(`[locutus-ear] listener error for ${name}:`, e);
+      console.error(`[rhizo-ear] listener error for ${name}:`, e);
     } finally {
       activeListeners.delete(name);
     }
@@ -400,7 +403,7 @@ function verifyAndEnsureListener(client, sessionId, cwd = process.cwd()) {
   }
   sessionToAgent.set(sessionId, agentName);
   if (!isListenerAlive(agentName)) {
-    console.error(`[locutus-ear] Verifying session ${sessionId}: reviving listener for @${agentName}`);
+    console.error(`[rhizo-ear] Verifying session ${sessionId}: reviving listener for @${agentName}`);
     startAgentListener(client, agentName, cwd, sessionId);
     return true;
   }
@@ -408,14 +411,14 @@ function verifyAndEnsureListener(client, sessionId, cwd = process.cwd()) {
 }
 async function syncSessions(client, directory) {
   const cwd = directory || process.cwd();
-  console.error(`[locutus-ear] syncSessions called for cwd: ${cwd}`);
+  console.error(`[rhizo-ear] syncSessions called for cwd: ${cwd}`);
   try {
     if (!client.session?.list) {
-      console.error(`[locutus-ear] client.session.list is not available!`);
+      console.error(`[rhizo-ear] client.session.list is not available!`);
       return;
     }
     const res = await client.session.list();
-    console.error(`[locutus-ear] client.session.list in ${cwd}:`, typeof res === "object" ? JSON.stringify(res).slice(0, 200) : res);
+    console.error(`[rhizo-ear] client.session.list in ${cwd}:`, typeof res === "object" ? JSON.stringify(res).slice(0, 200) : res);
     const list = Array.isArray(res) ? res : res && ("data" in res) && Array.isArray(res.data) ? res.data : [];
     if (!Array.isArray(list))
       return;
@@ -429,7 +432,7 @@ async function syncSessions(client, directory) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[locutus-ear] could not sync sessions:", msg);
+    console.error("[rhizo-ear] could not sync sessions:", msg);
   }
 }
 
@@ -443,39 +446,40 @@ function getOrientationReminder(sessionId) {
       const workspacePath = entry.strand_path || entry.rifttree_path;
       if (workspacePath) {
         const taskLabel = entry.task_id ? `for task '${entry.task_id}' ` : "";
-        return `[LOCUTUS CONTEXT ANCHOR: You have an active isolated workspace/strand ${taskLabel}at: ` + `${workspacePath}. Do not commit changes to the canonical repository root. ` + `Verify with 'git status' inside your workspace.]`;
+        return `[RHIZO CONTEXT ANCHOR: You have an active isolated workspace/strand ${taskLabel}at: ` + `${workspacePath}. Do not commit changes to the canonical repository root. ` + `Verify with 'git status' inside your workspace.]`;
       }
     }
   }
-  return `[LOCUTUS NOTICE: If this task was operating in an isolated workspace/strand, inspect active workspaces ` + `(e.g., via 'braid list' or checking ~/Development/workspaces/) and .braid.json to reorient ` + `yourself before making edits in the canonical repository root.]`;
+  return `[RHIZO NOTICE: If this task was operating in an isolated workspace/strand, inspect active workspaces ` + `(e.g., via 'vine list' or checking ~/Development/workspaces/) and .vine.json to reorient ` + `yourself before making edits in the canonical repository root.]`;
 }
 
 // src/index.ts
 var armedDirectories = new Set;
-var LocutusEar = async (ctx) => {
-  if (process.env.LOCUTUS_EAR_DISABLED === "1")
+var RhizoEar = async (ctx) => {
+  if (process.env.RHIZO_EAR_DISABLED === "1")
     return {};
   const client = ctx.client;
   const directory = ctx.directory || process.cwd();
-  console.error("[locutus-ear] init directory:", directory);
+  console.error("[rhizo-ear] init directory:", directory);
   if (!armedDirectories.has(directory)) {
     armedDirectories.add(directory);
-    if (process.env.LOCUTUS_AGENT_NAME) {
-      startAgentListener(client, process.env.LOCUTUS_AGENT_NAME, directory, null);
+    const envAgent = process.env.RHIZO_AGENT_NAME;
+    if (envAgent) {
+      startAgentListener(client, envAgent, directory, null);
     }
-    syncSessions(client, directory).catch((e) => console.error("[locutus-ear]", e));
+    syncSessions(client, directory).catch((e) => console.error("[rhizo-ear]", e));
   }
   return {
     "shell.env": async ({ sessionID }, output) => {
       if (sessionID && output && output.env) {
         const sessionKey = `opencode:${sessionID}`;
-        output.env.LOCUTUS_SESSION_ID = sessionKey;
+        output.env.RHIZO_SESSION_ID = sessionKey;
         let name = isSessionSupposedToListen(sessionID);
         if (!name) {
           name = resolveSessionAgent(sessionID);
         }
         if (name) {
-          output.env.LOCUTUS_AGENT_NAME = name;
+          output.env.RHIZO_AGENT_NAME = name;
           verifyAndEnsureListener(client, sessionID, directory);
         }
       }
@@ -514,19 +518,23 @@ var LocutusEar = async (ctx) => {
     }
   };
 };
-LocutusEar.getLocutusBin = getLocutusBin;
-LocutusEar.sanitizeAgentName = sanitizeAgentName;
-LocutusEar.interruptSessionIfBusy = interruptSessionIfBusy;
-LocutusEar.deliverPrompt = deliverPrompt;
-LocutusEar.resolveMessageUrgency = resolveMessageUrgency;
-LocutusEar.isSessionSupposedToListen = isSessionSupposedToListen;
-LocutusEar.verifyAndEnsureListener = verifyAndEnsureListener;
-LocutusEar.closeSessionAgent = closeSessionAgent;
-LocutusEar.isListenerAlive = isListenerAlive;
-LocutusEar.setMappedAgent = setMappedAgent;
-LocutusEar.getOrientationReminder = getOrientationReminder;
-var src_default = LocutusEar;
+var attachHelpers = (fn) => {
+  fn.getRhizoBin = getRhizoBin;
+  fn.sanitizeAgentName = sanitizeAgentName;
+  fn.interruptSessionIfBusy = interruptSessionIfBusy;
+  fn.deliverPrompt = deliverPrompt;
+  fn.resolveMessageUrgency = resolveMessageUrgency;
+  fn.isSessionSupposedToListen = isSessionSupposedToListen;
+  fn.verifyAndEnsureListener = verifyAndEnsureListener;
+  fn.closeSessionAgent = closeSessionAgent;
+  fn.isListenerAlive = isListenerAlive;
+  fn.setMappedAgent = setMappedAgent;
+  fn.getOrientationReminder = getOrientationReminder;
+  return fn;
+};
+attachHelpers(RhizoEar);
+var src_default = RhizoEar;
 export {
   src_default as default,
-  LocutusEar
+  RhizoEar
 };

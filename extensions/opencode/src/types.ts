@@ -1,5 +1,5 @@
 // extensions/opencode/src/types.ts
-// Type definitions for Locutus OpenCode Ear extension.
+// Type definitions for Rhizo OpenCode Ear extension.
 
 export interface SessionEntry {
   agent?: string

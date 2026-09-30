@@ -346,3 +346,55 @@ routes:
     check baseCfg.routes[0].name == "local-override"
     check baseCfg.routes[1].name == "base-db"
 
+suite "Fallback & Hierarchical Overriding":
+  test "defaultFallbackRoutingConfig provides domain, urgency and fallback swarm route":
+    let def = defaultFallbackRoutingConfig()
+    check def.questions.hasKey("domain")
+    check def.questions.hasKey("urgency")
+    check def.questions["domain"].options.len >= 5
+    check def.routes.len == 1
+    check def.routes[0].name == "default-domain-swarm"
+    check def.routes[0].target.queue == "queue:swarm:{{ domain.choice }}"
+
+  test "catch-all rule with empty match passes validation":
+    let catchAllYaml = """
+version: "1.0"
+questions:
+  domain:
+    type: choice
+    instructions: "Which domain?"
+    options: ["frontend", "backend"]
+routes:
+  - name: "frontend-specific"
+    match:
+      domain.choice: "frontend"
+    target:
+      queue: "queue:swarm:frontend"
+  - name: "all-other-tasks"
+    match: {}
+    target:
+      queue: "queue:swarm:general"
+"""
+    let (valid, errors, warnings) = lintYamlContent(catchAllYaml, checkService = false)
+    check valid == true
+    check errors.len == 0
+
+  test "findRoutesConfigChain discovers root and child configs in root-to-leaf order":
+    let tmpBase = getTempDir() / "rhizo_chain_test_" & $getCurrentProcessId()
+    let repoRoot = tmpBase / "myrepo"
+    let subPkg = repoRoot / "packages" / "frontend"
+    createDir(subPkg)
+    createDir(repoRoot / ".git")
+
+    writeFile(repoRoot / "rhizo-routes.yaml", "version: \"1.0\"\nquestions:\n  q1:\n    type: choice\n    instructions: \"?\"\n    options: [\"a\"]\nroutes:\n  - name: r1\n    match: { q1.choice: a }\n    target: { queue: q1 }\n")
+    writeFile(subPkg / "rhizo-routes.yaml", "version: \"1.0\"\nquestions:\n  q2:\n    type: choice\n    instructions: \"?\"\n    options: [\"b\"]\nroutes:\n  - name: r2\n    match: { q2.choice: b }\n    target: { queue: q2 }\n")
+
+    let chain = findRoutesConfigChain(subPkg)
+    check chain.len == 2
+    check chain[0] == repoRoot / "rhizo-routes.yaml"
+    check chain[1] == subPkg / "rhizo-routes.yaml"
+
+    # Clean up
+    removeDir(tmpBase)
+
+

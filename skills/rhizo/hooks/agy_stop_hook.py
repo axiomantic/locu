@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-agy_stop_hook.py - Antigravity (AGY) `Stop` Lifecycle Hook for Locutus.
+agy_stop_hook.py - Antigravity (AGY) `Stop` Lifecycle Hook for Rhizo.
 
 Runs when an AGY execution loop terminates.
-If messages are waiting in the Locutus inbox:
+If messages are waiting in the Rhizo inbox:
   - Drains them atomically
   - Returns `{"decision": "continue", "reason": "<messages_text>"}`
   - Blocks the stop and re-enters the execution loop with the message injected as context.
@@ -31,7 +31,7 @@ def main():
     agent_name = resolve_agent_name(conversation_id, runtime_prefix="agy")
 
     if not agent_name:
-        # Agent not registered on Locutus bus; pass through silently
+        # Agent not registered on Rhizo bus; pass through silently
         print("{}")
         return
 

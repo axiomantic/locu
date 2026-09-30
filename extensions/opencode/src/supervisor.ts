@@ -1,7 +1,7 @@
 import { spawn as nodeSpawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import {
-  getLocutusBin,
+  getRhizoBin,
   isSessionSupposedToListen,
   resolveSessionAgent,
   getSessionIdForAgent
@@ -24,7 +24,7 @@ export function isListenerAlive(agentName: string): boolean {
 
 export async function* listenLines(name: string, cwd: string, state: ListenerState): AsyncGenerator<string> {
   let firstSpawnFailure = true
-  const bin = getLocutusBin()
+  const bin = getRhizoBin()
   for (;;) {
     if (state?.aborted) break
     let proc: SubprocessHandle | null = null
@@ -39,7 +39,7 @@ export async function* listenLines(name: string, cwd: string, state: ListenerSta
     } catch (err: unknown) {
       if (firstSpawnFailure) {
         const msg = err instanceof Error ? err.message : String(err)
-        console.error("[locutus-ear] could not spawn `" + bin + " listen`: " + msg)
+        console.error("[rhizo-ear] could not spawn `" + bin + " listen`: " + msg)
         firstSpawnFailure = false
       }
       await new Promise((r) => setTimeout(r, 500))
@@ -87,7 +87,7 @@ export async function* listenLines(name: string, cwd: string, state: ListenerSta
 }
 
 export async function interruptSessionIfBusy(client: OpenCodeClient, sessionId: string): Promise<void> {
-  if (process.env.LOCUTUS_INTERRUPT === "0") return
+  if (process.env.RHIZO_INTERRUPT === "0") return
   if (!client?.session) return
 
   try {
@@ -102,7 +102,7 @@ export async function interruptSessionIfBusy(client: OpenCodeClient, sessionId: 
     }
 
     if (isBusy && typeof client.session.abort === "function") {
-      console.error(`[locutus-ear] session ${sessionId} is busy; aborting to deliver Locutus message...`)
+      console.error(`[rhizo-ear] session ${sessionId} is busy; aborting to deliver Rhizo message...`)
       await client.session.abort({ path: { id: sessionId } })
       // Wait briefly for OpenCode fiber to transition to idle
       for (let i = 0; i < 7; i++) {
@@ -116,7 +116,7 @@ export async function interruptSessionIfBusy(client: OpenCodeClient, sessionId: 
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[locutus-ear] could not interrupt session ${sessionId}:`, msg)
+    console.error(`[rhizo-ear] could not interrupt session ${sessionId}:`, msg)
   }
 }
 
@@ -213,8 +213,12 @@ export function startAgentListener(
       if (!id) throw new Error("no opencode session")
 
       let isImmediate = false
-      if (process.env.LOCUTUS_INTERRUPT !== "0") {
-        if (process.env.LOCUTUS_ABORT_ON_BUSY === "1" || process.env.LOCUTUS_INTERRUPT === "1") {
+      const allowInterrupt = process.env.RHIZO_INTERRUPT !== "0"
+      if (allowInterrupt) {
+        if (
+          process.env.RHIZO_ABORT_ON_BUSY === "1" ||
+          process.env.RHIZO_INTERRUPT === "1"
+        ) {
           isImmediate = true
         } else {
           isImmediate = resolveMessageUrgency(text) === "immediate"
@@ -245,16 +249,16 @@ export function startAgentListener(
     run(text, 0)
   }
 
-  console.error(`[locutus-ear] armed for ${name} (bin: ${getLocutusBin()})`)
+  console.error(`[rhizo-ear] armed for ${name} (bin: ${getRhizoBin()})`)
 
   ;(async () => {
     try {
       for await (const line of listenLines(name, cwd, state)) {
         if (state.aborted) break
-        offer(`[locutus:${name}] ${line}`)
+        offer(`[rhizo:${name}] ${line}`)
       }
     } catch (e) {
-      console.error(`[locutus-ear] listener error for ${name}:`, e)
+      console.error(`[rhizo-ear] listener error for ${name}:`, e)
     } finally {
       activeListeners.delete(name)
     }
@@ -281,7 +285,7 @@ export function verifyAndEnsureListener(
   // Session IS supposed to have a listener for agentName
   sessionToAgent.set(sessionId, agentName)
   if (!isListenerAlive(agentName)) {
-    console.error(`[locutus-ear] Verifying session ${sessionId}: reviving listener for @${agentName}`)
+    console.error(`[rhizo-ear] Verifying session ${sessionId}: reviving listener for @${agentName}`)
     startAgentListener(client, agentName, cwd, sessionId)
     return true
   }
@@ -291,14 +295,14 @@ export function verifyAndEnsureListener(
 
 export async function syncSessions(client: OpenCodeClient, directory?: string): Promise<void> {
   const cwd = directory || process.cwd()
-  console.error(`[locutus-ear] syncSessions called for cwd: ${cwd}`)
+  console.error(`[rhizo-ear] syncSessions called for cwd: ${cwd}`)
   try {
     if (!client.session?.list) {
-      console.error(`[locutus-ear] client.session.list is not available!`)
+      console.error(`[rhizo-ear] client.session.list is not available!`)
       return
     }
     const res = await client.session.list()
-    console.error(`[locutus-ear] client.session.list in ${cwd}:`, typeof res === "object" ? JSON.stringify(res).slice(0, 200) : res)
+    console.error(`[rhizo-ear] client.session.list in ${cwd}:`, typeof res === "object" ? JSON.stringify(res).slice(0, 200) : res)
     const list: OpenCodeSessionInfo[] = Array.isArray(res) ? res : (res && "data" in res && Array.isArray(res.data) ? res.data : [])
     if (!Array.isArray(list)) return
 
@@ -311,6 +315,6 @@ export async function syncSessions(client: OpenCodeClient, directory?: string): 
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error("[locutus-ear] could not sync sessions:", msg)
+    console.error("[rhizo-ear] could not sync sessions:", msg)
   }
 }

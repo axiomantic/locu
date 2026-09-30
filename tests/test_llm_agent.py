@@ -24,7 +24,7 @@ SKILL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "skil
 with open(SKILL_PATH, "r") as f:
     RAW_SKILL = f.read()
 
-SYSTEM_PROMPT = f"""You are agent 'alice' on a Unix system running the Locutus inter-agent protocol.
+SYSTEM_PROMPT = f"""You are agent 'alice' on a Unix system running the Rhizo inter-agent protocol.
 You have the `execute_bash` tool available to run shell commands.
 CRITICAL INSTRUCTION: You MUST NOT simulate or describe bash commands in text. You MUST call the `execute_bash` tool to actually execute every command on the system.
 
@@ -36,14 +36,14 @@ def run_bash(cmd: str) -> str:
     print(f"\n[AGENT BASH EXEC]: {cmd}")
     try:
         env = dict(os.environ)
-        env.setdefault("LOCUTUS_REDIS_URL", "redis://127.0.0.1:6379")
+        env.setdefault("RHIZO_REDIS_URL", "redis://127.0.0.1:6379")
         env.setdefault("REDIS_URL", "redis://127.0.0.1:6379")
         bin_dir = os.path.abspath("bin")
         local_bin = os.path.expanduser("~/.local/bin")
         env["PATH"] = f"{bin_dir}:{local_bin}:{env.get('PATH', '')}"
-        env.setdefault("LOCUTUS_REDIS_PREFIX", "locutus:")
-        env.setdefault("LOCUTUS_PROJECT", "locutus")
-        env.setdefault("LOCUTUS_SCRIPTS_DIR", os.path.abspath("scripts"))
+        env.setdefault("RHIZO_REDIS_PREFIX", "rhizo:")
+        env.setdefault("RHIZO_PROJECT", "locutus")
+        env.setdefault("RHIZO_SCRIPTS_DIR", os.path.abspath("scripts"))
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, env=env)
         output = (res.stdout + res.stderr).strip()
         print(f"[OUTPUT]: {output[:300]}")
@@ -52,7 +52,7 @@ def run_bash(cmd: str) -> str:
         print(f"[ERROR]: {e}")
         return f"Execution error: {e}"
 
-REDIS_URL = os.environ.get("LOCUTUS_REDIS_URL", os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
+REDIS_URL = os.environ.get("RHIZO_REDIS_URL", os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
 
 def redis_cmd(*args):
     return subprocess.run(["redis-cli", "-u", REDIS_URL] + list(args), capture_output=True, text=True).stdout.strip()
@@ -78,12 +78,12 @@ class TestLocutusLLMAgent(unittest.TestCase):
         # Flush test recipient inbox and keys
         redis_cmd(
             "DEL",
-            "locutus:inbox:bob",
-            "locutus:heartbeat:alice",
-            "locutus:agent:alice",
-            "locutus:tag:calc",
-            "locutus:tag:locutus",
-            "locutus:active_agents"
+            "rhizo:inbox:bob",
+            "rhizo:heartbeat:alice",
+            "rhizo:agent:alice",
+            "rhizo:tag:calc",
+            "rhizo:tag:locutus",
+            "rhizo:active_agents"
         )
 
         messages = [
@@ -91,10 +91,10 @@ class TestLocutusLLMAgent(unittest.TestCase):
             {
                 "role": "user",
                 "content": (
-                    "You are agent 'alice' in project 'locutus'.\n"
+                    "You are agent 'alice' in project 'rhizo'.\n"
                     "Execute the following tasks by calling the `execute_bash` tool:\n"
-                    "1. Register as 'alice' with tag 'calc' using `locutus open alice calc`.\n"
-                    "2. Send a direct task message to 'bob' with subject 'Math Task' asking him to compute '25 * 4' using `locutus send --to bob --subject \"Math Task\" --body \"Please compute 25 * 4\"`.\n"
+                    "1. Register as 'alice' with tag 'calc' using `rhizo open alice calc`.\n"
+                    "2. Send a direct task message to 'bob' with subject 'Math Task' asking him to compute '25 * 4' using `rhizo send --to bob --subject \"Math Task\" --body \"Please compute 25 * 4\"`.\n"
                     "Call the execute_bash tool to perform these actions."
                 )
             }
@@ -105,11 +105,11 @@ class TestLocutusLLMAgent(unittest.TestCase):
         simulated_turns = [
             (
                 {"role": "assistant", "content": ""},
-                [{"id": "call_1", "function": {"name": "execute_bash", "arguments": {"command": "locutus open alice calc"}}}]
+                [{"id": "call_1", "function": {"name": "execute_bash", "arguments": {"command": "rhizo open alice calc"}}}]
             ),
             (
                 {"role": "assistant", "content": ""},
-                [{"id": "call_2", "function": {"name": "execute_bash", "arguments": {"command": "locutus send --to bob --subject \"Math Task\" --body \"Please compute 25 * 4\""}}}]
+                [{"id": "call_2", "function": {"name": "execute_bash", "arguments": {"command": "rhizo send --to bob --subject \"Math Task\" --body \"Please compute 25 * 4\""}}}]
             ),
             (
                 {"role": "assistant", "content": "I have registered alice and sent the math task to bob."},
@@ -169,13 +169,13 @@ class TestLocutusLLMAgent(unittest.TestCase):
                     messages.append(tool_resp)
 
         # 3. Verify Redis state & strict message content validation
-        hb = redis_cmd("GET", "locutus:heartbeat:alice")
+        hb = redis_cmd("GET", "rhizo:heartbeat:alice")
         self.assertEqual(hb, "1", f"Expected Alice heartbeat to be '1', got '{hb}'")
 
-        inbox_len = redis_cmd("LLEN", "locutus:inbox:bob")
+        inbox_len = redis_cmd("LLEN", "rhizo:inbox:bob")
         self.assertTrue(bool(inbox_len and int(inbox_len) > 0), "Bob inbox is empty! No message delivered.")
 
-        raw_msg = redis_cmd("RPOP", "locutus:inbox:bob")
+        raw_msg = redis_cmd("RPOP", "rhizo:inbox:bob")
         self.assertTrue(bool(raw_msg), "Failed to retrieve raw message from Bob inbox")
 
         # Validate with both Pydantic schema and custom Tripwire wire envelope validator
