@@ -61,8 +61,10 @@ Rhizo supports both self-hosted local neural engines and cloud-hosted API endpoi
 
 #### Quickstart Local System 1 Daemon (`local-systemone`):
 ```bash
-# 1. Install local-systemone (Python 3.10+):
-pip install "local-systemone[full]"
+# 1. Install local-systemone directly from GitHub (Python 3.10+):
+pip install "git+https://github.com/axiomantic/local-systemone.git#egg=local-systemone[full]"
+# Or with uv:
+# uv pip install "git+https://github.com/axiomantic/local-systemone.git#egg=local-systemone[full]"
 
 # 2. Start in foreground:
 local-systemone                     # Default: Laya ModernBERT on port 8100
