@@ -19,9 +19,11 @@ fi
 
 echo "=== Verifying compiled binary ==="
 if [ -f "./${OUT_DIR}/rhizo.exe" ]; then
+  cp -f "./${OUT_DIR}/rhizo.exe" "./${OUT_DIR}/locutus.exe" || true
   "./${OUT_DIR}/rhizo.exe" --version || "./${OUT_DIR}/rhizo.exe" --help >/dev/null
   echo "=== Build succeeded: ${OUT_DIR}/rhizo.exe ==="
 else
+  ln -sf "rhizo" "./${OUT_DIR}/locutus" 2>/dev/null || cp -f "./${OUT_DIR}/rhizo" "./${OUT_DIR}/locutus" || true
   "./${OUT_DIR}/rhizo" --version || "./${OUT_DIR}/rhizo" --help >/dev/null
   echo "=== Build succeeded: ${OUT_DIR}/rhizo ==="
 fi

@@ -1,4 +1,6 @@
+import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,6 +13,9 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 INSTALL_SH = os.path.join(REPO_ROOT, "scripts", "install.sh")
 INSTALL_PS1 = os.path.join(REPO_ROOT, "scripts", "install.ps1")
 SKILLS_DIR = os.path.join(REPO_ROOT, "skills", "rhizo")
+
+with open(os.path.join(REPO_ROOT, "package.json"), "r", encoding="utf-8") as _f:
+    CURRENT_VERSION = json.load(_f)["version"]
 
 
 @pytest.mark.unit
@@ -165,7 +170,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
         self.assertEqual(stat.st_mode & 0o777, 0o755)
         run_res = subprocess.run([binary_path, "--version"], capture_output=True, text=True)
         self.assertEqual(run_res.returncode, 0)
-        self.assertIn("0.1.3", run_res.stdout)
+        self.assertIn(CURRENT_VERSION, run_res.stdout)
 
         # 2. Strict directory snapshot assertion: NO skill directories created for ANY assistant
         assistant_roots = [
@@ -549,7 +554,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
             self.assertIn(key, data, f"Scoop manifest missing required key '{key}'")
 
         # Version synchronization with repo
-        self.assertEqual(data["version"], "0.1.3")
+        self.assertEqual(data["version"], CURRENT_VERSION)
         self.assertEqual(data["license"], "MIT")
         self.assertEqual(data["homepage"], "https://github.com/axiomantic/rhizo")
         self.assertIn("64bit", data["architecture"])
@@ -593,11 +598,11 @@ class TestInstallerAndUninstaller(unittest.TestCase):
                 raise ValueError("Missing 64bit architecture definition")
 
         with self.assertRaises(ValueError):
-            _validate_scoop_schema({"version": "0.1.3"})
+            _validate_scoop_schema({"version": CURRENT_VERSION})
         with self.assertRaises(ValueError):
             _validate_scoop_schema({"version": "invalid_ver", "description": "d", "homepage": "h", "license": "MIT", "architecture": {"64bit": {}}})
         with self.assertRaises(ValueError):
-            _validate_scoop_schema({"version": "0.1.3", "description": "d", "homepage": "h", "license": "MIT", "architecture": {}})
+            _validate_scoop_schema({"version": CURRENT_VERSION, "description": "d", "homepage": "h", "license": "MIT", "architecture": {}})
 
     def test_08_homebrew_formula_spec(self):
         """Verify Homebrew formula architecture stanzas, version sync, installation, caveats, and test block."""
@@ -611,7 +616,7 @@ class TestInstallerAndUninstaller(unittest.TestCase):
 
         # 1. Structural Ruby formula parsing
         self.assertIn("class Rhizo < Formula", content)
-        self.assertRegex(content, r'version\s+"0\.1\.3"', "Homebrew version must match repository version 0.1.3")
+        self.assertRegex(content, rf'version\s+"{re.escape(CURRENT_VERSION)}"', f"Homebrew version must match repository version {CURRENT_VERSION}")
         self.assertRegex(content, r'license\s+"MIT"', "Homebrew license must be MIT")
         self.assertIn('homepage "https://github.com/axiomantic/rhizo"', content)
 

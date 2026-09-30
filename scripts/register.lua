@@ -20,6 +20,10 @@ local now = redis.call('TIME')[1]
 -- 1. Refresh Heartbeat
 redis.call('SET', prefix .. 'heartbeat:' .. name, '1', 'EX', ttl)
 
+-- 1b. Clear any temporary reservation hold
+redis.call('DEL', prefix .. 'held_name:' .. name)
+
+
 -- 2. Clean up any previous tags if this agent was already registered
 local old_tags = redis.call('HGET', prefix .. 'agent:' .. name, 'tags')
 if old_tags and old_tags ~= "" then

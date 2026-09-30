@@ -5,7 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.8] - 2026-09-30
+
+### Added
+- **Atomic Identity Allocation & Lexicon Engine (`rhizo name`)**:
+  - Embedded 1,000-word curated lexicon (`src/lexicon.nim`) spanning minerals, geography, architecture, mythology, physics, botany, mathematics, astronomy, biology, and nautical domains with zero word duplicates.
+  - Added atomic reservation script (`scripts/reserve_name.lua`) verifying availability against active registered agents, live heartbeats, and temporary reservation holds (`held_name:<name>`) with configurable TTL (default 10 minutes).
+  - Added `rhizo name [prefix] [--ttl <sec>] [--json]` CLI command returning atomically reserved unique codenames.
+  - Integrated automatic identity reservation into `rhizo open [tags]`: when invoked without an explicit name, automatically reserves a unique codename from the lexicon.
+  - Updated `scripts/register.lua` to automatically release temporary holds (`held_name:<name>`) upon successful agent registration.
+- **Dual-Phase Reset & Nuclear Wipe (`rhizo nuke`, `rhizo reset`)**:
+  - Added `scripts/reset.lua` implementing a two-phase clean teardown protocol:
+    - **Phase 1 (`notify`)**: Pushes `{"type":"shutdown", ...}` poison-pill payloads to agent inboxes to immediately unblock `BLPOP` listener threads on suspended sockets.
+    - **Phase 2 (`purge`)**: Deletes Redis keys safely in batches of 500 to prevent Redis single-thread blocking.
+  - Implemented `rhizo nuke [--json]`: The nuclear option for test teardown and development resets. Notifies all listeners across the namespace and wipes all keys matching `{prefix}*`.
+  - Implemented `rhizo reset [project] [--all/-a] [--json]`: Project-scoped reset that selectively terminates listeners, cleans active rosters, and deletes inboxes, heartbeats, tags, queues, and held names (`held_name:<project>-*`) belonging only to the specified project. Passing `--all` performs a full namespace nuke.
+  - Added poison-pill listener shutdown handler in `doListen`: listeners receiving message `type == "shutdown"` log a termination notice to stderr and exit immediately with code 0 without hanging or leaving zombie processes.
+- **Sub-Millisecond Redis Health Check (`rhizo ping`)**:
+  - Added `rhizo ping [--json]` CLI command for immediate Redis reachability checks and sub-millisecond round-trip latency reporting (`latency_ms`).
+- **Identity Allocation Invariant & Multi-Agent Coordination Protocol**:
+  - Codified the Identity Allocation Invariant in `AGENTS.md` and `src/guide.nim`: Agents operating in ephemeral subshells must invoke `rhizo name`, record their assigned codename in their reasoning context, and pass it explicitly to subsequent commands (`rhizo open <name>`, `rhizo listen <name>`).
+  - Added self-bootstrapping `npx -y @axiomantic/rhizo` and `npx -y rift-snapshot` zero-install fallback documentation in `README.md`, `SKILL.md`, `skills/rhizo/SKILL.md`, and `src/guide.nim`.
+- **Dedicated Test Coverage for Name Reservation & Reset**:
+  - Added `tests/test_name_reservation.py` covering codename reservation, custom prefixes, JSON payloads, collision resistance, hold release on open, project-scoped `rhizo reset`, and `rhizo nuke`.
+
+### Changed
+- **Documentation Token Compression & Skill Modularization**:
+  - Offloaded verbose coding-harness playbooks and tool matrices to dedicated reference files (`references/capability_archetypes.md` and `skills/rhizo/references/capability_archetypes.md`), reducing core `SKILL.md` from 1,400+ lines to ~150 lines for massive agent prompt token savings.
+  - Updated `AGENTS.md` and `src/guide.nim` with streamlined rules and clear invariant markers.
+  - Synchronized generated Cursor rules (`skills/rhizo/rules/cursor-rules.mdc`) and GitHub Copilot instructions (`.github/copilot-instructions.md`, `skills/rhizo/rules/copilot-instructions.md`).
+- **Test Teardown Modernization & Strict Fail-Loud Discipline**:
+  - Updated `setUp()` and `tearDown()` in `tests/test_name_reservation.py` and `tests/test_nim_binary.py` to use `rhizo nuke` with strict returncode assertions, eliminating silent `try...except` exception swallowing.
+
+### Fixed
+- **Legacy Environment Variable Compatibility**:
+  - Updated `src/config.nim` to transparently fall back to legacy `LOCUTUS_*` environment variables (`LOCUTUS_REDIS_URL`, `LOCUTUS_REDIS_PREFIX`, `LOCUTUS_PROJECT`, `LOCUTUS_AGENT_NAME`, `LOCUTUS_SESSION_ID`, `LOCUTUS_SECRET`, `LOCUTUS_SECRET_FILE`, `LOCUTUS_ENCRYPT`), ensuring backward compatibility with older test harnesses and CI environments.
 
 ## [0.1.7] - 2026-09-29
 

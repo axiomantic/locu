@@ -8,7 +8,7 @@ import std/[
 ]
 when defined(posix):
   import posix
-import config, redis, guide, routing, std/[net, asyncdispatch]
+import config, redis, guide, routing, lexicon, std/[net, asyncdispatch]
 
 proc isPidAlive*(pid: int): bool =
   if pid <= 0: return false
@@ -77,7 +77,9 @@ const
   leaderLua*     = staticRead("../scripts/leader.lua")
   workflowLua*   = staticRead("../scripts/workflow.lua")
   sweepLua*      = staticRead("../scripts/sweep.lua")
-  LocutusVersion* = "0.1.3"
+  reserveNameLua* = staticRead("../scripts/reserve_name.lua")
+  resetLua*      = staticRead("../scripts/reset.lua")
+  LocutusVersion* = "0.1.8"
 
 # Cryptographic Helpers
 proc computeSha1*(text: string): string =
@@ -107,6 +109,8 @@ let
   leaderSha*     = computeSha1(leaderLua)
   workflowSha*   = computeSha1(workflowLua)
   sweepSha*      = computeSha1(sweepLua)
+  reserveNameSha* = computeSha1(reserveNameLua)
+  resetSha*      = computeSha1(resetLua)
 
 
 proc secureFilePermissions*(path: string) =
@@ -855,21 +859,138 @@ proc doUnregister*(cfg: RhizoConfig, name: string): string =
     discard
   return runLuaScript(cfg.redisUrl, unregisterLua, unregisterSha, [cfg.prefix, name])
 
+proc cleanupOldTmpFiles*() =
+  for sub in ["rhizo", "locutus"]:
+    let tmpDir = getHomeDir() / ".config" / sub / "tmp"
+    if dirExists(tmpDir):
+      let nowUnix = getTime().toUnix()
+      for kind, path in walkDir(tmpDir):
+        if kind == pcFile and path.endsWith(".tmp"):
+          try:
+            let info = getFileInfo(path)
+            if nowUnix - info.lastWriteTime.toUnix() > 3600:
+              removeFile(path)
+          except OSError:
+            discard
+
+proc buildShutdownPayload*(reason: string = "bus shutdown"): string =
+  var node = newJObject()
+  node["id"] = %("msg_shutdown_" & $getTime().toUnix())
+  node["from"] = %"system"
+  node["to"] = %"*"
+  node["type"] = %"shutdown"
+  node["subject"] = %"Shutdown"
+  node["body"] = %reason
+  node["timestamp"] = %($getTime().toUnix())
+  return $node
+
+proc doNuke*(cfg: RhizoConfig, asJson: bool = false): string =
+  clearCurrentAgent()
+  cleanupOldTmpFiles()
+  let shutdownPayload = buildShutdownPayload("rhizo nuke initiated")
+
+  # 1. Notify listeners so BLPOP unblocks immediately
+  let notifyRes = runLuaScript(cfg.redisUrl, resetLua, resetSha, [cfg.prefix, "notify", "*", shutdownPayload])
+  var closedAgents: seq[string] = @[]
+  try:
+    let nj = parseJson(notifyRes)
+    if nj.hasKey("closed_agents"):
+      for a in nj["closed_agents"]:
+        closedAgents.add(a.getStr())
+  except CatchableError:
+    discard
+
+  if closedAgents.len > 0:
+    sleep(50)
+
+  # 2. Purge all keys
+  let res = runLuaScript(cfg.redisUrl, resetLua, resetSha, [cfg.prefix, "purge", "*", ""])
+  if res.startsWith("ERR:"):
+    stderr.writeLine(res)
+    quit(1)
+
+  var deletedCount = 0
+  try:
+    deletedCount = parseJson(res)["deleted_keys"].getInt()
+  except CatchableError:
+    discard
+
+  if asJson:
+    var j = %*{
+      "status": "ok",
+      "mode": "nuke",
+      "closed_agents": closedAgents,
+      "deleted_keys": deletedCount
+    }
+    return $j
+  else:
+    return "Nuked namespace '" & cfg.prefix & "': closed " & $closedAgents.len & " agents, deleted " & $deletedCount & " keys."
+
+proc doReset*(cfg: RhizoConfig, optProject: string = "", forceAll: bool = false, asJson: bool = false): string =
+  cleanupOldTmpFiles()
+  if forceAll:
+    return doNuke(cfg, asJson)
+
+  let proj = if optProject.len > 0: optProject.strip()
+             elif cfg.project.len > 0: cfg.project.strip()
+             else: ""
+
+  if proj.len == 0:
+    return doNuke(cfg, asJson)
+
+  let saved = loadCurrentAgent()
+  if saved.startsWith(proj & "-") or saved == proj:
+    clearCurrentAgent()
+
+  let shutdownPayload = buildShutdownPayload("rhizo reset initiated for project " & proj)
+
+  # 1. Notify project listeners so BLPOP unblocks
+  let notifyRes = runLuaScript(cfg.redisUrl, resetLua, resetSha, [cfg.prefix, "notify", proj, shutdownPayload])
+  var closedAgents: seq[string] = @[]
+  try:
+    let nj = parseJson(notifyRes)
+    if nj.hasKey("closed_agents"):
+      for a in nj["closed_agents"]:
+        closedAgents.add(a.getStr())
+  except CatchableError:
+    discard
+
+  if saved.len > 0 and (saved in closedAgents):
+    clearCurrentAgent()
+    let sid = if cfg.sessionId.len > 0: cfg.sessionId else: getEnv("RHIZO_SESSION_ID", "")
+    if sid.len > 0:
+      removeLocalSessionMapping(sid)
+      removeRedisSessionMapping(cfg, sid, saved)
+
+  if closedAgents.len > 0:
+    sleep(50)
+
+  # 2. Purge project keys
+  let res = runLuaScript(cfg.redisUrl, resetLua, resetSha, [cfg.prefix, "purge", proj, ""])
+  if res.startsWith("ERR:"):
+    stderr.writeLine(res)
+    quit(1)
+
+  var deletedCount = 0
+  try:
+    deletedCount = parseJson(res)["deleted_keys"].getInt()
+  except CatchableError:
+    discard
+
+  if asJson:
+    var j = %*{
+      "status": "ok",
+      "mode": "project",
+      "project": proj,
+      "closed_agents": closedAgents,
+      "deleted_keys": deletedCount
+    }
+    return $j
+  else:
+    return "Reset project '" & proj & "' in namespace '" & cfg.prefix & "': closed " & $closedAgents.len & " agents, deleted " & $deletedCount & " keys."
+
 proc doTag*(cfg: RhizoConfig, name, action, tags: string): string =
   return runLuaScript(cfg.redisUrl, tagLua, tagSha, [cfg.prefix, name, action, tags])
-
-proc cleanupOldTmpFiles*() =
-  let tmpDir = getHomeDir() / ".config" / "rhizo" / "tmp"
-  if dirExists(tmpDir):
-    let nowUnix = getTime().toUnix()
-    for kind, path in walkDir(tmpDir):
-      if kind == pcFile and path.endsWith(".tmp"):
-        try:
-          let info = getFileInfo(path)
-          if nowUnix - info.lastWriteTime.toUnix() > 3600:
-            removeFile(path)
-        except OSError:
-          discard
 
 proc formatDirectory*(raw: string): string =
   if raw.strip().len == 0:
@@ -925,6 +1046,37 @@ proc doDirectory*(cfg: RhizoConfig, filterTag: string = "", asJson: bool = false
 
 proc doListen*(cfg: RhizoConfig, name: string, timeoutSec: int = -1, notify: bool = false, quiet: bool = false)
 
+proc reserveUniqueName*(cfg: RhizoConfig, optPrefix: string = "", ttlSec: int = 600): tuple[name, prefix, codename: string] =
+  randomize()
+  var pfx = if optPrefix.len > 0: optPrefix.strip()
+            elif cfg.project.len > 0: cfg.project.strip()
+            else: "worker"
+  if pfx.len == 0:
+    pfx = "worker"
+
+  let ttl = if ttlSec > 0: ttlSec else: 600
+
+  for attempt in 1 .. 50:
+    let idx = rand(CodenameLexicon.low .. CodenameLexicon.high)
+    let word = CodenameLexicon[idx]
+    let candidate = pfx & "-" & word
+    let res = runLuaScript(cfg.redisUrl, reserveNameLua, reserveNameSha, [cfg.prefix, candidate, $ttl])
+    if res == "1":
+      return (name: candidate, prefix: pfx, codename: word)
+
+  for attempt in 1 .. 25:
+    let idx = rand(CodenameLexicon.low .. CodenameLexicon.high)
+    let word = CodenameLexicon[idx] & "-" & $rand(10 .. 999)
+    let candidate = pfx & "-" & word
+    let res = runLuaScript(cfg.redisUrl, reserveNameLua, reserveNameSha, [cfg.prefix, candidate, $ttl])
+    if res == "1":
+      return (name: candidate, prefix: pfx, codename: word)
+
+  let fallbackWord = "node-" & $getTime().toUnix() & "-" & $rand(100 .. 999)
+  let candidate = pfx & "-" & fallbackWord
+  discard runLuaScript(cfg.redisUrl, reserveNameLua, reserveNameSha, [cfg.prefix, candidate, $ttl])
+  return (name: candidate, prefix: pfx, codename: fallbackWord)
+
 proc doOpen*(cfg: RhizoConfig, optName, optTags: string, rearmListen: bool = false, listenTimeoutSec: int = -1) =
   cleanupOldTmpFiles()
   randomize()
@@ -934,16 +1086,8 @@ proc doOpen*(cfg: RhizoConfig, optName, optTags: string, rearmListen: bool = fal
 
   var name = optName
   if name.len == 0:
-    for attempt in 1..25:
-      let candidate = cfg.project & "-worker-" & $rand(1000..9999)
-      try:
-        if not client.exists(cfg.prefix & "heartbeat:" & candidate):
-          name = candidate
-          break
-      except CatchableError:
-        discard
-    if name.len == 0:
-      name = cfg.project & "-worker-" & $rand(10000..99999)
+    let reserved = reserveUniqueName(cfg, "", 600)
+    name = reserved.name
   else:
     try:
       if client.exists(cfg.prefix & "heartbeat:" & name):
@@ -962,6 +1106,10 @@ proc doOpen*(cfg: RhizoConfig, optName, optTags: string, rearmListen: bool = fal
     setRedisSessionMapping(cfg, sid, name)
 
   discard doRegister(cfg, name, tags, cfg.heartbeatTtl)
+  try:
+    discard client.del(@[cfg.prefix & "held_name:" & name])
+  except CatchableError:
+    discard
   let backlog = doDrain(cfg, name, 50)
 
   echo "===================================================="
@@ -1226,6 +1374,10 @@ proc doListen*(cfg: RhizoConfig, name: string, timeoutSec: int = -1, notify: boo
       let ts = parsed.getOrDefault("timestamp").getStr("")
       let sig = parsed.getOrDefault("sig").getStr("")
       let isEncrypted = parsed.getOrDefault("encrypted").getBool(false)
+
+      if msgType == "shutdown":
+        stderr.writeLine("[RHIZO LISTENER] Received shutdown signal for agent '" & name & "'. Exiting.")
+        return
 
       # Validate HMAC
       let canonical = id & "|" & fromAgent & "|" & toAgent & "|" & msgType & "|" & subject & "|" & body & "|" & ts
@@ -2672,6 +2824,7 @@ proc main() =
     echo "Rhizo (formerly Locu) " & LocutusVersion & " - High Performance Inter-Assistant Redis Bus (Nim Native)"
     echo "Usage:"
     echo "  rhizo version"
+    echo "  rhizo name [prefix] [--ttl <sec>] [--json]"
     echo "  rhizo open [name] [tags] [--listen/-l]"
     echo "  rhizo listen [name] [--timeout <sec>] [--force/-f] [--notify/-n] [--quiet/-q] (default timeout: 0 / infinite)"
     echo "  rhizo send --to <agent> [--type task|query|reply|status] --subject <subj> --body <body> [--listen/-l]"
@@ -2702,7 +2855,10 @@ proc main() =
     echo "  rhizo tag <add|remove|set> <tags> [name]"
     echo "  rhizo check-inbox [name]"
     echo "  rhizo drain [count] [name] [--format json|hook|raw] [--hook]"
+    echo "  rhizo ping [--json]"
     echo "  rhizo close [name]"
+    echo "  rhizo reset [project] [--all/-a] [--json]"
+    echo "  rhizo nuke [--json]"
     echo "  rhizo get-secret"
     echo "  rhizo config <show|get|path|init>"
     echo "  rhizo guide <install|uninstall|check> [path]"
@@ -2782,6 +2938,49 @@ proc main() =
       stderr.writeLine("Unknown config action: " & action)
       stderr.writeLine("Usage: rhizo config <show|get|path|init>")
       quit(1)
+
+  of "name", "assign-name", "reserve-name":
+    var prefix = ""
+    var ttlSec = 600
+    var isJson = ("--json" in rawArgs) or ("-j" in rawArgs)
+    for idx, a in rawArgs:
+      if a == "--format" and idx + 1 < rawArgs.len and rawArgs[idx+1].toLowerAscii == "json":
+        isJson = true
+      elif a.toLowerAscii.startsWith("--format=json"):
+        isJson = true
+
+    var i = 1
+    while i < args.len:
+      let a = args[i]
+      if a in ["--json", "-j"]:
+        isJson = true
+      elif a.startsWith("--ttl="):
+        ttlSec = parseRequiredInt(a[6..^1], "--ttl")
+      elif a == "--ttl" and i + 1 < args.len:
+        ttlSec = parseRequiredInt(args[i+1], "--ttl")
+        inc i
+      elif a.startsWith("--prefix="):
+        prefix = a[9..^1]
+      elif a == "--prefix" and i + 1 < args.len:
+        prefix = args[i+1]
+        inc i
+      elif not a.startsWith("-"):
+        if prefix.len == 0:
+          prefix = a
+      inc i
+
+    let res = reserveUniqueName(cfg, prefix, ttlSec)
+    if isJson:
+      var j = %*{
+        "name": res.name,
+        "prefix": res.prefix,
+        "codename": res.codename,
+        "ttl": ttlSec,
+        "held": true
+      }
+      echo $j
+    else:
+      echo res.name
 
   of "open", "register":
     var name = ""
@@ -3050,6 +3249,87 @@ proc main() =
       echo doUnregister(cfg, name)
     else:
       echo "OK"
+
+  of "nuke":
+    var isJson = ("--json" in rawArgs) or ("-j" in rawArgs)
+    for idx, a in rawArgs:
+      if a == "--format" and idx + 1 < rawArgs.len and rawArgs[idx+1].toLowerAscii == "json":
+        isJson = true
+      elif a.toLowerAscii.startsWith("--format=json"):
+        isJson = true
+    echo doNuke(cfg, isJson)
+
+  of "reset":
+    var targetProject = ""
+    var forceAll = ("--all" in rawArgs) or ("-a" in rawArgs)
+    var isJson = ("--json" in rawArgs) or ("-j" in rawArgs)
+    for idx, a in rawArgs:
+      if a == "--format" and idx + 1 < rawArgs.len and rawArgs[idx+1].toLowerAscii == "json":
+        isJson = true
+      elif a.toLowerAscii.startsWith("--format=json"):
+        isJson = true
+
+    var i = 1
+    while i < args.len:
+      let a = args[i]
+      if a in ["--all", "-a"]:
+        forceAll = true
+      elif a in ["--json", "-j"]:
+        isJson = true
+      elif not a.startsWith("-"):
+        if targetProject.len == 0:
+          targetProject = a
+      inc i
+    echo doReset(cfg, targetProject, forceAll, isJson)
+
+  of "ping":
+    var isJson = ("--json" in rawArgs) or ("-j" in rawArgs)
+    for idx, a in rawArgs:
+      if a == "--format" and idx + 1 < rawArgs.len and rawArgs[idx+1].toLowerAscii == "json":
+        isJson = true
+      elif a.toLowerAscii.startsWith("--format=json"):
+        isJson = true
+    let t0 = epochTime()
+    var client: Redis
+    try:
+      client = openRedisClient(cfg.redisUrl)
+    except CatchableError as e:
+      if isJson:
+        var j = %*{
+          "status": "error",
+          "error": "Could not connect to Redis: " & e.msg,
+          "redis_url": cfg.redisUrl
+        }
+        echo $j
+      else:
+        stderr.writeLine("Redis error: Could not connect to Redis: " & e.msg)
+      quit(1)
+    defer: (try: client.close() except CatchableError: discard)
+
+    try:
+      let reply = client.ping()
+      let latencyMs = ((epochTime() - t0) * 1000)
+      if isJson:
+        var j = %*{
+          "status": "ok",
+          "reply": $reply,
+          "latency_ms": latencyMs.formatFloat(ffDecimal, 2),
+          "redis_url": cfg.redisUrl
+        }
+        echo $j
+      else:
+        echo $reply
+    except CatchableError as e:
+      if isJson:
+        var j = %*{
+          "status": "error",
+          "error": e.msg,
+          "redis_url": cfg.redisUrl
+        }
+        echo $j
+      else:
+        stderr.writeLine("Redis error: " & e.msg)
+      quit(1)
 
   of "session":
     if args.len < 2:

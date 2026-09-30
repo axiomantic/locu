@@ -139,13 +139,17 @@ proc findRoutesConfig*(customPath: string = ""): string =
     if fileExists(customPath): return customPath
     raise newException(IOError, "Custom routes file not found: " & customPath)
 
-  let envPath = getEnv("RHIZO_ROUTES_FILE", "")
+  let envPath = getEnv("RHIZO_ROUTES_FILE", getEnv("LOCUTUS_ROUTES_FILE", getEnv("LOCU_ROUTES_FILE", "")))
   if envPath.len > 0 and fileExists(envPath): return envPath
 
   var cur = getCurrentDir()
   while true:
     for candidate in ["rhizo-routes.yaml", "rhizo-routes.yml", "rhizo-routes.json",
-                      ".rhizo/routes.yaml", ".rhizo/routes.yml", ".rhizo/routes.json"]:
+                      ".rhizo/routes.yaml", ".rhizo/routes.yml", ".rhizo/routes.json",
+                      "locu-routes.yaml", "locu-routes.yml", "locu-routes.json",
+                      ".locu/routes.yaml", ".locu/routes.yml", ".locu/routes.json",
+                      "locutus-routes.yaml", "locutus-routes.yml", "locutus-routes.json",
+                      ".locutus/routes.yaml", ".locutus/routes.yml", ".locutus/routes.json"]:
       let p = cur / candidate
       if fileExists(p): return p
 

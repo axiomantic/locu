@@ -8,7 +8,12 @@ import os
 from pathlib import Path
 import pytest
 
-LOCUTUS_BIN = Path(__file__).parent.parent / "bin" / "locutus"
+import sys
+
+_bin_dir = Path(__file__).parent.parent / "bin"
+LOCUTUS_BIN = _bin_dir / ("rhizo.exe" if sys.platform == "win32" or (_bin_dir / "rhizo.exe").exists() else "rhizo")
+if not LOCUTUS_BIN.exists():
+    LOCUTUS_BIN = _bin_dir / ("locutus.exe" if sys.platform == "win32" or (_bin_dir / "locutus.exe").exists() else "locutus")
 
 def run_locutus(*args, cwd=None, env=None):
     cmd = [str(LOCUTUS_BIN)] + list(args)

@@ -66,6 +66,8 @@ LUA_BALLOT = load_lua("ballot.lua")
 LUA_LEADER = load_lua("leader.lua")
 LUA_WORKFLOW = load_lua("workflow.lua")
 LUA_SWEEP = load_lua("sweep.lua")
+LUA_RESET = load_lua("reset.lua")
+
 
 import redis
 _protocol_redis_client = None
@@ -125,15 +127,12 @@ import pytest
 class TestRedisA2AProtocol(unittest.TestCase):
 
     def setUp(self):
-        # Clean up test keyspace
-        keys = run_redis("KEYS", f"{PREFIX}*").split()
-        if keys:
-            run_redis("DEL", *keys)
+        # Clean up test keyspace using reset script
+        run_eval(LUA_RESET, 0, PREFIX)
 
     def tearDown(self):
-        keys = run_redis("KEYS", f"{PREFIX}*").split()
-        if keys:
-            run_redis("DEL", *keys)
+        # Clean up test keyspace using reset script
+        run_eval(LUA_RESET, 0, PREFIX)
 
     def test_01_registration_and_directory(self):
         """Test agent registration, tag indexing, heartbeat, and directory lookup with delimiter escaping."""
