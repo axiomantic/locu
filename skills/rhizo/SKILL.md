@@ -39,7 +39,7 @@ Rhizo uses layered configuration so local developer settings and API keys are ne
 ### C. System 1 Decision Engine Setup
 Rhizo employs fast, calibrated **System 1 Decision Models** to route natural language directives into typed queues without generative decoding bottlenecks:
 1. **Choose a Provider**:
-   - **Local / Self-Hosted (Recommended)**: ModernBERT Laya (`convaiinnovations/laya`), Kev, Decider, or an Ollama/FastAPI bridge at `http://127.0.0.1:8000`. Offline, zero cost, <40ms latency.
+   - **Local Daemon (Recommended)**: Use [`axiomantic/local-systemone`](https://github.com/axiomantic/local-systemone) to run ModernBERT Laya, Ollama, or local GGUF models at `http://127.0.0.1:8000` with macOS launchd and Linux systemd background daemon support. Offline, zero cost, <40ms latency.
    - **Cloud API**: TypeSafe Jev at `https://api.typesafe.ai`. Configure `RHIZO_API_KEY` (or `JEV_API_KEY`) and optional `RHIZO_MODEL="jev-1"`.
 2. **Configure Endpoint**:
    Add to uncommitted `.env.local` or `rhizo-routes.local.yaml`:

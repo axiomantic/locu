@@ -50,25 +50,31 @@ Rhizo supports both self-hosted local neural engines and cloud-hosted API endpoi
 
 ### Option A: Local / Self-Hosted Open-Source Engine (Default Recommended)
 - **Best for:** Offline development, zero recurring token costs, strict data privacy, and sub-40ms latency.
-- **Supported Models:**
-  - **Laya (`convaiinnovations/laya`)**: ModernBERT-large (421M parameters), bidirectional encoder with typed decision heads. Runs on Apple Silicon Metal or CPU with ~1.6 GB RAM footprint.
-  - **Kev (`typesafe/kev-4b`)**: 4-billion parameter calibrated model for complex technical domains.
-  - **Decider (`typesafe/decider-4b`)**: High-accuracy schema routing model.
-  - **Ollama / Local FastAPI Bridge**: Any local server implementing the `POST /v1/systemone` specification.
+- **Supported Engines & Models:**
+  - **`local-systemone` ([axiomantic/local-systemone](https://github.com/axiomantic/local-systemone))**: Turnkey daemon supporting Laya (ModernBERT 421M / mmBERT 322M), Ollama models, and local GGUF llama-server endpoints with built-in macOS `launchd` and Linux `systemd` daemon management.
+  - **Laya (`convaiinnovations/laya`)**: ModernBERT-large (421M parameters), bidirectional encoder with typed decision heads. Runs on Apple Silicon Metal (MPS) or CPU with ~1.1 GB RAM footprint.
+  - **Ollama / Local LLM**: Evaluates schemas through local Ollama (`http://127.0.0.1:11434`) via `local-systemone --engine ollama`.
+  - **Local GGUF (llama-server)**: Evaluates schemas via `local-systemone --engine openai`.
 - **Default Endpoint:** `http://127.0.0.1:8000`
 
-#### Quickstart Local Laya Service:
-If you have Python 3.10+ installed:
+#### Quickstart Local System 1 Daemon (`local-systemone`):
 ```bash
-# In a dedicated venv or service directory:
-pip install fastapi uvicorn torch transformers onnxruntime
-# Start your local System 1 server (or laya-serve):
-uvicorn laya_service:app --host 127.0.0.1 --port 8000
+# 1. Install local-systemone (Python 3.10+):
+pip install "local-systemone[full]"
+
+# 2. Start in foreground (or install as background daemon):
+local-systemone                   # Default: Laya ModernBERT on Apple Silicon / CUDA
+# Or run with alternative engines:
+# local-systemone --engine ollama   # Local Ollama bridge
+# local-systemone --engine openai   # Local llama-server (GGUF)
+
+# 3. (Optional) Run permanently as a background daemon:
+local-systemone --install-daemon  # Configures macOS launchd or Linux systemd
 ```
 Verify reachability:
 ```bash
 curl http://127.0.0.1:8000/healthz
-# Returns: {"status":"ok"}
+# Returns: {"status":"ok","engine":"laya","mock":false,"loaded_models":["multilingual","typed-decisions","english"],"device":"mps"}
 ```
 
 ### Option B: Cloud-Hosted Endpoint (TypeSafe Jev)
