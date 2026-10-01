@@ -7,8 +7,10 @@ import json
 import os
 from pathlib import Path
 import pytest
-
 import sys
+import http.server
+import socketserver
+import threading
 
 _bin_dir = Path(__file__).parent.parent / "bin"
 RHIZO_BIN = _bin_dir / ("rhizo.exe" if sys.platform == "win32" or (_bin_dir / "rhizo.exe").exists() else "rhizo")
@@ -20,124 +22,6 @@ def run_rhizo(*args, cwd=None, env=None):
         run_env.update(env)
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, env=run_env)
     return proc.returncode, proc.stdout, proc.stderr
-
-def test_route_lint_valid_config():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
-        routes_file.write_text("""
-version: "1.0"
-service:
-  url: "http://127.0.0.1:8100"
-  timeout_seconds: 5.0
-questions:
-  domain:
-    type: choice
-    instructions: "Which domain?"
-    options: ["database", "frontend", "api", "firmware"]
-    aggregate: max_confidence
-  urgency:
-    type: score
-    instructions: "How urgent is this?"
-    criteria: ["low", "medium", "critical"]
-    aggregate: max
-routes:
-  - name: "db-route"
-    match:
-      domain.choice: "database"
-    target:
-      queue: "queue:swarm:database"
-      tags: ["db", "sql"]
-      lease_seconds: 1800
-  - name: "firmware-worker"
-    match:
-      domain.choice: "firmware"
-    target:
-      queue: "queue:worker:worker-claude"
-      tags: ["firmware"]
-      lease_seconds: 2400
-""")
-        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
-        assert code == 0, f"Lint failed unexpectedly: {err}\n{out}"
-        assert "valid" in out.lower()
-        assert "db-route" in out
-        assert "firmware-worker" in out
-
-def test_route_lint_catches_invalid_syntax_and_schema():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
-        routes_file.write_text("""
-version: "1.0"
-questions:
-  domain:
-    type: choice
-    instructions: "Which domain?"
-    options: ["api", "database"]
-routes:
-  - name: "bad-route"
-    match:
-      nonexistent.choice: "api"
-    target:
-      queue: "queue:swarm:api"
-""")
-        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
-        assert code == 1
-        assert "nonexistent" in err or "nonexistent" in out
-
-def test_route_fail_fast_on_explicit_missing_config():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        code, out, err = run_rhizo("route", "--routes-file=/nonexistent/routes.yaml", "some task", cwd=tmpdir)
-        assert code == 1
-        assert "not found" in err.lower() or "missing" in err.lower()
-
-def test_route_uses_builtin_fallback_when_no_config_present():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        code, out, err = run_rhizo("route", "Fix database connection timeout", cwd=tmpdir, env={"HOME": tmpdir, "XDG_CONFIG_HOME": tmpdir})
-        assert code == 0
-        data = json.loads(out)
-        assert data["matched_rule"] == "default-domain-swarm"
-        assert "queue:swarm:" in data["target"]["queue"]
-        assert "database" in data["answers"]["domain"]["choice"]
-
-def test_route_init_scaffolds_valid_configuration():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        code, out, err = run_rhizo("route", "init", cwd=tmpdir)
-        assert code == 0
-        assert "Initialized route configuration" in out
-        rf = Path(tmpdir) / "rhizo-routes.yaml"
-        assert rf.exists()
-        # Verify lint passes
-        l_code, l_out, l_err = run_rhizo("route", "lint", cwd=tmpdir)
-        assert l_code == 0
-        assert "Route configuration is valid" in l_out
-
-def test_route_fail_fast_when_laya_unreachable():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
-        # Point to closed port 59999
-        routes_file.write_text("""
-version: "1.0"
-service:
-  url: "http://127.0.0.1:59999"
-  timeout_seconds: 1.0
-questions:
-  domain:
-    type: choice
-    instructions: "Which domain?"
-    options: ["api", "database"]
-routes:
-  - name: "api-route"
-    match:
-      domain.choice: "api"
-    target:
-      queue: "queue:swarm:api"
-""")
-        code, out, err = run_rhizo("route", "Fix database deadlock", cwd=tmpdir)
-        assert code == 1
-        assert "unreachable" in err.lower() or "connection" in err.lower()
-
-import http.server
-import socketserver
-import threading
 
 class MockLayaHandler(http.server.BaseHTTPRequestHandler):
     last_auth = None
@@ -207,6 +91,120 @@ def mock_laya_server():
     thread.start()
     yield f"http://127.0.0.1:{port}"
     server.shutdown()
+
+def test_route_lint_valid_config():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
+        routes_file.write_text("""
+version: "1.0"
+service:
+  url: "http://127.0.0.1:8100"
+  timeout_seconds: 5.0
+questions:
+  domain:
+    type: choice
+    instructions: "Which domain?"
+    options: ["database", "frontend", "api", "firmware"]
+    aggregate: max_confidence
+  urgency:
+    type: score
+    instructions: "How urgent is this?"
+    criteria: ["low", "medium", "critical"]
+    aggregate: max
+routes:
+  - name: "db-route"
+    match:
+      domain.choice: "database"
+    target:
+      queue: "queue:swarm:database"
+      tags: ["db", "sql"]
+      lease_seconds: 1800
+  - name: "firmware-worker"
+    match:
+      domain.choice: "firmware"
+    target:
+      queue: "queue:worker:worker-claude"
+      tags: ["firmware"]
+      lease_seconds: 2400
+""")
+        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
+        assert code == 0, f"Lint failed unexpectedly: {err}\n{out}"
+        assert "valid" in out.lower()
+        assert "db-route" in out
+        assert "firmware-worker" in out
+
+def test_route_lint_catches_invalid_syntax_and_schema():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
+        routes_file.write_text("""
+version: "1.0"
+questions:
+  domain:
+    type: choice
+    instructions: "Which domain?"
+    options: ["api", "database"]
+routes:
+  - name: "bad-route"
+    match:
+      nonexistent.choice: "api"
+    target:
+      queue: "queue:swarm:api"
+""")
+        code, out, err = run_rhizo("route", "lint", cwd=tmpdir)
+        assert code == 1
+        assert "nonexistent" in err or "nonexistent" in out
+
+def test_route_fail_fast_on_explicit_missing_config():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code, out, err = run_rhizo("route", "--routes-file=/nonexistent/routes.yaml", "some task", cwd=tmpdir)
+        assert code == 1
+        assert "not found" in err.lower() or "missing" in err.lower()
+
+def test_route_uses_builtin_fallback_when_no_config_present(mock_laya_server):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code, out, err = run_rhizo("route", "Fix database connection timeout", "--service-url", mock_laya_server, cwd=tmpdir, env={"HOME": tmpdir, "XDG_CONFIG_HOME": tmpdir})
+        assert code == 0, f"Error: {err}"
+        data = json.loads(out)
+        assert data["matched_rule"] == "default-domain-swarm"
+        assert "queue:swarm:" in data["target"]["queue"]
+        assert "database" in data["answers"]["domain"]["choice"]
+
+def test_route_init_scaffolds_valid_configuration():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code, out, err = run_rhizo("route", "init", cwd=tmpdir)
+        assert code == 0
+        assert "Initialized route configuration" in out
+        rf = Path(tmpdir) / "rhizo-routes.yaml"
+        assert rf.exists()
+        # Verify lint passes
+        l_code, l_out, l_err = run_rhizo("route", "lint", cwd=tmpdir)
+        assert l_code == 0
+        assert "Route configuration is valid" in l_out
+
+def test_route_fail_fast_when_laya_unreachable():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        routes_file = Path(tmpdir) / "rhizo-routes.yaml"
+        # Point to closed port 59999
+        routes_file.write_text("""
+version: "1.0"
+service:
+  url: "http://127.0.0.1:59999"
+  timeout_seconds: 1.0
+questions:
+  domain:
+    type: choice
+    instructions: "Which domain?"
+    options: ["api", "database"]
+routes:
+  - name: "api-route"
+    match:
+      domain.choice: "api"
+    target:
+      queue: "queue:swarm:api"
+""")
+        code, out, err = run_rhizo("route", "Fix database deadlock", cwd=tmpdir)
+        assert code == 1
+        assert "unreachable" in err.lower() or "connection" in err.lower()
 
 def test_route_dry_run_and_enqueue_with_mock(mock_laya_server):
     """Test full routing triage and Redis enqueuing without skipping in CI."""

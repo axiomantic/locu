@@ -92,7 +92,7 @@ jobs:
 
       - name: Run test suite
         env:
-          LOCUTUS_REDIS_URL: redis://127.0.0.1:6379
+          RHIZO_REDIS_URL: redis://127.0.0.1:6379
           PYTHONUTF8: "1"
         run: scripts/ci/test.sh
 

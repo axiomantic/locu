@@ -9,7 +9,7 @@
 #   ./scripts/install.sh --uninstall
 #
 # Environment variables:
-#   LOCUTUS_VERSION   : Install specific release version (default: latest)
+#   RHIZO_VERSION     : Install specific release version (default: latest)
 #   INSTALL_DIR       : Custom installation directory (default: /usr/local/bin or ~/.local/bin)
 #   BUILD_FROM_SOURCE : Set to 1 to force building from source via Nim
 
@@ -143,7 +143,7 @@ esac
 echo "Platform: ${OS}-${ARCH}"
 
 # 3. Resolve Target Version
-if [ -z "${LOCUTUS_VERSION:-}" ]; then
+if [ -z "${RHIZO_VERSION:-}" ]; then
   echo "Resolving latest release from GitHub..."
   LATEST_JSON=$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)
   VERSION=$(echo "${LATEST_JSON}" | (grep '"tag_name":' || true) | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
@@ -153,7 +153,7 @@ if [ -z "${LOCUTUS_VERSION:-}" ]; then
     echo "Latest release: ${VERSION}"
   fi
 else
-  VERSION="${LOCUTUS_VERSION}"
+  VERSION="${RHIZO_VERSION}"
   if [[ "${VERSION}" != v* ]]; then
     VERSION="v${VERSION}"
   fi

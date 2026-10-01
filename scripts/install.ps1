@@ -17,7 +17,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = $env:LOCUTUS_VERSION,
+    [string]$Version = $env:RHIZO_VERSION,
     [switch]$Uninstall,
     [switch]$BuildFromSource,
     [switch]$NoSkills

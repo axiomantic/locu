@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# scripts/ci/test.sh: Unified test runner for Locutus.
+# scripts/ci/test.sh: Unified test runner for Rhizo.
 # Manages local Redis daemon if needed, and runs pytest.
 
-REDIS_URL="${LOCUTUS_REDIS_URL:-redis://127.0.0.1:6379}"
-export LOCUTUS_REDIS_URL="${REDIS_URL}"
+REDIS_URL="${RHIZO_REDIS_URL:-redis://127.0.0.1:6379}"
+export RHIZO_REDIS_URL="${REDIS_URL}"
 
-echo "=== Checking Redis connectivity at ${LOCUTUS_REDIS_URL} ==="
+echo "=== Checking Redis connectivity at ${RHIZO_REDIS_URL} ==="
 REDIS_HOST=$(echo "${REDIS_URL}" | sed -E 's|redis://([^:/]+).*|\1|')
 REDIS_PORT=$(echo "${REDIS_URL}" | sed -E 's|redis://[^:]+:([0-9]+).*|\1|')
 if [ "${REDIS_PORT}" = "${REDIS_URL}" ] || [ -z "${REDIS_PORT}" ]; then
@@ -48,11 +48,11 @@ fi
 echo "=== Verifying Cursor/Copilot rule files are in sync with AGENTS.md ==="
 "${PY_CMD}" scripts/compile_rules.py --check
 
-echo "=== Running Locutus pytest suite with ${PY_CMD} ==="
+echo "=== Running Rhizo pytest suite with ${PY_CMD} ==="
 if [ "$#" -gt 0 ]; then
   "${PY_CMD}" -m pytest -v -m "not llm" "$@"
 else
   "${PY_CMD}" -m pytest -v -m "not llm"
 fi
 
-echo "=== All Locutus test checks passed! ==="
+echo "=== All Rhizo test checks passed! ==="

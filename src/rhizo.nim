@@ -79,7 +79,7 @@ const
   sweepLua*      = staticRead("../scripts/sweep.lua")
   reserveNameLua* = staticRead("../scripts/reserve_name.lua")
   resetLua*      = staticRead("../scripts/reset.lua")
-  RhizoVersion*  = "0.1.11"
+  RhizoVersion*  = "0.1.12"
 
 # Cryptographic Helpers
 proc computeSha1*(text: string): string =
