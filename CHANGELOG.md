@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **CI Test Suite Headless Isolation**:
   - Attached `mock_laya_server` fixture to `test_route_uses_builtin_fallback_when_no_config_present` so fallback route verification does not depend on a live local System 1 server in headless CI environments.
+  - Automatically mirror `USERPROFILE` from `HOME` in test subprocess runners on Windows.
+- **TOML Escape Sequence Parsing**:
+  - Replaced naive chained string replacements with a character-by-character escape parser in `unquote()`, preventing escaped backslashes in Windows file paths (e.g. `\\tmp`, `\\tests`) from collapsing into tab or newline control characters.
 - **Workflow & Runner Environment Alignment**:
   - Aligned all CI workflows (`ci.yml`, `llm-ci.yml`) and test scripts (`scripts/ci/test.sh`) to `RHIZO_REDIS_URL`.
   - Replaced remaining `LOCUTUS_VERSION` variables in universal install scripts (`install.sh`, `install.ps1`) with `RHIZO_VERSION`.

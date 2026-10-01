@@ -99,10 +99,27 @@ proc unquote*(s: string): string =
   let t = s.strip()
   if (t.startsWith("\"") and t.endsWith("\"")) or (t.startsWith("'") and t.endsWith("'")):
     if t.len >= 2:
-      var inner = t[1 .. ^2]
-      if t.startsWith("\""):
-        inner = inner.replace("\\n", "\n").replace("\\t", "\t").replace("\\\"", "\"").replace("\\\\", "\\")
-      return inner
+      let inner = t[1 .. ^2]
+      if t.startsWith("'"):
+        return inner
+      # Double-quoted string: parse escape sequences character-by-character
+      var res = ""
+      var i = 0
+      while i < inner.len:
+        if inner[i] == '\\' and i + 1 < inner.len:
+          case inner[i+1]
+          of 'n': res.add('\n'); i += 2
+          of 'r': res.add('\r'); i += 2
+          of 't': res.add('\t'); i += 2
+          of '"': res.add('"'); i += 2
+          of '\\': res.add('\\'); i += 2
+          else:
+            res.add(inner[i+1])
+            i += 2
+        else:
+          res.add(inner[i])
+          inc i
+      return res
   return t
 
 # Expand tilde in path

@@ -20,6 +20,8 @@ def run_rhizo(*args, cwd=None, env=None):
     run_env = os.environ.copy()
     if env:
         run_env.update(env)
+        if "HOME" in env and "USERPROFILE" not in env:
+            run_env["USERPROFILE"] = env["HOME"]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, env=run_env)
     return proc.returncode, proc.stdout, proc.stderr
 
